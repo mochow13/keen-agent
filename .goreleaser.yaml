@@ -1,0 +1,47 @@
+version: 2
+
+project_name: keen-agent
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: keen-agent
+    main: ./cmd
+    binary: keen-agent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: keen-agent
+    ids:
+      - keen-agent
+    name_template: "keen-agent_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    formats:
+      - tar.gz
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

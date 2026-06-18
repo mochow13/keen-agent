@@ -1,0 +1,23 @@
+{
+  "name": "keen-agent",
+  "version": "0.1.0",
+  "description": "CLI agent powered by AI (npm compatibility wrapper)",
+  "bin": {
+    "keen-agent": "bin/keen-agent.js"
+  },
+  "scripts": {
+    "postinstall": "node postinstall.js"
+  },
+  "files": [
+    "bin/keen-agent.js",
+    "postinstall.js"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mochow13/keen-agent.git"
+  },
+  "license": "MIT"
+}

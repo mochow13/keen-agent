@@ -1,0 +1,1341 @@
+package repl
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
+	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
+	replwidgets "github.com/mochow13/keen-agent/internal/cli/repl/widgets"
+	"github.com/mochow13/keen-agent/internal/config"
+	"github.com/mochow13/keen-agent/internal/llm"
+	keenmcp "github.com/mochow13/keen-agent/internal/mcp"
+	"github.com/mochow13/keen-agent/internal/mcpskills"
+	"github.com/mochow13/keen-agent/internal/providers"
+	"github.com/mochow13/keen-agent/internal/skills"
+)
+
+func TestHandleEnterKey_EmptyInput(t *testing.T) {
+	m := newTestModel()
+	m.textarea.SetValue("")
+
+	newM, cmd := m.handleEnterKey()
+
+	if cmd != nil {
+		t.Error("expected nil cmd for empty input")
+	}
+	if len(newM.output.GetLines()) != 0 {
+		t.Error("expected no output for empty input")
+	}
+}
+
+func TestHandleEnterKey_ActiveStream(t *testing.T) {
+	m := newTestModel()
+	m.textarea.SetValue("some input")
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+
+	newM, cmd := m.handleEnterKey()
+
+	if cmd != nil {
+		t.Error("expected nil cmd when stream is active")
+	}
+	if newM.textarea.Value() != "some input" {
+		t.Error("expected textarea to remain unchanged when stream is active")
+	}
+}
+
+func TestHandleBangCommand_ReturnsBeforeCommandCompletes(t *testing.T) {
+	m := newTestModel()
+
+	start := time.Now()
+	newM, cmd := m.handleBangCommand("!sleep 2")
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("handleBangCommand blocked for %s", elapsed)
+	}
+	if cmd == nil {
+		t.Fatal("expected command waiter")
+	}
+	if !newM.bang.active {
+		t.Fatal("expected bang command to be active")
+	}
+	if !strings.Contains(newM.output.Join(), "$ sleep 2") {
+		t.Fatal("expected command to be rendered immediately")
+	}
+
+	newM.cancelBangCommand()
+	for i := 0; i < 10 && cmd != nil; i++ {
+		msg := cmd()
+		updated, next := newM.updateNormalMode(msg)
+		newM = updated
+		cmd = next
+	}
+	if newM.bang.active {
+		t.Fatal("expected bang command to stop after cancellation")
+	}
+}
+
+func TestHandleEnterKey_ExitCommand(t *testing.T) {
+	m := newTestModel()
+	m.textarea.SetValue(replcommands.Exit)
+
+	newM, cmd := m.handleEnterKey()
+
+	if !newM.quitting {
+		t.Error("expected quitting to be true")
+	}
+	if cmd == nil {
+		t.Fatal("expected tea.Quit cmd")
+	}
+}
+
+func TestHandleEnterKey_HelpCommand(t *testing.T) {
+	m := newTestModel()
+	m.textarea.SetValue(replcommands.Help)
+
+	newM, _ := m.handleEnterKey()
+
+	if !strings.Contains(newM.output.Join(), "Available Commands") {
+		t.Error("expected help text in output")
+	}
+	if newM.textarea.Value() != "" {
+		t.Error("expected textarea to be reset after help command")
+	}
+}
+
+func TestHandleEnterKey_ModelCommand(t *testing.T) {
+	m := newTestModel()
+	m.ctx.registry = &providers.Registry{Providers: []providers.Provider{}}
+	m.ctx.globalCfg = &config.GlobalConfig{}
+	m.ctx.loader = config.NewLoader()
+	m.textarea.SetValue(replcommands.Model)
+
+	newM, _ := m.handleEnterKey()
+
+	if newM.modelSelection == nil {
+		t.Error("expected model selection to be started")
+	}
+	if newM.textarea.Value() != "" {
+		t.Error("expected textarea to be reset")
+	}
+}
+
+func TestHandleEnterKey_SessionsCommand_EmptyState(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	m := newTestModel()
+	m.sessions = newReplSessionState(filepath.Join(tmp, "project"))
+	m.textarea.SetValue(replcommands.Sessions)
+
+	newM, cmd := m.handleEnterKey()
+
+	if cmd != nil {
+		t.Fatal("expected nil cmd")
+	}
+	if newM.sessionPicker != nil {
+		t.Fatal("expected no session picker for empty state")
+	}
+	if !strings.Contains(newM.output.Join(), "No saved sessions for this directory.") {
+		t.Fatalf("expected empty state message, got %q", newM.output.Join())
+	}
+}
+
+func TestHandleEnterKey_CompactCommandStartsCompaction(t *testing.T) {
+	m := newTestModel()
+	m.ctx.cfg = &config.ResolvedConfig{APIKey: "key", Model: "model"}
+	m.appState = replappstate.New(&mockLLMClient{}, "")
+	m.appState.AddMessage(llm.RoleUser, "hello")
+	m.textarea.SetValue("/compact Keep business logic details")
+
+	newM, cmd := m.handleEnterKey()
+
+	if !newM.isCompacting {
+		t.Fatal("expected compaction mode to start")
+	}
+	if !newM.showSpinner {
+		t.Fatal("expected spinner to be visible during compaction")
+	}
+	if newM.loadingText != "Compacting..." {
+		t.Fatalf("expected compaction loading text, got %q", newM.loadingText)
+	}
+	if newM.textarea.Value() != "" {
+		t.Fatal("expected textarea to be reset")
+	}
+	if newM.compactionCancel == nil {
+		t.Fatal("expected compaction cancel func to be set")
+	}
+	if !newM.streamHandler.IsActive() {
+		t.Fatal("expected compaction to use the stream handler")
+	}
+	if cmd == nil {
+		t.Fatal("expected async compaction command")
+	}
+}
+
+func TestHandleEnterKey_ClientNotReady(t *testing.T) {
+	m := newTestModel()
+	m.textarea.SetValue("hello there")
+
+	newM, _ := m.handleEnterKey()
+
+	found := false
+	for _, line := range newM.output.GetLines() {
+		if strings.Contains(line, "LLM client not initialized") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected error about LLM client not initialized")
+	}
+	if newM.textarea.Value() != "" {
+		t.Error("expected textarea to be reset")
+	}
+}
+
+func TestGetHelpText(t *testing.T) {
+	text := getHelpText(80)
+
+	if !strings.Contains(text, "/compact") {
+		t.Error("expected /compact in help text")
+	}
+	if !strings.Contains(text, "/help") {
+		t.Error("expected /help in help text")
+	}
+	if !strings.Contains(text, "/model") {
+		t.Error("expected /model in help text")
+	}
+	if !strings.Contains(text, "/mode") {
+		t.Error("expected /mode in help text")
+	}
+	if !strings.Contains(text, "/exit") {
+		t.Error("expected /exit in help text")
+	}
+	if !strings.Contains(text, "/resume") {
+		t.Error("expected /resume in help text")
+	}
+	if !strings.Contains(text, "/sessions") {
+		t.Error("expected /sessions in help text")
+	}
+	if !strings.Contains(text, "/skills") {
+		t.Error("expected /skills in help text")
+	}
+}
+
+func TestGetHelpTextWrapsCommandDescriptions(t *testing.T) {
+	text := getHelpText(48)
+	stripped := ansi.Strip(text)
+
+	if !strings.Contains(stripped, "  Available Commands") {
+		t.Fatalf("expected padded title, got %q", stripped)
+	}
+	if strings.Contains(stripped, "\n/show-thinking") {
+		t.Fatalf("expected /show-thinking to stay in command column, got %q", stripped)
+	}
+
+	for _, line := range strings.Split(stripped, "\n") {
+		if lipgloss.Width(line) > 46 {
+			t.Fatalf("help line exceeds padded width (%d > %d): %q", lipgloss.Width(line), 46, line)
+		}
+	}
+}
+
+func TestDispatchCommand_UnknownCommandFallsThrough(t *testing.T) {
+	m := newTestModel()
+
+	_, _, handled := m.dispatchCommand("hello world")
+
+	if handled {
+		t.Error("expected unknown input to not be handled by dispatchCommand")
+	}
+}
+
+func TestHandleMCPCommandStatus(t *testing.T) {
+	m := newTestModel()
+	m.ctx.mcp = &fakeMCPRuntime{
+		statuses: []keenmcp.ServerStatus{
+			{Name: "deepwiki", State: keenmcp.StateConnected, AuthType: keenmcp.AuthNone, ToolCount: 3},
+			{Name: "posthog", State: keenmcp.StateAuthRequired, AuthType: keenmcp.AuthOAuth, LastError: "mcp authentication required"},
+			{Name: "context7", State: keenmcp.StateDisconnected, AuthType: keenmcp.AuthAPIKey, LastError: "connection refused"},
+		},
+	}
+
+	result, cmd := m.handleMCPCommand("/mcp status")
+
+	if cmd != nil {
+		t.Fatal("expected nil command")
+	}
+	out := ansi.Strip(result.output.Join())
+	if !strings.Contains(out, "deepwiki") || !strings.Contains(out, "posthog") {
+		t.Fatalf("output = %q, want MCP statuses", out)
+	}
+	for _, expected := range []string{"Server", "Status", "Auth", "Detail", "────", "✓ connected", "✗ auth_required"} {
+		if !strings.Contains(out, expected) {
+			t.Fatalf("expected %q in MCP status output, got %q", expected, out)
+		}
+	}
+	if !strings.Contains(result.output.Join(), "38;2;239;83;80m✗ disconnected") {
+		t.Fatalf("expected error-colored disconnected status, got %q", result.output.Join())
+	}
+}
+
+func TestHandleMCPCommandConnectUnknown(t *testing.T) {
+	m := newTestModel()
+	m.ctx.mcp = &fakeMCPRuntime{statuses: []keenmcp.ServerStatus{{Name: "deepwiki", State: keenmcp.StateConnected}}}
+
+	result, cmd := m.handleMCPCommand("/mcp connect missing")
+
+	if cmd != nil {
+		t.Fatal("expected nil command")
+	}
+	if !strings.Contains(ansi.Strip(result.output.Join()), "unknown MCP server or tool") {
+		t.Fatalf("output = %q, want unknown error", result.output.Join())
+	}
+}
+
+func TestConnectMCPCmdPassesOAuthReauthOption(t *testing.T) {
+	m := newTestModel()
+	fake := &fakeMCPRuntime{statuses: []keenmcp.ServerStatus{{Name: "posthog", State: keenmcp.StateAuthRequired}}}
+	m.ctx.mcp = fake
+
+	msg := m.connectMCPCmd("posthog")().(mcpConnectDoneMsg)
+
+	if msg.Server != "posthog" || fake.connected != "posthog" {
+		t.Fatalf("connected = %q, msg server = %q; want posthog", fake.connected, msg.Server)
+	}
+	if fake.refreshOptCount != 4 {
+		t.Fatalf("Refresh option count = %d, want 4", fake.refreshOptCount)
+	}
+}
+
+func TestHandleMCPConnectDoneGeneratesAndEnablesSkill(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	work := t.TempDir()
+	m := newTestModel()
+	m.appState = replappstate.New(nil, work)
+	if err := m.appState.SetSkillStatus("mcp:deepwiki", skills.StatusDisabled); err != nil {
+		t.Fatalf("disable deepwiki: %v", err)
+	}
+	m.ctx.mcp = &fakeMCPRuntime{
+		statuses: []keenmcp.ServerStatus{{Name: "deepwiki", Description: "Ask questions about DeepWiki."}},
+		tools: map[string][]keenmcp.Tool{
+			"deepwiki": {{Name: "ask", Description: "Ask DeepWiki", InputSchema: map[string]any{"type": "object"}}},
+		},
+	}
+	m.showSpinner = true
+
+	m.handleMCPConnectDone(mcpConnectDoneMsg{Server: "deepwiki"})
+
+	if m.showSpinner {
+		t.Fatal("expected spinner to stop")
+	}
+	if !strings.Contains(ansi.Strip(m.output.Join()), "MCP server connected: deepwiki") {
+		t.Fatalf("output = %q, want success", m.output.Join())
+	}
+	if _, ok := skills.Find(m.appState.GetSkills().Skills, "mcp:deepwiki"); !ok {
+		t.Fatalf("expected mcp:deepwiki skill to be reloaded")
+	}
+	if !m.appState.GetSkillsConfig().Enabled("mcp:deepwiki") {
+		t.Fatalf("expected mcp:deepwiki skill to be enabled")
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".keen-agent", "skills", "mcp:deepwiki", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read SKILL.md: %v", err)
+	}
+	if !strings.Contains(string(data), "description: Ask questions about DeepWiki.") {
+		t.Fatalf("SKILL.md missing MCP server description: %s", string(data))
+	}
+}
+
+func TestHandleMCPConnectDoneFailureDisablesSkill(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	work := t.TempDir()
+	m := newTestModel()
+	m.appState = replappstate.New(nil, work)
+	if err := mcpskills.Generate("deepwiki", "", []keenmcp.Tool{{Name: "ask", Description: "Ask DeepWiki"}}); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	m.appState.ReloadSkills()
+
+	m.handleMCPConnectDone(mcpConnectDoneMsg{Server: "deepwiki", Err: errors.New("connection failed")})
+
+	if m.appState.GetSkillsConfig().Enabled("mcp:deepwiki") {
+		t.Fatalf("expected mcp:deepwiki skill to be disabled")
+	}
+	if m.appState.SkillsCatalog() != "" && strings.Contains(m.appState.SkillsCatalog(), "mcp:deepwiki") {
+		t.Fatalf("expected mcp:deepwiki to be hidden from catalog")
+	}
+}
+
+func TestHandleMCPStartupStatusGeneratesConnectedSkillsWithoutChangingStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	work := t.TempDir()
+	m := newTestModel()
+	m.appState = replappstate.New(nil, work)
+	if err := m.appState.SetSkillStatus("mcp:deepwiki", skills.StatusDisabled); err != nil {
+		t.Fatalf("disable deepwiki: %v", err)
+	}
+	m.ctx.mcp = &fakeMCPRuntime{tools: map[string][]keenmcp.Tool{
+		"deepwiki": {{Name: "ask", Description: "Ask DeepWiki", InputSchema: map[string]any{"type": "object"}}},
+	}}
+
+	m.handleMCPStartupStatus([]keenmcp.ServerStatus{{Name: "deepwiki", State: keenmcp.StateConnected, Description: "Ask questions about DeepWiki."}})
+
+	if _, ok := skills.Find(m.appState.GetSkills().Skills, "mcp:deepwiki"); !ok {
+		t.Fatalf("expected mcp:deepwiki skill to be reloaded")
+	}
+	if m.appState.GetSkillsConfig().Enabled("mcp:deepwiki") {
+		t.Fatalf("expected mcp:deepwiki skill to remain disabled")
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".keen-agent", "skills", "mcp:deepwiki", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read SKILL.md: %v", err)
+	}
+	if !strings.Contains(string(data), "description: Ask questions about DeepWiki.") {
+		t.Fatalf("SKILL.md missing MCP server description: %s", string(data))
+	}
+}
+
+func TestHandleMCPStartupStatusDisablesFailedSkills(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	work := t.TempDir()
+	m := newTestModel()
+	m.appState = replappstate.New(nil, work)
+	if err := mcpskills.Generate("posthog", "", []keenmcp.Tool{{Name: "query", Description: "Query PostHog"}}); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	m.appState.ReloadSkills()
+
+	m.handleMCPStartupStatus([]keenmcp.ServerStatus{{Name: "posthog", State: keenmcp.StateAuthRequired, LastError: "auth required"}})
+
+	if m.appState.GetSkillsConfig().Enabled("mcp:posthog") {
+		t.Fatalf("expected mcp:posthog skill to be disabled")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".keen-agent", "skills", "mcp:posthog", "SKILL.md")); err != nil {
+		t.Fatalf("expected mcp:posthog files to remain: %v", err)
+	}
+	if m.appState.SkillsCatalog() != "" && strings.Contains(m.appState.SkillsCatalog(), "mcp:posthog") {
+		t.Fatalf("expected mcp:posthog to be hidden from catalog")
+	}
+}
+
+func TestHandleMCPStartupStatusRemovesUnconfiguredSkillStatuses(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	work := t.TempDir()
+	m := newTestModel()
+	m.appState = replappstate.New(nil, work)
+	m.ctx.mcp = &fakeMCPRuntime{tools: map[string][]keenmcp.Tool{
+		"context7": {{Name: "resolve", Description: "Resolve docs"}},
+	}}
+	if err := mcpskills.Generate("deepwiki", "", []keenmcp.Tool{{Name: "ask", Description: "Ask DeepWiki"}}); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if err := m.appState.SetSkillStatus("mcp:deepwiki", skills.StatusEnabled); err != nil {
+		t.Fatalf("enable deepwiki: %v", err)
+	}
+	if err := m.appState.SetSkillStatus("mcp:disabled", skills.StatusDisabled); err != nil {
+		t.Fatalf("disable stale skill: %v", err)
+	}
+	if err := m.appState.SetSkillStatus("debug", skills.StatusEnabled); err != nil {
+		t.Fatalf("enable debug: %v", err)
+	}
+	m.appState.ReloadSkills()
+
+	m.handleMCPStartupStatus([]keenmcp.ServerStatus{{Name: "context7", State: keenmcp.StateConnected}})
+
+	cfg := m.appState.GetSkillsConfig()
+	if _, ok := cfg.IsEnabled["mcp:deepwiki"]; ok {
+		t.Fatalf("expected unconfigured mcp:deepwiki status to be removed")
+	}
+	if _, ok := cfg.IsEnabled["mcp:disabled"]; ok {
+		t.Fatalf("expected unconfigured mcp:disabled status to be removed")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".keen-agent", "skills", "mcp:deepwiki")); !os.IsNotExist(err) {
+		t.Fatalf("expected unconfigured mcp:deepwiki skill files to be removed, err = %v", err)
+	}
+	if !cfg.Enabled("debug") {
+		t.Fatalf("expected non-MCP skill to remain enabled")
+	}
+	if _, ok := skills.Find(m.appState.GetSkills().Skills, "mcp:context7"); !ok {
+		t.Fatalf("expected configured mcp:context7 skill to be generated")
+	}
+}
+
+func TestHandleMCPStartupStatusShowsFailures(t *testing.T) {
+	m := newTestModel()
+	m.width = 50
+	m.viewport.SetWidth(50)
+	m.output.SetWidth(50)
+
+	m.handleMCPStartupStatus([]keenmcp.ServerStatus{
+		{Name: "deepwiki", State: keenmcp.StateConnected},
+		{Name: "posthog", State: keenmcp.StateAuthRequired, LastError: "mcp authentication required because the stored token is missing or expired"},
+	})
+
+	out := ansi.Strip(m.output.Join())
+	if strings.Contains(out, "deepwiki") {
+		t.Fatalf("output = %q, did not expect connected server notice", out)
+	}
+	compactOut := strings.Join(strings.Fields(out), " ")
+	if !strings.Contains(compactOut, "/mcp connect posthog") {
+		t.Fatalf("output = %q, want connect hint", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if lipgloss.Width(line) > 46 {
+			t.Fatalf("MCP startup notice exceeds content width (%d > 46): %q", lipgloss.Width(line), line)
+		}
+	}
+}
+
+func TestHandleModeCommand(t *testing.T) {
+	m := newTestModel()
+	m.textarea.SetValue("/mode plan")
+
+	newM, cmd := m.handleEnterKey()
+	if cmd != nil {
+		t.Fatal("expected nil cmd")
+	}
+	if newM.currentMode() != llm.ModePlan {
+		t.Fatalf("expected plan mode, got %q", newM.currentMode())
+	}
+	if newM.appState.Mode() != llm.ModePlan {
+		t.Fatalf("expected app state plan mode, got %q", newM.appState.Mode())
+	}
+
+	newM.textarea.SetValue("/mode build")
+	newM, _ = newM.handleEnterKey()
+	if newM.currentMode() != llm.ModeBuild {
+		t.Fatalf("expected build mode, got %q", newM.currentMode())
+	}
+}
+
+func TestHandleSkillsCommandList(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	skillDir := filepath.Join(work, ".agents", "skills", "demo")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: Demo skill\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+	m.textarea.SetValue("/skills list")
+	newM, _ := m.handleEnterKey()
+
+	out := newM.output.Join()
+	stripped := ansi.Strip(out)
+	if !strings.Contains(out, "\x1b[1;38;2;189;189;189m  Available Skills") || strings.Contains(stripped, "Available Skills:") {
+		t.Fatalf("expected header-colored skills title without colon, got %q", out)
+	}
+	if !strings.Contains(out, "38;2;92;107;192mdemo") {
+		t.Fatalf("expected primary-colored skill name, got %q", out)
+	}
+	for _, expected := range []string{"Skill", "Status", "Description", "────", "demo", "✓ enabled", "Demo skill"} {
+		if !strings.Contains(stripped, expected) {
+			t.Fatalf("expected %q in skills list output, got %q", expected, stripped)
+		}
+	}
+}
+
+func TestHandleSkillsCommandListStylesDisabledStatus(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	skillDir := filepath.Join(work, ".agents", "skills", "demo")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: Demo skill\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	cfg := skills.Config{IsEnabled: map[string]bool{"demo": false}}
+	if err := skills.SaveConfig(cfg); err != nil {
+		t.Fatalf("save skills config: %v", err)
+	}
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+	m.textarea.SetValue("/skills list")
+	newM, _ := m.handleEnterKey()
+
+	out := newM.output.Join()
+	if !strings.Contains(out, "38;2;255;179;0m✗ disabled") {
+		t.Fatalf("expected accent-colored disabled status, got %q", out)
+	}
+	if !strings.Contains(ansi.Strip(out), "✗ disabled") {
+		t.Fatalf("expected disabled status in skills list, got %q", out)
+	}
+}
+
+func TestHandleSkillsCommandListWrapsLongDescriptions(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	skillDir := filepath.Join(work, ".agents", "skills", "demo")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	description := "This skill has a very long description that should wrap within the viewport boundary instead of overflowing horizontally."
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: "+description+"\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+	m.width = 50
+	m.viewport.SetWidth(50)
+	m.output.SetWidth(50)
+	m.textarea.SetValue("/skills list")
+	newM, _ := m.handleEnterKey()
+
+	for _, line := range strings.Split(ansi.Strip(newM.output.Join()), "\n") {
+		if !strings.Contains(line, "demo") && !strings.Contains(line, description[:10]) {
+			continue
+		}
+		if lipgloss.Width(line) > 48 {
+			t.Fatalf("skill line exceeds padded width (%d > %d): %q", lipgloss.Width(line), 48, line)
+		}
+	}
+}
+
+func TestHandleSkillsCommandListTruncatesLongDescriptions(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	skillDir := filepath.Join(work, ".agents", "skills", "demo")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	words := make([]string, 0, 55)
+	for i := range 55 {
+		words = append(words, fmt.Sprintf("word%d", i+1))
+	}
+	description := strings.Join(words, " ")
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: "+description+"\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+	m.textarea.SetValue("/skills list")
+	newM, _ := m.handleEnterKey()
+
+	stripped := ansi.Strip(newM.output.Join())
+	if !strings.Contains(stripped, "word50...") {
+		t.Fatalf("expected truncated description with ellipsis, got %q", stripped)
+	}
+	if strings.Contains(stripped, "word51") {
+		t.Fatalf("expected description to be truncated before word51, got %q", stripped)
+	}
+}
+
+func TestHandleSkillsCommandDisable(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	skillDir := filepath.Join(work, ".agents", "skills", "demo")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: Demo skill\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+	m.textarea.SetValue("/skills disable demo")
+	newM, _ := m.handleEnterKey()
+
+	if !strings.Contains(newM.output.Join(), "Skill \"demo\" disabled") {
+		t.Fatalf("expected disable confirmation, got %q", newM.output.Join())
+	}
+	if newM.appState.GetSkillsConfig().Enabled("demo") {
+		t.Fatal("expected appstate config to disable skill")
+	}
+}
+
+func TestHandleSubagentsCommandList(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	agentsDir := filepath.Join(work, ".agents", "agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		t.Fatalf("mkdir agents: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentsDir, "reviewer.md"), []byte("---\nname: reviewer\ndescription: Review scoped inputs\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write reviewer: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentsDir, "hidden.md"), []byte("---\nname: hidden\ndescription: Hidden agent\nhidden: true\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write hidden: %v", err)
+	}
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+	m.textarea.SetValue("/subagents list")
+	newM, _ := m.handleEnterKey()
+
+	out := ansi.Strip(newM.output.Join())
+	for _, expected := range []string{"Available Subagents", "Subagent", "Description", "reviewer", "Review scoped inputs"} {
+		if !strings.Contains(out, expected) {
+			t.Fatalf("expected %q in subagents list output, got %q", expected, out)
+		}
+	}
+	if strings.Contains(out, "hidden") {
+		t.Fatalf("expected hidden subagent to be omitted, got %q", out)
+	}
+}
+
+func TestHandleSubagentsCommandRootLists(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	agentsDir := filepath.Join(work, ".agents", "agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		t.Fatalf("mkdir agents: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentsDir, "reviewer.md"), []byte("---\nname: reviewer\ndescription: Review scoped inputs\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write reviewer: %v", err)
+	}
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+	m.textarea.SetValue("/subagents")
+	newM, _ := m.handleEnterKey()
+
+	out := ansi.Strip(newM.output.Join())
+	for _, expected := range []string{"Available Subagents", "reviewer", "Review scoped inputs"} {
+		if !strings.Contains(out, expected) {
+			t.Fatalf("expected %q in subagents output, got %q", expected, out)
+		}
+	}
+}
+
+func TestHandleSubagentsCommandInvalidArgs(t *testing.T) {
+	m := newTestModel()
+	m.textarea.SetValue("/subagents foo")
+	newM, _ := m.handleEnterKey()
+
+	out := ansi.Strip(newM.output.Join())
+	if !strings.Contains(out, "Usage: /subagents [list]") {
+		t.Fatalf("expected usage output, got %q", out)
+	}
+}
+
+func TestParseSubagentArgs(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{name: "root", input: "/subagents", want: nil},
+		{name: "list", input: "/subagents list", want: []string{"list"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseSubagentArgs(tt.input)
+			if strings.Join(got, " ") != strings.Join(tt.want, " ") {
+				t.Fatalf("parseSubagentArgs(%q) = %#v, want %#v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseSkillArgs(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{name: "root", input: "/skills", want: nil},
+		{name: "list", input: "/skills list", want: []string{"list"}},
+		{name: "status", input: "/skills status", want: []string{"status"}},
+		{name: "reload", input: "/skills reload", want: []string{"reload"}},
+		{name: "enable", input: "/skills enable demo", want: []string{"enable", "demo"}},
+		{name: "disable", input: "/skills disable demo", want: []string{"disable", "demo"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseSkillArgs(tt.input)
+			if strings.Join(got, " ") != strings.Join(tt.want, " ") {
+				t.Fatalf("parseSkillArgs(%q) = %#v, want %#v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandleSkillsCommandStatus(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	skillDir := filepath.Join(work, ".agents", "skills", "demo")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: Demo skill\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+	m.textarea.SetValue("/skills status")
+	newM, _ := m.handleEnterKey()
+
+	output := ansi.Strip(newM.output.Join())
+	for _, expected := range []string{"Available Skills", "Skill", "Status", "Description", "demo", "✓ enabled", "Demo skill"} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in skills status output, got %q", expected, output)
+		}
+	}
+}
+
+func TestHandleSkillsCommandRejectsNameFirstStatus(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	skillDir := filepath.Join(work, ".agents", "skills", "demo")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: Demo skill\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+	m.textarea.SetValue("/skills demo enable")
+	newM, _ := m.handleEnterKey()
+
+	output := ansi.Strip(newM.output.Join())
+	for _, expected := range []string{"Usage:", "/skills list|status", "/skills reload", "enable|disable", "<name>"} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected usage error containing %q, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, "Skill \"demo\" enabled") {
+		t.Fatalf("expected name-first status command to be rejected, got %q", output)
+	}
+}
+
+func TestHandleSkillsCommandReload(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+
+	m := newTestModel()
+	m.ctx.workingDir = work
+	m.appState = replappstate.New(nil, work)
+
+	writeSkillDir := filepath.Join(work, ".agents", "skills", "demo")
+	if err := os.MkdirAll(writeSkillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(writeSkillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: Demo skill\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	m.textarea.SetValue("/skills reload")
+	newM, _ := m.handleEnterKey()
+
+	if !strings.Contains(newM.output.Join(), "Skills reloaded") {
+		t.Fatalf("expected reload confirmation, got %q", newM.output.Join())
+	}
+	if _, ok := skills.Find(newM.appState.GetSkills().Skills, "demo"); !ok {
+		t.Fatal("expected reloaded appstate to include new skill")
+	}
+}
+
+func TestDispatchCommand_SlashPrefixedNonCommandFallsThrough(t *testing.T) {
+	m := newTestModel()
+
+	_, _, handled := m.dispatchCommand("/unknown")
+
+	if handled {
+		t.Error("expected unknown slash command to not be handled by dispatchCommand")
+	}
+}
+
+func TestHandleEnterKey_ClearCommand(t *testing.T) {
+	m := newTestModel()
+	client := &mockLLMClient{}
+	m.appState = replappstate.New(client, "")
+	m.appState.AddMessage(llm.RoleUser, "previous")
+	m.textarea.SetValue(replcommands.Clear)
+
+	newM, cmd := m.handleEnterKey()
+
+	if cmd != nil {
+		t.Fatal("expected nil cmd")
+	}
+	if !strings.Contains(newM.output.Join(), "New session started") {
+		t.Fatalf("expected new session message, got %q", newM.output.Join())
+	}
+	if newM.textarea.Value() != "" {
+		t.Error("expected textarea to be reset")
+	}
+	if len(newM.appState.GetMessages()) != 0 {
+		t.Fatal("expected messages to be cleared")
+	}
+	if client.resetCount != 1 {
+		t.Fatalf("expected LLM client reset once, got %d", client.resetCount)
+	}
+}
+
+func TestHandleEnterKey_LogoutCommand_NoProvider(t *testing.T) {
+	m := newTestModel()
+	m.ctx.cfg = &config.ResolvedConfig{Provider: ""}
+	m.textarea.SetValue(replcommands.Logout)
+
+	newM, _ := m.handleEnterKey()
+
+	found := false
+	for _, line := range newM.output.GetLines() {
+		if strings.Contains(line, "No provider is configured") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected error about no provider configured")
+	}
+}
+
+func TestHandleEnterKey_NewCommand(t *testing.T) {
+	m := newTestModel()
+	client := &mockLLMClient{}
+	m.appState = replappstate.New(client, "")
+	m.textarea.SetValue(replcommands.New)
+
+	newM, cmd := m.handleEnterKey()
+
+	if cmd != nil {
+		t.Fatal("expected nil cmd")
+	}
+	if !strings.Contains(newM.output.Join(), "New session started") {
+		t.Fatalf("expected new session message, got %q", newM.output.Join())
+	}
+	if client.resetCount != 1 {
+		t.Fatalf("expected LLM client reset once, got %d", client.resetCount)
+	}
+}
+
+func TestHandleEnterKey_CompactCommandClientNotReady(t *testing.T) {
+	m := newTestModel()
+	m.ctx.cfg = &config.ResolvedConfig{}
+	m.textarea.SetValue(replcommands.Compact)
+
+	newM, cmd := m.handleEnterKey()
+
+	if cmd != nil {
+		t.Fatal("expected nil cmd")
+	}
+	found := false
+	for _, line := range newM.output.GetLines() {
+		if strings.Contains(line, "LLM client not initialized") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected error about LLM client not initialized for /compact")
+	}
+}
+
+func TestHandleEnterKey_ThinkingCommandNoSupport(t *testing.T) {
+	m := newTestModel()
+	m.ctx.registry = &providers.Registry{
+		Providers: []providers.Provider{
+			{
+				ID: "openai",
+				Models: []providers.Model{
+					{ID: "gpt-4", ContextWindow: 2000},
+				},
+			},
+		},
+	}
+	m.ctx.cfg = &config.ResolvedConfig{Provider: "openai", Model: "gpt-4"}
+	m.textarea.SetValue("/thinking high")
+
+	newM, _ := m.handleEnterKey()
+
+	found := false
+	for _, line := range newM.output.GetLines() {
+		if strings.Contains(line, "does not support configurable thinking") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected error about model not supporting thinking")
+	}
+}
+
+func TestHandleEnterKey_SessionsCommandWithSessions(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	workingDir := filepath.Join(tmp, "project")
+
+	m := newTestModel()
+	m.ctx.registry = &providers.Registry{Providers: []providers.Provider{}}
+	m.ctx.globalCfg = &config.GlobalConfig{}
+	m.ctx.loader = config.NewLoader()
+	m.sessions = newReplSessionState(workingDir)
+	if err := m.sessions.appendUserMessage("saved prompt"); err != nil {
+		t.Fatalf("append user message: %v", err)
+	}
+	m.sessions.resetSession()
+	m.textarea.SetValue(replcommands.Sessions)
+
+	newM, cmd := m.handleEnterKey()
+
+	if cmd != nil {
+		t.Fatal("expected nil cmd")
+	}
+	if newM.sessionPicker == nil {
+		t.Fatal("expected session picker for saved sessions")
+	}
+	if newM.textarea.Value() != "" {
+		t.Fatal("expected textarea to be reset")
+	}
+}
+
+func TestHandleEnterKey_ResumeCommand(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	m := newTestModel()
+	m.sessions = newReplSessionState(filepath.Join(tmp, "project"))
+	m.textarea.SetValue(replcommands.Resume)
+
+	newM, _ := m.handleEnterKey()
+
+	if !strings.Contains(newM.output.Join(), "No saved sessions for this directory.") {
+		t.Fatalf("expected empty state message for /resume, got %q", newM.output.Join())
+	}
+}
+
+func TestStartModelSelection_CallsOnComplete(t *testing.T) {
+	m := newTestModel()
+	m.ctx.registry = &providers.Registry{Providers: []providers.Provider{}}
+	m.ctx.globalCfg = &config.GlobalConfig{}
+	m.ctx.loader = config.NewLoader()
+
+	result := m.startModelSelection()
+	if result.modelSelection == nil {
+		t.Fatal("expected model selection to be set")
+	}
+
+	// Verify the model selection widget was initialized
+	ms := result.modelSelection
+	if ms.Step != replwidgets.StepProvider {
+		t.Fatalf("expected model selection to start at provider step, got %d", ms.Step)
+	}
+}
+
+func TestHandleShowThinkingCommand_On(t *testing.T) {
+	m := newTestModel()
+	m.showThinking = false
+	m.streamHandler.showThinking = false
+
+	result := m.handleShowThinkingCommand("/show-thinking on")
+
+	if !result.showThinking {
+		t.Error("expected showThinking to be true after /show-thinking on")
+	}
+	if !result.streamHandler.showThinking {
+		t.Error("expected streamHandler.showThinking to be true after /show-thinking on")
+	}
+	if !strings.Contains(result.output.Join(), "Thinking tokens shown") {
+		t.Fatalf("expected confirmation message, got %q", result.output.Join())
+	}
+}
+
+func TestHandleShowThinkingCommand_Off(t *testing.T) {
+	m := newTestModel()
+
+	result := m.handleShowThinkingCommand("/show-thinking off")
+
+	if result.showThinking {
+		t.Error("expected showThinking to be false after /show-thinking off")
+	}
+	if result.streamHandler.showThinking {
+		t.Error("expected streamHandler.showThinking to be false after /show-thinking off")
+	}
+	if !strings.Contains(result.output.Join(), "Thinking tokens hidden") {
+		t.Fatalf("expected confirmation message, got %q", result.output.Join())
+	}
+}
+
+func TestHandleShowThinkingCommand_NoArgShowsStatus(t *testing.T) {
+	m := newTestModel()
+
+	result := m.handleShowThinkingCommand("/show-thinking")
+	if !strings.Contains(result.output.Join(), "shown") {
+		t.Fatalf("expected status message for shown state, got %q", result.output.Join())
+	}
+
+	m2 := newTestModel()
+	m2.showThinking = false
+	m2.streamHandler.showThinking = false
+
+	result2 := m2.handleShowThinkingCommand("/show-thinking")
+	if !strings.Contains(result2.output.Join(), "hidden") {
+		t.Fatalf("expected status message for hidden state, got %q", result2.output.Join())
+	}
+}
+
+func TestHandleShowThinkingCommand_PersistsToGlobalConfig(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	m := newTestModel()
+	m.ctx.globalCfg = &config.GlobalConfig{}
+	m.ctx.loader = config.NewLoader()
+
+	_ = m.handleShowThinkingCommand("/show-thinking off")
+
+	if m.ctx.globalCfg.ShowThinking == nil || *m.ctx.globalCfg.ShowThinking {
+		t.Error("expected globalCfg.ShowThinking to be false after /show-thinking off")
+	}
+
+	_ = m.handleShowThinkingCommand("/show-thinking on")
+
+	if m.ctx.globalCfg.ShowThinking == nil || !*m.ctx.globalCfg.ShowThinking {
+		t.Error("expected globalCfg.ShowThinking to be true after /show-thinking on")
+	}
+}
+
+func TestHandleEnterKey_BtwCommandStartsStream(t *testing.T) {
+	m := newTestModel()
+	m.ctx.cfg = &config.ResolvedConfig{APIKey: "key", Model: "model"}
+	m.appState = replappstate.New(&mockLLMClient{}, "")
+	m.appState.AddMessage(llm.RoleUser, "context message")
+	m.btwStreamHandler = NewStreamHandler(nil)
+	m.textarea.SetValue("/btw what is this?")
+
+	newM, cmd := m.handleEnterKey()
+
+	if !newM.btwShowSpinner {
+		t.Fatal("expected btw spinner to be visible")
+	}
+	if newM.btwQuestion != "what is this?" {
+		t.Fatalf("expected btw question %q, got %q", "what is this?", newM.btwQuestion)
+	}
+	if newM.textarea.Value() != "" {
+		t.Fatal("expected textarea to be reset")
+	}
+	if cmd == nil {
+		t.Fatal("expected async btw command")
+	}
+}
+
+func TestHandleEnterKey_BtwCommandDuringActiveStream(t *testing.T) {
+	m := newTestModel()
+	m.ctx.cfg = &config.ResolvedConfig{APIKey: "key", Model: "model"}
+	m.appState = replappstate.New(&mockLLMClient{}, "")
+	m.btwStreamHandler = NewStreamHandler(nil)
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+	m.textarea.SetValue("/btw quick question")
+
+	newM, cmd := m.handleEnterKey()
+
+	if !newM.btwShowSpinner {
+		t.Fatal("expected btw to work even during active main stream")
+	}
+	if cmd == nil {
+		t.Fatal("expected async btw command")
+	}
+}
+
+func TestHandleEnterKey_BtwCommandNoQuestion(t *testing.T) {
+	m := newTestModel()
+	m.btwStreamHandler = NewStreamHandler(nil)
+	m.textarea.SetValue("/btw")
+
+	newM, cmd := m.handleEnterKey()
+
+	if newM.btwShowSpinner {
+		t.Fatal("expected btw spinner not to show without question")
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd for /btw without question")
+	}
+	found := false
+	for _, line := range newM.output.GetLines() {
+		if strings.Contains(line, "Usage:") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected usage hint for /btw without question")
+	}
+}
+
+func TestHandleEnterKey_BtwCommandNoQuestionShowsUsage(t *testing.T) {
+	m := newTestModel()
+	m.btwStreamHandler = NewStreamHandler(nil)
+	m.textarea.SetValue("/btw")
+
+	newM, cmd := m.handleEnterKey()
+
+	if newM.btwShowSpinner {
+		t.Fatal("expected btw spinner not to show without question")
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd for /btw without question")
+	}
+	found := false
+	for _, line := range newM.output.GetLines() {
+		if strings.Contains(line, "Usage:") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected usage hint for /btw without question")
+	}
+}
+
+type fakeMCPRuntime struct {
+	statuses        []keenmcp.ServerStatus
+	tools           map[string][]keenmcp.Tool
+	connectErr      error
+	connected       string
+	refreshOptCount int
+}
+
+func (f *fakeMCPRuntime) Start(context.Context) error {
+	return nil
+}
+
+func (f *fakeMCPRuntime) Close() error {
+	return nil
+}
+
+func (f *fakeMCPRuntime) Servers() []keenmcp.ServerStatus {
+	return f.statuses
+}
+
+func (f *fakeMCPRuntime) Status(server string) keenmcp.ServerStatus {
+	for _, status := range f.statuses {
+		if status.Name == server {
+			return status
+		}
+	}
+	return keenmcp.ServerStatus{Name: server}
+}
+
+func (f *fakeMCPRuntime) WaitInitialScan(context.Context) error {
+	return nil
+}
+
+func (f *fakeMCPRuntime) ListTools(_ context.Context, server string) ([]keenmcp.Tool, error) {
+	if f.tools == nil {
+		return nil, errors.New("no tools")
+	}
+	return f.tools[server], nil
+}
+
+func (f *fakeMCPRuntime) Refresh(_ context.Context, server string, opts ...keenmcp.RefreshOption) error {
+	f.connected = server
+	f.refreshOptCount = len(opts)
+	return f.connectErr
+}
+
+func (f *fakeMCPRuntime) CallTool(_ context.Context, _, _ string, _ map[string]any) (*keenmcp.ToolResult, error) {
+	return &keenmcp.ToolResult{}, nil
+}
+
+func TestHandleEnterKey_BtwCommandClientNotReady(t *testing.T) {
+	m := newTestModel()
+	m.ctx.cfg = &config.ResolvedConfig{}
+	m.btwStreamHandler = NewStreamHandler(nil)
+	m.textarea.SetValue("/btw question")
+
+	newM, cmd := m.handleEnterKey()
+
+	if newM.btwShowSpinner {
+		t.Fatal("expected btw not to activate when client is not ready")
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd")
+	}
+	found := false
+	for _, line := range newM.output.GetLines() {
+		if strings.Contains(line, "LLM client not initialized") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected error about LLM client not initialized for /btw")
+	}
+}
+
+func TestCancelBtwStream_ClearsState(t *testing.T) {
+	m := newTestModel()
+	m.btwShowSpinner = true
+	m.btwStreamHandler = NewStreamHandler(nil)
+	eventCh := make(chan llm.StreamEvent)
+	m.btwStreamHandler.Start(eventCh, "Loading...")
+	m.btwLines = []string{"some lines"}
+
+	m.cancelBtwStream()
+
+	if m.btwShowSpinner {
+		t.Fatal("expected btw spinner to be cleared")
+	}
+	if m.btwLines != nil {
+		t.Fatal("expected btwLines to be nil")
+	}
+}
+
+func TestCancelBtwStream_CancelsContext(t *testing.T) {
+	m := newTestModel()
+	m.btwStreamHandler = NewStreamHandler(nil)
+	cancelled := false
+	m.btwStreamCancel = func() {
+		cancelled = true
+	}
+
+	m.cancelBtwStream()
+
+	if !cancelled {
+		t.Fatal("expected btw cancel function to be called")
+	}
+	if m.btwStreamCancel != nil {
+		t.Fatal("expected btwStreamCancel to be nil after cancel")
+	}
+}
