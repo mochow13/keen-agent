@@ -397,8 +397,24 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 	case keyEnter:
 		return m.handleEnterKey()
 	case keyCtrlC, keyCtrlD:
+		if m.adversary.streamHandler != nil && m.adversary.streamHandler.IsActive() {
+			m.cancelAdversaryStream()
+			m.updateViewportContent()
+			m.scrollToBottomIfFollowing()
+			return *m, nil
+		}
+		if m.btwStreamHandler != nil && m.btwStreamHandler.IsActive() {
+			m.cancelBtwStream()
+			m.updateViewportContent()
+			m.scrollToBottomIfFollowing()
+			return *m, nil
+		}
 		if m.bang.active {
 			m.cancelBangCommand()
+			return *m, nil
+		}
+		if m.streamHandler != nil && m.streamHandler.IsActive() {
+			m.interruptStream(interruptedPromptText)
 			return *m, nil
 		}
 		if m.textarea.Value() != "" {

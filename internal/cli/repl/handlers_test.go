@@ -218,6 +218,67 @@ func TestHandleKeyMsg_CtrlC_WithInputClearsAndDoesNotQuit(t *testing.T) {
 	}
 }
 
+func TestHandleKeyMsg_CtrlC_WithActiveStreamInterrupts(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+	m.streamHandler.HandleChunk("partial response")
+	m.showSpinner = true
+
+	canceled := false
+	m.streamCancel = func() {
+		canceled = true
+	}
+
+	newM, cmd := m.handleKeyMsg(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+
+	if !canceled {
+		t.Error("expected stream cancel function to be called on ctrl+c")
+	}
+	if newM.streamCancel != nil {
+		t.Error("expected stream cancel function to be cleared after ctrl+c")
+	}
+	if newM.streamHandler.IsActive() {
+		t.Error("expected stream handler to be inactive after ctrl+c interruption")
+	}
+	if newM.showSpinner {
+		t.Error("expected spinner to be hidden after ctrl+c interruption")
+	}
+	if !strings.Contains(newM.output.Join(), "partial response") {
+		t.Error("expected streamed partial content to be preserved on ctrl+c interruption")
+	}
+	if !strings.Contains(newM.output.Join(), "Interrupted") {
+		t.Error("expected interrupted message in output")
+	}
+	if cmd != nil {
+		t.Error("expected nil cmd for ctrl+c interruption")
+	}
+}
+
+func TestHandleKeyMsg_CtrlC_SecondCtrlCQuitsAfterInterrupt(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+	m.showSpinner = true
+	m.streamCancel = func() {}
+
+	interrupted, _ := m.handleKeyMsg(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if interrupted.streamHandler.IsActive() {
+		t.Fatal("expected stream to be interrupted before second ctrl+c")
+	}
+
+	second, cmd := interrupted.handleKeyMsg(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !second.quitting {
+		t.Error("expected second ctrl+c to quit after interruption")
+	}
+	if cmd == nil {
+		t.Fatal("expected tea.Quit cmd on second ctrl+c after interruption")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("expected tea.QuitMsg, got %T", cmd())
+	}
+}
+
 func TestHandleKeyMsg_Esc_WithActiveStreamInterrupts(t *testing.T) {
 	m := newTestModel()
 	eventCh := make(chan llm.StreamEvent)
