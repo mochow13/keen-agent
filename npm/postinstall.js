@@ -34,7 +34,7 @@ const arch = ARCH_MAP[process.arch];
 if (!arch) fail(`Unsupported architecture: ${process.arch}`);
 
 const ext = platform === "windows" ? "zip" : "tar.gz";
-const archiveName = `keen-agent_${VERSION}_${platform}_${arch}.${ext}`;
+const archiveName = `keen-agent_v${VERSION}_${platform}_${arch}.${ext}`;
 const baseURL = `https://github.com/${REPO}/releases/download/v${VERSION}`;
 const archiveURL = `${baseURL}/${archiveName}`;
 const checksumsURL = `${baseURL}/checksums.txt`;
