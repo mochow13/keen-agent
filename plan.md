@@ -125,6 +125,39 @@ project_instructions: AGENT_RULES.md  # file in cwd auto-appended to system prom
 # Modes: plan (read-only tools only) | build (all tools)
 default_mode: build
 
+# Mode-specific system prompt tuning. These prompts are appended after the
+# agent persona/project instructions/tool docs and after the active mode is known.
+modes:
+  build:
+    system_prompt: |
+      You are in build mode. Lean toward taking concrete action when the user asks.
+  plan:
+    system_prompt: |
+      You are in plan mode. Do not modify files or system state.
+      Use read-only tools to investigate and return concise plans, risks, and verification steps.
+
+# Optional one-shot helper for quick side questions separate from the main task.
+btw:
+  enabled: true
+  context_messages: 10
+  system_prompt: |
+    Answer quick side questions using recent conversation context.
+    Be concise and do not use tools.
+
+# Optional adversarial critic for reviewing the main agent's work/conversation.
+adversary:
+  enabled: true
+  model:                              # optional; omitted means inherit main model
+    provider: anthropic
+    model_id: claude-sonnet-4-20250514
+  tools:
+    - read_file
+    - glob
+    - grep
+  system_prompt: |
+    You are an adversarial critic. Find bugs, risks, security issues,
+    faulty assumptions, and missing edge cases. Cite file:line when possible.
+
 # Built-in tools (read_file, write_file, edit_file, web_fetch, glob, grep, bash)
 # All enabled by default. Opt out here.
 # call_mcp_tool is auto-included only when mcp_config_dir is set.
@@ -227,8 +260,9 @@ Format:
 | Config parser | Load + validate `agent.yaml` |
 | Config validator | `keen-agent validate --agent ./agent.yaml` |
 | Native function executor | Run user-defined function commands with schema-validated JSON input over stdin |
-| System prompt composer | Assemble prompt from config + tools + project instructions + skills |
-| Mode manager | plan/build mode with read_only filtering |
+| System prompt composer | Assemble prompt from config + tools + project instructions + skills + mode/helper prompt overlays |
+| Mode manager | plan/build mode with read_only filtering and config-driven prompt tuning |
+| Helper agents | Optional `btw` side-question helper and `adversary` critic with dedicated prompts/models/tool allowlists |
 | Appearance engine | Apply custom name, ASCII art, color palette to TUI |
 | Subagent loader | Discover and parse subagent profiles from `subagents_dir` |
 | Subagent runner | Execute delegated tasks with a restricted tool registry (read_file, glob, grep only) |
@@ -237,14 +271,30 @@ Format:
 
 ## System Prompt Composition
 
-Assembled in order:
+The main-agent system prompt is assembled in order:
 
 1. **Agent persona** — `system_prompt` field + `system_prompt_file` contents
 2. **Tool documentation** — auto-generated from callable definitions (built-in tools + user functions + MCP tools)
 3. **Subagent catalog** — list of available subagents with names and descriptions when `subagents_dir` is set
 4. **Project instructions** — contents of `project_instructions` file from cwd (if exists)
 5. **Active skill** — skill body when activated via `/skill` or `[Activate skill: ...]`
-6. **Mode instructions** — plan/build behavioral constraints
+6. **Mode instructions** — active mode marker plus built-in behavioral constraints
+7. **Mode prompt overlay** — optional `modes.<active-mode>.system_prompt` or `system_prompt_file`
+
+Mode-specific prompt overlays are first-class config because `plan` and `build`
+are behavioral modes, not just tool filters. This matches the current keen-agent
+implementation where `internal/llm/systemprompt.go` appends different prompt
+sections for `ModePlan` and `ModeBuild`, and `internal/cli/repl/appstate/state.go`
+filters tools in plan mode.
+
+Prompt overlay rules:
+- `modes.plan` and `modes.build` may each define `system_prompt` and/or
+  `system_prompt_file`; file contents are appended after inline text.
+- Overlays are appended after the built-in mode constraints, so harness authors can
+  tune tone and workflow without weakening hard safety/tool constraints.
+- The effective active mode is `--mode` if provided, otherwise `default_mode`.
+- Plan mode still removes non-read-only tools before the LLM sees the registry;
+  prompt text is guidance, not the enforcement boundary.
 
 ---
 
@@ -603,12 +653,122 @@ command is refused without prompting. The stricter gate always wins.
 
 ## Modes
 
-| Mode | Behavior |
-|------|----------|
-| plan | Only read_only tools enabled. LLM asked to analyze/plan, not execute. |
-| build | All tools enabled. LLM can take actions. |
+| Mode | Behavior | Default prompt stance |
+|------|----------|-----------------------|
+| plan | Only read_only tools enabled. LLM asked to analyze/plan, not execute. | Do not modify files/system state; inspect with read-only tools; return plans, risks, and verification steps. |
+| build | All tools enabled. LLM can take actions. | Lean toward concrete action when the user asks; verify changes. |
 
-Default mode set in config (`default_mode`). User can switch via TUI command.
+Default mode is set in config (`default_mode`). User can switch via TUI command
+or CLI `--mode` override.
+
+### Mode config
+
+```yaml
+default_mode: build
+
+modes:
+  plan:
+    system_prompt: |
+      In plan mode, be skeptical about hidden implementation risk.
+      Prefer numbered plans with assumptions and verification steps.
+    system_prompt_file: ./prompts/plan-mode.md
+  build:
+    system_prompt: |
+      In build mode, make the smallest safe change and verify it.
+    system_prompt_file: ./prompts/build-mode.md
+```
+
+Rules:
+- Valid modes are `plan` and `build`.
+- `default_mode` defaults to `build` when omitted.
+- `--mode plan|build` overrides `default_mode` for that process/session.
+- TUI mode switches change the active prompt overlay on the next LLM turn.
+- `modes.<mode>.system_prompt_file` is resolved relative to `agent.yaml`.
+- Unknown mode config keys are validation errors.
+
+### Implementation reference from current keen-agent
+
+Current keen-agent already has the shape to generalize:
+
+| Existing implementation | Generic keen-agent config equivalent |
+|-------------------------|--------------------------------------|
+| `llm.ModeBuild` / `llm.ModePlan` in `internal/llm/systemprompt.go` | `default_mode` + CLI/TUI active mode |
+| `buildModePrompt` / `planModePrompt` constants in `internal/llm/systemprompt.go` | Built-in constraints plus `modes.<mode>.system_prompt` overlays |
+| `AppState.StreamChat` removing `write_file` and `edit_file` in plan mode | Runtime read_only filtering for built-ins, functions, MCP tools where applicable |
+| `/mode plan|build` and Shift+Tab in the TUI | Generic mode switch UI backed by config-defined prompt overlays |
+
+---
+
+## Helper Agents: btw and adversary
+
+Current keen-agent includes two special LLM flows that should become configurable
+instead of remaining coding-agent assumptions:
+
+| Helper | Current behavior | Generic config need |
+|--------|------------------|---------------------|
+| `btw` | One-shot side question using recent conversation context and no tools. Prompt comes from `BuildBtwPrompt`. | Optional helper with configurable prompt, context window, and model inheritance/override. |
+| `adversary` | Separate critic model reviews the conversation, uses read-only tools, and has its own prompt from `BuildAdversaryPrompt`. | Optional critic with configurable prompt, model, tool allowlist, and output stance. |
+
+### `btw` config
+
+```yaml
+btw:
+  enabled: true
+  context_messages: 10
+  model:                              # optional; omitted means inherit main model
+    provider: openai
+    model_id: gpt-5.4-mini
+  system_prompt: |
+    You answer quick side questions separate from the main task.
+    Be concise and do not use tools.
+  system_prompt_file: ./prompts/btw.md
+```
+
+Rules:
+- If omitted, `btw.enabled` defaults to `false` for generic agents.
+- If enabled and `model` is omitted, it inherits the main resolved model/provider.
+- `context_messages` bounds recent conversation context included in the one-shot
+  helper request.
+- `btw` has no tool access by default; future tool access should be explicit.
+
+### `adversary` config
+
+```yaml
+adversary:
+  enabled: true
+  model:                              # optional; omitted means inherit main model
+    provider: anthropic
+    model_id: claude-sonnet-4-20250514
+  tools:
+    - read_file
+    - glob
+    - grep
+  system_prompt: |
+    You are an adversarial critic. Find problems in the main agent's output,
+    code changes, assumptions, plans, and suggested verification. Lead with the
+    most important issue. Cite file:line when possible.
+  system_prompt_file: ./prompts/adversary.md
+```
+
+Rules:
+- If omitted, `adversary.enabled` defaults to `false` for generic agents.
+- If enabled and `model` is omitted, it inherits the main resolved model/provider.
+- Tool access is allowlisted and must be read-only unless a future config explicitly
+  permits otherwise; the default allowlist is `read_file`, `glob`, and `grep`.
+- The adversary gets conversation history transformed so main-agent assistant
+  messages are clearly attributed as main-agent output.
+- The adversary runs one-shot and does not modify the main conversation unless the
+  user accepts/copies its output.
+
+### Validation
+
+- `btw.context_messages` must be positive when set.
+- Helper `model` blocks use the same provider/model validation and resolution rules
+  as the main `model` block.
+- Helper `system_prompt_file` paths must exist and are resolved relative to
+  `agent.yaml`.
+- `adversary.tools` entries must exist in the registered tool catalog and satisfy
+  read-only constraints.
 
 ---
 
@@ -859,6 +1019,9 @@ Checks:
 - project_instructions file exists (if specified)
 - skills_dir exists (if specified)
 - subagents_dir exists (if specified); each `.md` file has valid YAML frontmatter with required `name` and `description` fields
+- `default_mode` is `plan` or `build`; `modes` only contains `plan`/`build`, and each `system_prompt_file` exists if specified
+- `btw` config is valid when enabled (`context_messages` positive if set, prompt file exists if specified, model resolves if specified)
+- `adversary` config is valid when enabled (prompt file exists if specified, model resolves if specified, tools exist and are read-only)
 - No duplicate callable names across built-in tools, functions, and MCP tools
 - No duplicate subagent names across discovered subagent profiles
 - `builtin_tools.exclude` does not include non-excludable core tools such as `call_mcp_tool` or `delegate_task`
@@ -874,7 +1037,7 @@ Checks:
 ### Phase 1 — Skeleton + Config
 
 1. Initialize Go module (`github.com/<org>/keen-agent`)
-2. Define config structs + YAML parsing
+2. Define config structs + YAML parsing, including mode prompt overlays plus `btw` and `adversary` helper config
 3. Implement config validation
 4. Implement `keen-agent validate --agent ./agent.yaml` command
 
@@ -882,8 +1045,8 @@ Checks:
 
 5. Extract/copy LLM client from keen-code
 6. Extract/copy permission system from keen-code
-7. Implement system prompt composer
-8. Implement mode manager (plan/build + read_only filtering)
+7. Implement system prompt composer with persona/project/tool/skill sections, built-in mode constraints, and config-driven mode/helper prompt overlays
+8. Implement mode manager (plan/build + read_only filtering + prompt overlay selection)
 9. Implement native function → `Tool` adapter:
    - `functionTool` type implementing `tools.Tool`
    - `InputSchema()` from loaded `input_schema_file`
@@ -905,14 +1068,15 @@ Checks:
 15. Implement appearance engine (name, ASCII art, colors)
 16. Extract/copy skill loader with agent-local + global discovery
 17. Extract/copy subagent loader with agent-local + global discovery
-18. Implement session persistence (same format as keen-code)
+18. Implement configurable `btw` and `adversary` one-shot helper flows with dedicated prompts, optional model overrides, and read-only adversary tool allowlist
+19. Implement session persistence (same format as keen-code)
 
 ### Phase 5 — Polish + Ship
 
-19. Implement headless mode (`keen-agent run --agent ... --format ...`)
-20. Implement interactive full flow (`keen-agent --agent ...`: config → tools → prompt → loop)
-21. Write README + example agent configs
-22. Test critical paths (config parsing, native-function adapter: schema loading + JSON-stdin delivery + required-field validation + mode filtering, permission gating, headless approval path, subagent delegation + read-only tool restriction)
+20. Implement headless mode (`keen-agent run --agent ... --format ...`)
+21. Implement interactive full flow (`keen-agent --agent ...`: config → tools → prompt → loop)
+22. Write README + example agent configs
+23. Test critical paths (config parsing, native-function adapter: schema loading + JSON-stdin delivery + required-field validation + mode filtering and mode prompt overlays, permission gating, headless approval path, subagent delegation + read-only tool restriction, `btw` prompt/context behavior, adversary prompt/model/tool allowlist)
 
 ---
 
