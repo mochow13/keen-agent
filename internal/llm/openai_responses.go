@@ -167,7 +167,8 @@ func (c *OpenAIResponsesClient) StreamChat(
 			reducedInput, reduction := reduceResponsesContextForRequest(c.contextWindowTokenCount, input)
 			if !reduction.FitsBudget {
 				slog.Debug("OpenAI Responses context still exceeds budget after reduction", "inputTokenCount", reduction.ReducedTokenCount, "removedToolResultCount", reduction.RemovedToolResults)
-				c.exitIncomplete(eventCh, input, turnStartLen, replayedPendingInput, fmt.Errorf(contextWindowExceededError), oneShot)
+				c.pendingState = nil
+				c.emitTerminalEvent(eventCh, input, turnStartLen, replayedPendingInput, fmt.Errorf(contextWindowExceededError))
 				return
 			}
 			input = reducedInput

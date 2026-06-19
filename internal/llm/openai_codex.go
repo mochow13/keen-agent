@@ -90,7 +90,8 @@ func (c *OpenAICodexClient) StreamChat(ctx context.Context, messages []Message, 
 			reducedInput, reduction := reduceResponsesContextForRequest(c.contextWindowTokenCount, input)
 			if !reduction.FitsBudget {
 				slog.Debug("OpenAI Codex context still exceeds budget after reduction", "inputTokenCount", reduction.ReducedTokenCount, "removedToolResultCount", reduction.RemovedToolResults)
-				c.exitIncomplete(eventCh, input, turnStartLen, injectedPending, fmt.Errorf(contextWindowExceededError), oneShot)
+				c.pendingState = nil
+				c.emitTerminalEvent(eventCh, input, turnStartLen, injectedPending, fmt.Errorf(contextWindowExceededError))
 				return
 			}
 			input = reducedInput

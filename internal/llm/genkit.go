@@ -198,7 +198,8 @@ func (c *GenkitClient) StreamChat(
 			reducedMessages, reduction := reduceGenkitContextForRequest(c.contextWindowTokenCount, aiMessages)
 			if !reduction.FitsBudget {
 				slog.Debug("Genkit context still exceeds budget after reduction", "inputTokenCount", reduction.ReducedTokenCount, "removedToolResultCount", reduction.RemovedToolResults)
-				c.exitIncomplete(eventCh, aiMessages, turnStartLen, injectedPending, fmt.Errorf(contextWindowExceededError), oneShot)
+				c.pendingState = nil
+				c.emitTerminalEvent(eventCh, aiMessages, turnStartLen, injectedPending, fmt.Errorf(contextWindowExceededError))
 				return
 			}
 			aiMessages = reducedMessages

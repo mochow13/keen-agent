@@ -442,7 +442,8 @@ func (c *AnthropicClient) StreamChat(
 			reducedMessages, reduction := reduceAnthropicContextForRequest(c.contextWindowTokenCount, msgParams)
 			if !reduction.FitsBudget {
 				slog.Debug("Anthropic context still exceeds budget after reduction", "inputTokenCount", reduction.ReducedTokenCount, "removedToolResultCount", reduction.RemovedToolResults)
-				c.exitIncomplete(eventCh, msgParams, turnStartLen, injectedPending, fmt.Errorf(contextWindowExceededError), oneShot)
+				c.pendingState = nil
+				c.emitTerminalEvent(eventCh, msgParams, turnStartLen, injectedPending, fmt.Errorf(contextWindowExceededError))
 				return
 			}
 			msgParams = reducedMessages
