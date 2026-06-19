@@ -18,7 +18,7 @@ func TestNewClient_MissingAPIKey(t *testing.T) {
 		t.Error("expected error for missing API key")
 	}
 
-	if err.Error() != "API key is required" {
+	if err.Error() != "API key is required. "+config.ConfigFixHint {
 		t.Errorf("expected 'API key is required', got %q", err.Error())
 	}
 }
@@ -35,7 +35,7 @@ func TestNewClient_MissingModel(t *testing.T) {
 		t.Error("expected error for missing model")
 	}
 
-	if err.Error() != "model is required" {
+	if err.Error() != "model is required. "+config.ConfigFixHint {
 		t.Errorf("expected 'model is required', got %q", err.Error())
 	}
 }
@@ -52,7 +52,7 @@ func TestNewClient_UnsupportedProvider(t *testing.T) {
 		t.Error("expected error for unsupported provider")
 	}
 
-	expectedMsg := "unsupported provider: unknown-provider"
+	expectedMsg := "unsupported provider: unknown-provider. " + config.ConfigFixHint
 	if err.Error() != expectedMsg {
 		t.Errorf("expected %q, got %q", expectedMsg, err.Error())
 	}
@@ -265,7 +265,7 @@ func TestNewClient_OpenCodeGoMissingAPIKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing API key error")
 	}
-	if err.Error() != "API key is required" {
+	if err.Error() != "API key is required. "+config.ConfigFixHint {
 		t.Fatalf("expected API key error, got %q", err.Error())
 	}
 }

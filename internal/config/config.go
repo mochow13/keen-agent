@@ -22,6 +22,8 @@ const (
 	ProviderBedrock     = "amazon-bedrock"
 )
 
+const ConfigFixHint = "To fix configs manually, check ~/.keen-agent/configs.json"
+
 type GlobalConfig struct {
 	ActiveProvider    string                    `json:"active_provider"`
 	ActiveModel       string                    `json:"active_model"`
@@ -107,7 +109,7 @@ func Resolve(global *GlobalConfig, session *SessionConfig) (*ResolvedConfig, err
 		provider = global.ActiveProvider
 	}
 	if provider == "" {
-		return nil, fmt.Errorf("no provider configured")
+		return nil, fmt.Errorf("no provider configured. %s", ConfigFixHint)
 	}
 
 	providerGlobal, ok := global.GetProviderConfig(provider)
@@ -116,7 +118,7 @@ func Resolve(global *GlobalConfig, session *SessionConfig) (*ResolvedConfig, err
 	}
 	apiKey := normalizeAPIKey(firstNonEmpty(session.APIKey, providerGlobal.APIKey))
 	if RequiresAPIKey(provider) && apiKey == "" {
-		return nil, fmt.Errorf("no API key configured for %s", provider)
+		return nil, fmt.Errorf("no API key configured for %s. %s", provider, ConfigFixHint)
 	}
 
 	model := firstNonEmpty(

@@ -40,7 +40,7 @@ type OpenAICodexClient struct {
 
 func NewOpenAICodexClient(cfg *ClientConfig) (*OpenAICodexClient, error) {
 	if cfg.Provider != Provider(config.ProviderOpenAICodex) {
-		return nil, fmt.Errorf("unsupported Codex OAuth provider: %s", cfg.Provider)
+		return nil, fmt.Errorf("unsupported Codex OAuth provider: %s. %s", cfg.Provider, config.ConfigFixHint)
 	}
 
 	c := &OpenAICodexClient{

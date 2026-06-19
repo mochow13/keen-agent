@@ -22,11 +22,11 @@ func (l *Loader) Load() (*GlobalConfig, error) {
 			slog.Debug("config file not found, using defaults")
 			return cfg, nil
 		}
-		return nil, fmt.Errorf("failed to read config: %w", err)
+		return nil, fmt.Errorf("failed to read config: %w. %s", err, ConfigFixHint)
 	}
 
 	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal config: %w. %s", err, ConfigFixHint)
 	}
 
 	slog.Debug("config loaded", "provider", cfg.ActiveProvider)

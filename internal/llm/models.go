@@ -30,10 +30,10 @@ type ClientConfig struct {
 
 func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 	if config.RequiresAPIKey(cfg.Provider) && cfg.APIKey == "" {
-		return nil, fmt.Errorf("API key is required")
+		return nil, fmt.Errorf("API key is required. %s", config.ConfigFixHint)
 	}
 	if cfg.Model == "" {
-		return nil, fmt.Errorf("model is required")
+		return nil, fmt.Errorf("model is required. %s", config.ConfigFixHint)
 	}
 
 	contextWindowTokenCount := contextWindowForProviderModel(Provider(cfg.Provider), cfg.Model)
@@ -120,7 +120,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			ContextWindowTokens: contextWindowTokenCount,
 		})
 	default:
-		return nil, fmt.Errorf("unsupported provider: %s", cfg.Provider)
+		return nil, fmt.Errorf("unsupported provider: %s. %s", cfg.Provider, config.ConfigFixHint)
 	}
 }
 

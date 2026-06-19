@@ -44,7 +44,7 @@ func NewGenkitClient(cfg *ClientConfig) (*GenkitClient, error) {
 		}))
 		modelName = "googleai/" + cfg.Model
 	default:
-		return nil, fmt.Errorf("unsupported provider in config: %s", cfg.Provider)
+		return nil, fmt.Errorf("unsupported provider in config: %s. %s", cfg.Provider, config.ConfigFixHint)
 	}
 
 	if g == nil {

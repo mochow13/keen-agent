@@ -60,7 +60,7 @@ type OpenAIResponsesClient struct {
 
 func NewOpenAIResponsesClient(cfg *ClientConfig) (*OpenAIResponsesClient, error) {
 	if cfg.Provider != Provider(config.ProviderOpenAI) {
-		return nil, fmt.Errorf("unsupported Responses API provider: %s", cfg.Provider)
+		return nil, fmt.Errorf("unsupported Responses API provider: %s. %s", cfg.Provider, config.ConfigFixHint)
 	}
 
 	opts := []option.RequestOption{
