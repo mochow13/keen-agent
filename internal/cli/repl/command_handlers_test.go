@@ -73,11 +73,8 @@ func TestHandleBangCommand_ReturnsBeforeCommandCompletes(t *testing.T) {
 	}
 
 	newM.cancelBangCommand()
-	for i := 0; i < 10 && cmd != nil; i++ {
-		msg := cmd()
-		updated, next := newM.updateNormalMode(msg)
-		newM = updated
-		cmd = next
+	for i := 0; i < 20 && cmd != nil; i++ {
+		newM, cmd = processCmd(newM, cmd)
 	}
 	if newM.bang.active {
 		t.Fatal("expected bang command to stop after cancellation")

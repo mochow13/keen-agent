@@ -846,7 +846,11 @@ func (m *replModel) handleBangCommand(input string) (replModel, tea.Cmd) {
 		cancel: cancel,
 	}
 
-	return *m, waitForBangEvent(m.bang.events)
+	m.startLoading(nextLoadingText())
+	m.adjustTextareaHeight()
+	m.updateViewportContent()
+	m.viewport.GotoBottom()
+	return *m, tea.Batch(m.spinner.Tick, waitForBangEvent(m.bang.events))
 }
 
 func (m *replModel) handleAdversaryCommand(input string) (replModel, tea.Cmd) {

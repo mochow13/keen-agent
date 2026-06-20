@@ -118,6 +118,8 @@ func (m replModel) handleBangMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 		return m, waitForBangEvent(m.bang.events), true
 	case bangDoneMsg:
 		m.bang = bangState{}
+		m.stopLoading()
+		m.adjustTextareaHeight()
 
 		if msg.err != nil {
 			if msg.timedOut {

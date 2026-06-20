@@ -3,6 +3,7 @@ package repl
 import (
 	"context"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/mochow13/keen-agent/internal/llm"
 	"github.com/mochow13/keen-agent/internal/tools"
 )
@@ -23,4 +24,20 @@ func (m *mockLLMClient) StreamChat(ctx context.Context, messages []llm.Message, 
 
 func (m *mockLLMClient) Reset() {
 	m.resetCount++
+}
+
+func processCmd(m replModel, cmd tea.Cmd) (replModel, tea.Cmd) {
+	if cmd == nil {
+		return m, nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			if c != nil {
+				m, _ = processCmd(m, c)
+			}
+		}
+		return m, nil
+	}
+	return m.updateNormalMode(msg)
 }

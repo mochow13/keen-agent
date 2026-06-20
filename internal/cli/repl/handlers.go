@@ -227,9 +227,9 @@ func (m *replModel) handleToolEnd(toolCall *llm.ToolCall) (replModel, tea.Cmd) {
 		m.streamHandler.HandleBashEnd(toolCall)
 	} else {
 		m.streamHandler.HandleToolEnd(toolCall)
-		m.loadingText = nextLoadingText()
-		m.streamHandler.SetLoadingText(m.loadingText)
 	}
+	m.loadingText = nextLoadingText()
+	m.streamHandler.SetLoadingText(m.loadingText)
 	m.updateViewportContent()
 	m.scrollToBottomIfFollowing()
 	return *m, m.waitForAsyncEvent()
