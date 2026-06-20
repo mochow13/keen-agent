@@ -37,8 +37,10 @@ the tool's schema file to understand the required arguments:
 IMPORTANT:
 - Use the bare configured server name, for example "context7", not the skill name
   "mcp:context7" and not a combined path like "mcp:context7/resolve-library-id".
-- Use the exact MCP tool name from the skill/schema, for example
-  "resolve-library-id".
+- Use the exact MCP tool name as it appears in the skill's "Available tools"
+  table, for example "resolve-library-id". Do not guess, abbreviate, or
+  transform names (e.g. swap "-" for "_"). If a call fails with "tool not
+  found", re-read the skill file and use a name from that table.
 - Arguments must match the tool's input schema exactly.
 - Set checkCache to false or omit it (reserved for future use).`
 }
@@ -211,9 +213,18 @@ func (t *CallMCPTool) validateRequiredArguments(ctx context.Context, server, too
 		if len(missing) == 0 {
 			return nil
 		}
-		return fmt.Errorf("invalid input: arguments missing required fields for %s/%s: %s. Read schema file: ~/.keen-agent/skills/mcp:%s/schemas/%s.json", server, tool, strings.Join(missing, ", "), server, tool)
+		return fmt.Errorf(`invalid input: arguments missing required fields for %s/%s: %s. 
+			Read schema file: ~/.keen-agent/skills/mcp:%s/schemas/%s.json`, server, tool, strings.Join(missing, ", "), server, tool)
+	}
+	if len(tools) > 0 {
+		return toolNotFoundError(server, tool)
 	}
 	return nil
+}
+
+func toolNotFoundError(server, requested string) error {
+	return fmt.Errorf(`invalid input: tool %q not found on MCP server %q.
+		Re-read ~/.keen-agent/skills/mcp:%s/SKILL.md and use an exact name from its Available tools table`, requested, server, server)
 }
 
 func missingRequiredArguments(schema any, arguments map[string]any) []string {

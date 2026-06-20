@@ -194,3 +194,33 @@ func TestCallMCPTool_CheckCacheIsNoOp(t *testing.T) {
 		t.Fatalf("Execute() with checkCache error = %v", err)
 	}
 }
+
+func TestCallMCPTool_NotFound(t *testing.T) {
+	runtime := &mockMCPRuntime{
+		listToolsFn: func(_ context.Context, _ string) ([]keenmcp.Tool, error) {
+			return []keenmcp.Tool{
+				{Name: "resolve-library-id"},
+				{Name: "get-library-docs"},
+			}, nil
+		},
+		callToolFn: func(_ context.Context, _, _ string, _ map[string]any) (*keenmcp.ToolResult, error) {
+			t.Fatal("CallTool should not be called for unknown tool")
+			return nil, nil
+		},
+	}
+	callTool := NewCallMCPTool(runtime, &mockPermissionRequester{allow: true})
+
+	_, err := callTool.Execute(context.Background(), map[string]any{
+		"server": "context7",
+		"tool":   "resolve_library_id",
+	})
+	if err == nil {
+		t.Fatal("Execute() expected error for unknown tool")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("Execute() error = %v, want not found", err)
+	}
+	if !strings.Contains(err.Error(), "~/.keen-agent/skills/mcp:context7/SKILL.md") {
+		t.Fatalf("Execute() error = %v, want skill file path", err)
+	}
+}

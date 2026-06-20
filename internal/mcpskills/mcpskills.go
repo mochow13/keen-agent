@@ -164,10 +164,13 @@ func buildSkillMD(server, description string, tools []keenmcp.Tool) string {
 	}
 	sb.WriteString("---\n")
 	sb.WriteString("## Calling tools\n")
-	sb.WriteString("Before calling `call_mcp_tool`, always read the selected tool's schema file: `schemas/<tool>.json`.\n")
+	sb.WriteString("Before calling `call_mcp_tool`, always read the selected tool's schema file: `schemas/<tool_name>.json`.\n")
 	sb.WriteString("Strictly follow the schema to pass the correct arguments to the tool.\n\n")
+	sb.WriteString("Use the **exact** tool name from the \"Available tools\" table below. Do not guess,\n")
+	sb.WriteString("abbreviate, or transform names (for example, do not swap `-` for `_` or do not change case).\n")
+	sb.WriteString("If `call_mcp_tool` returns \"tool not found\", re-read this file and use the exact name of the correct tool from the table.\n\n")
 	sb.WriteString("## Available tools\n")
-	sb.WriteString("| Tool | Description |\n")
+	sb.WriteString("| Tool name | Description |\n")
 	sb.WriteString("|------|-------------|\n")
 
 	limit := min(len(tools), maxToolRows)
