@@ -47,10 +47,13 @@ func TestHandleEnterKey_ActiveStream(t *testing.T) {
 	newM, cmd := m.handleEnterKey()
 
 	if cmd != nil {
-		t.Error("expected nil cmd when stream is active")
+		t.Error("expected nil cmd when queueable input is sent during active stream")
 	}
-	if newM.textarea.Value() != "some input" {
-		t.Error("expected textarea to remain unchanged when stream is active")
+	if newM.textarea.Value() != "" {
+		t.Error("expected textarea to be reset after queueing input during active stream")
+	}
+	if len(newM.queuedInputs) != 1 || newM.queuedInputs[0] != "some input" {
+		t.Errorf("expected input to be queued, got %v", newM.queuedInputs)
 	}
 }
 
@@ -1334,5 +1337,265 @@ func TestCancelBtwStream_CancelsContext(t *testing.T) {
 	}
 	if m.btwStreamCancel != nil {
 		t.Fatal("expected btwStreamCancel to be nil after cancel")
+	}
+}
+
+func TestHandleEnterKey_QueueFullNotification(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+	m.queuedInputs = []string{"msg1", "msg2", "msg3", "msg4", "msg5"}
+
+	m.textarea.SetValue("overflow")
+	newM, cmd := m.handleEnterKey()
+
+	if newM.copyNotification != "Queue is full" {
+		t.Errorf("expected 'Queue is full' notification, got %q", newM.copyNotification)
+	}
+	if cmd == nil {
+		t.Error("expected clear notification cmd")
+	}
+	if newM.textarea.Value() != "overflow" {
+		t.Error("expected textarea to be preserved when queue is full")
+	}
+	if len(newM.queuedInputs) != 5 {
+		t.Errorf("expected queue to remain at 5, got %d", len(newM.queuedInputs))
+	}
+}
+
+func TestHandleEnterKey_NonQueueableSlashCommandNotification(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+
+	m.textarea.SetValue("/clear")
+	newM, _ := m.handleEnterKey()
+
+	if newM.copyNotification != "Operation not permitted" {
+		t.Errorf("expected 'Operation not permitted' for known command, got %q", newM.copyNotification)
+	}
+	if newM.textarea.Value() != "/clear" {
+		t.Error("expected textarea to be preserved for non-queueable command")
+	}
+	if len(newM.queuedInputs) != 0 {
+		t.Errorf("expected empty queue, got %v", newM.queuedInputs)
+	}
+}
+
+func TestHandleEnterKey_UnknownSkillNotification(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+
+	m.textarea.SetValue("/nosuchskill arg")
+	newM, _ := m.handleEnterKey()
+
+	if newM.copyNotification != "No such skill found" {
+		t.Errorf("expected 'No such skill found' for unknown skill, got %q", newM.copyNotification)
+	}
+	if newM.textarea.Value() != "/nosuchskill arg" {
+		t.Error("expected textarea to be preserved for unknown skill")
+	}
+}
+
+func TestHandleEnterKey_MultilineNormalPromptQueued(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+
+	m.textarea.SetValue("line1\nline2")
+	newM, _ := m.handleEnterKey()
+
+	if len(newM.queuedInputs) != 1 || newM.queuedInputs[0] != "line1\nline2" {
+		t.Errorf("expected multiline normal prompt to be queued, got %v", newM.queuedInputs)
+	}
+	if newM.copyNotification != "" {
+		t.Errorf("expected no notification for queued multiline, got %q", newM.copyNotification)
+	}
+}
+
+func TestHandleEnterKey_MultilineSlashNotQueued(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+
+	m.textarea.SetValue("/skill\ntext")
+	newM, _ := m.handleEnterKey()
+
+	if len(newM.queuedInputs) != 0 {
+		t.Errorf("expected multiline slash input to not be queued, got %v", newM.queuedInputs)
+	}
+	if newM.copyNotification != "No such skill found" {
+		t.Errorf("expected 'No such skill found' for multiline slash, got %q", newM.copyNotification)
+	}
+}
+
+func TestDrainQueuedInput_SubmitsFirstMessage(t *testing.T) {
+	m := newTestModel()
+	m.queuedInputs = []string{"first", "second"}
+
+	newM, _ := m.drainQueuedInput()
+
+	if len(newM.queuedInputs) != 1 || newM.queuedInputs[0] != "second" {
+		t.Errorf("expected second to remain in queue, got %v", newM.queuedInputs)
+	}
+	if !strings.Contains(newM.output.Join(), "first") {
+		t.Error("expected drained input to be added to output")
+	}
+}
+
+func TestDrainQueuedInput_EmptyQueueNoOp(t *testing.T) {
+	m := newTestModel()
+
+	newM, cmd := m.drainQueuedInput()
+
+	if len(newM.queuedInputs) != 0 {
+		t.Errorf("expected empty queue, got %v", newM.queuedInputs)
+	}
+	if cmd != nil {
+		t.Error("expected nil cmd for empty queue")
+	}
+}
+
+func TestInterruptStream_PreservesQueue(t *testing.T) {
+	m := newTestModel()
+	m.queuedInputs = []string{"queued1", "queued2"}
+	m.streamCancel = func() {}
+
+	m.interruptStream("interrupted")
+
+	if len(m.queuedInputs) != 2 {
+		t.Errorf("expected queue to be preserved after interrupt, got %v", m.queuedInputs)
+	}
+}
+
+func TestHandleLLMError_CanceledPreservesQueue(t *testing.T) {
+	m := newTestModel()
+	m.queuedInputs = []string{"next msg"}
+	m.streamHandler.Start(make(chan llm.StreamEvent), "Loading...")
+	m.startLoading("Loading...")
+
+	newM, _ := m.handleLLMError(context.Canceled)
+
+	if len(newM.queuedInputs) != 1 {
+		t.Errorf("expected queue to be preserved after canceled error, got %v", newM.queuedInputs)
+	}
+}
+
+func TestIsKnownCommand(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"/clear", true},
+		{"/model", true},
+		{"/help", true},
+		{"/emptyq", true},
+		{"/mcp connect foo", true},
+		{"/skills enable demo", true},
+		{"hello", false},
+		{"/nosuchskill", false},
+		{"!shell", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		got := replcommands.IsKnownCommand(tt.input)
+		if got != tt.want {
+			t.Errorf("IsKnownCommand(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestQueuedHeight(t *testing.T) {
+	m := newTestModel()
+	if h := m.queuedHeight(); h != 0 {
+		t.Errorf("expected 0 for empty queue, got %d", h)
+	}
+	m.queuedInputs = []string{"one"}
+	if h := m.queuedHeight(); h != 2 {
+		t.Errorf("expected 2 for 1 item (1 header + 1 line), got %d", h)
+	}
+	m.queuedInputs = []string{"one", "two", "three"}
+	if h := m.queuedHeight(); h != 4 {
+		t.Errorf("expected 4 for 3 items, got %d", h)
+	}
+}
+
+func TestRenderQueuedInputs_TruncatesLongMessages(t *testing.T) {
+	m := newTestModel()
+	m.width = 30
+	m.queuedInputs = []string{"this is a very long message that exceeds the terminal width"}
+
+	rendered := m.renderQueuedInputs()
+	stripped := ansi.Strip(rendered)
+
+	for _, line := range strings.Split(stripped, "\n") {
+		if lipgloss.Width(line) > m.width {
+			t.Errorf("line exceeds terminal width (%d > %d): %q", lipgloss.Width(line), m.width, line)
+		}
+	}
+}
+
+func TestHandleEnterKey_EmptyQueueClearsQueue(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+	m.queuedInputs = []string{"msg1", "msg2"}
+
+	m.textarea.SetValue("/emptyq")
+	newM, _ := m.handleEnterKey()
+
+	if len(newM.queuedInputs) != 0 {
+		t.Errorf("expected queue to be cleared, got %v", newM.queuedInputs)
+	}
+	if newM.copyNotification != "Queue cleared" {
+		t.Errorf("expected 'Queue cleared' notification, got %q", newM.copyNotification)
+	}
+}
+
+func TestHandleEnterKey_EmptyQueueEmpty(t *testing.T) {
+	m := newTestModel()
+	m.queuedInputs = nil
+
+	m.textarea.SetValue("/emptyq")
+	newM, _ := m.handleEnterKey()
+
+	if newM.copyNotification != "Queue is empty" {
+		t.Errorf("expected 'Queue is empty' notification, got %q", newM.copyNotification)
+	}
+}
+
+func TestHandleEnterKey_AdversaryQueuedWhenBusy(t *testing.T) {
+	m := newTestModel()
+	m.showSpinner = true
+	m.queuedInputs = nil
+
+	m.textarea.SetValue("/adversary focus on error handling")
+	newM, cmd := m.handleEnterKey()
+
+	if len(newM.queuedInputs) != 1 || newM.queuedInputs[0] != "/adversary focus on error handling" {
+		t.Errorf("expected /adversary to be queued, got %v", newM.queuedInputs)
+	}
+	if newM.textarea.Value() != "" {
+		t.Error("expected textarea to be reset after queueing /adversary")
+	}
+	if cmd != nil {
+		t.Error("expected nil cmd when queueing /adversary")
+	}
+}
+
+func TestHandleEnterKey_AdversaryQueueFull(t *testing.T) {
+	m := newTestModel()
+	m.showSpinner = true
+	m.queuedInputs = []string{"msg1", "msg2", "msg3", "msg4", "msg5"}
+
+	m.textarea.SetValue("/adversary review")
+	newM, _ := m.handleEnterKey()
+
+	if newM.copyNotification != "Queue is full" {
+		t.Errorf("expected 'Queue is full' for /adversary, got %q", newM.copyNotification)
+	}
+	if len(newM.queuedInputs) != 5 {
+		t.Errorf("expected queue to remain at 5, got %d", len(newM.queuedInputs))
 	}
 }

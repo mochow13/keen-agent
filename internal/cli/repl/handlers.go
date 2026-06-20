@@ -78,7 +78,7 @@ func (m *replModel) handleLLMDone() (replModel, tea.Cmd) {
 	m.output.AddEmptyLine()
 	m.updateViewportContent()
 	m.scrollToBottomIfFollowing()
-	return *m, nil
+	return m.drainQueuedInput()
 }
 
 func (m *replModel) handleLLMIncomplete(err error) (replModel, tea.Cmd) {
@@ -105,7 +105,7 @@ func (m *replModel) handleLLMIncomplete(err error) (replModel, tea.Cmd) {
 	}
 	m.updateViewportContent()
 	m.scrollToBottomIfFollowing()
-	return *m, nil
+	return m.drainQueuedInput()
 }
 
 func (m *replModel) handleLLMError(err error) (replModel, tea.Cmd) {
@@ -176,7 +176,7 @@ func (m *replModel) handleCompactionDone() (replModel, tea.Cmd) {
 	m.adjustTextareaHeight()
 	m.updateViewportContent()
 	m.scrollToBottomIfFollowing()
-	return *m, nil
+	return m.drainQueuedInput()
 }
 
 func (m *replModel) handleCompactionError(err error) (replModel, tea.Cmd) {
@@ -417,6 +417,12 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 			m.interruptStream(interruptedPromptText)
 			return *m, nil
 		}
+		if len(m.queuedInputs) > 0 {
+			m.queuedInputs = nil
+			m.updateViewportContent()
+			m.adjustTextareaHeight()
+			return *m, m.showNotification("Queue cleared")
+		}
 		if m.textarea.Value() != "" {
 			m.textarea.Reset()
 			m.adjustTextareaHeight()
@@ -444,6 +450,11 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 		}
 		if m.streamHandler != nil && m.streamHandler.IsActive() {
 			m.interruptStream(interruptedPromptText)
+		} else if len(m.queuedInputs) > 0 {
+			m.queuedInputs = nil
+			m.updateViewportContent()
+			m.adjustTextareaHeight()
+			return *m, m.showNotification("Queue cleared")
 		}
 		return *m, nil
 	case keyUp, keyShiftUp:

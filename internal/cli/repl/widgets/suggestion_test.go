@@ -1,6 +1,7 @@
 package widgets
 
 import (
+	"slices"
 	"testing"
 
 	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
@@ -35,8 +36,12 @@ func TestFilterCommandsM(t *testing.T) {
 
 func TestFilterCommandsE(t *testing.T) {
 	got := replcommands.Filter("/e")
-	if len(got) != 1 || got[0].Name != "/exit" {
-		t.Errorf("expected /exit only, got %v", got)
+	if len(got) != 2 {
+		t.Errorf("expected /emptyq and /exit, got %v", got)
+	}
+	names := []string{got[0].Name, got[1].Name}
+	if !slices.Contains(names, "/exit") || !slices.Contains(names, "/emptyq") {
+		t.Errorf("expected /emptyq and /exit, got %v", got)
 	}
 }
 

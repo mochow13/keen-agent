@@ -8,6 +8,7 @@ const (
 	Btw             = "/btw"
 	Clear           = "/clear"
 	Compact         = "/compact"
+	EmptyQueue      = "/emptyq"
 	Exit            = "/exit"
 	Help            = "/help"
 	Logout          = "/logout"
@@ -45,6 +46,7 @@ var All = []SlashCommand{
 	{Btw, "Ask a quick side question (not added to conversation)"},
 	{Clear, "Clear the session and create a new one (also /new)"},
 	{Compact, "Compact conversation context"},
+	{EmptyQueue, "Clear all queued messages"},
 	{Exit, "Quit Keen Agent"},
 	{Help, "Show available commands"},
 	{Logout, "Sign out of the current OAuth provider"},
@@ -68,6 +70,7 @@ var Suggestions = []SlashCommand{
 	{Btw, "Ask a quick side question (not added to conversation)"},
 	{Clear, "Clear the session and create a new one (also /new)"},
 	{Compact, "Compact conversation context"},
+	{EmptyQueue, "Clear all queued messages"},
 	{Exit, "Quit Keen Agent"},
 	{Help, "Show available commands"},
 	{Logout, "Sign out of the current OAuth provider"},
@@ -90,6 +93,18 @@ var Suggestions = []SlashCommand{
 	{Subagents, "Show subagent commands"},
 	{SubagentsList, "List available subagents"},
 	{Thinking, "Change thinking effort for the current model"},
+}
+
+func IsKnownCommand(input string) bool {
+	if !strings.HasPrefix(input, "/") {
+		return false
+	}
+	for _, cmd := range All {
+		if input == cmd.Name || strings.HasPrefix(input, cmd.Name+" ") {
+			return true
+		}
+	}
+	return false
 }
 
 func Filter(input string) []SlashCommand {

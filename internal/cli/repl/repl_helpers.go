@@ -53,6 +53,8 @@ var loadingTexts = []string{
 	"Drag selection copies on release",
 	"`/mcp connect` takes tool names too",
 	"`Alt`/`Option`+click opens a link",
+	"Queued prompts auto-run when agent finishes",
+	"`/emptyq` clears the queue",
 }
 
 func displayModelName(providerID, modelID string) string {
@@ -616,7 +618,7 @@ func (m *replModel) adjustTextareaHeight() {
 	if m.height <= 0 {
 		return
 	}
-	m.viewport.SetHeight(m.height - m.textarea.Height() - 4 - m.spinnerHeight() - m.suggestion.Height())
+	m.viewport.SetHeight(m.height - m.textarea.Height() - 4 - m.spinnerHeight() - m.suggestion.Height() - m.queuedHeight())
 }
 
 func (m replModel) isAtTopOfInput() bool {

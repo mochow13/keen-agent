@@ -97,6 +97,7 @@ type replModel struct {
 	initialScreenDone         bool
 	copyNotification          string
 	copyNotificationExpiresAt time.Time
+	queuedInputs              []string
 }
 
 type bangState struct {
@@ -257,7 +258,12 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 
 	if input == replcommands.Adversary || strings.HasPrefix(input, replcommands.Adversary+" ") {
 		if m.showSpinner {
-			return *m, nil
+			if len(m.queuedInputs) < maxQueuedInputs {
+				m.queuedInputs = append(m.queuedInputs, input)
+				m.textarea.Reset()
+				return *m, nil
+			}
+			return *m, m.showNotification("Queue is full")
 		}
 		m.history.Push(input)
 		m.textarea.Reset()
@@ -273,8 +279,8 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 	}
 
 	if strings.HasPrefix(input, "!") {
-		if m.streamHandler.IsActive() || m.bang.active {
-			return *m, nil
+		if m.showSpinner || m.bang.active {
+			return *m, m.showNotification("Operation not permitted")
 		}
 		m.history.Push(input)
 		m.textarea.Reset()
@@ -282,14 +288,37 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 		return result, cmd
 	}
 
-	if m.streamHandler.IsActive() {
-		return *m, nil
+	if input == replcommands.EmptyQueue {
+		m.textarea.Reset()
+		if len(m.queuedInputs) == 0 {
+			return *m, m.showNotification("Queue is empty")
+		}
+		m.queuedInputs = nil
+		m.updateViewportContent()
+		m.adjustTextareaHeight()
+		return *m, m.showNotification("Queue cleared")
 	}
 
-	if m.isCompacting {
-		return *m, nil
+	if m.streamHandler.IsActive() || m.isCompacting {
+		if m.isQueueable(input) {
+			if len(m.queuedInputs) < maxQueuedInputs {
+				m.queuedInputs = append(m.queuedInputs, input)
+				m.textarea.Reset()
+				return *m, nil
+			}
+			return *m, m.showNotification("Queue is full")
+		}
+		msg := "Operation not permitted"
+		if strings.HasPrefix(input, "/") && !replcommands.IsKnownCommand(input) {
+			msg = "No such skill found"
+		}
+		return *m, m.showNotification(msg)
 	}
 
+	return m.submitInput(input, false)
+}
+
+func (m *replModel) submitInput(input string, fromQueue bool) (replModel, tea.Cmd) {
 	m.flushBtwToOutput()
 	m.flushAdversaryToOutput()
 	m.output.AddUserInput(input, repltheme.PromptStyle)
@@ -305,7 +334,9 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 
 	if !m.appState.IsClientReady(m.ctx.cfg) {
 		m.output.AddError("LLM client not initialized. Use /model to configure.", repltheme.ErrorStyle)
-		m.textarea.Reset()
+		if !fromQueue {
+			m.textarea.Reset()
+		}
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
 		return *m, nil
@@ -313,7 +344,9 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 
 	if err := m.sessions.appendUserMessage(input); err != nil {
 		m.output.AddError("Session persistence failed: "+err.Error(), repltheme.ErrorStyle)
-		m.textarea.Reset()
+		if !fromQueue {
+			m.textarea.Reset()
+		}
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
 		return *m, nil
@@ -326,7 +359,9 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 	if err != nil {
 		m.clearStreamCancel()
 		m.output.AddError(err.Error(), repltheme.ErrorStyle)
-		m.textarea.Reset()
+		if !fromQueue {
+			m.textarea.Reset()
+		}
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
 		return *m, nil
@@ -335,7 +370,9 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 	m.startLoading(nextLoadingText())
 	m.startAssistantTurnMemory()
 	m.streamHandler.Start(eventCh, m.loadingText)
-	m.textarea.Reset()
+	if !fromQueue {
+		m.textarea.Reset()
+	}
 	m.userScrolled = false
 	m.adjustTextareaHeight()
 	m.updateViewportContent()
@@ -344,11 +381,24 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 	return *m, tea.Batch(m.spinner.Tick, m.waitForAsyncEvent())
 }
 
+func (m *replModel) showNotification(msg string) tea.Cmd {
+	expiresAt := time.Now().Add(copyNotificationTimeout)
+	m.copyNotification = msg
+	m.copyNotificationExpiresAt = expiresAt
+	return clearCopyNotificationCmd(expiresAt)
+}
+
 func (m *replModel) activateSkillInput(input string) (string, bool) {
-	if !strings.HasPrefix(input, "/") || strings.Contains(input, "\n") {
+	if !strings.HasPrefix(input, "/") {
 		return "", false
 	}
-	fields := strings.Fields(strings.TrimPrefix(input, "/"))
+	firstLine := input
+	rest := ""
+	if idx := strings.Index(input, "\n"); idx >= 0 {
+		firstLine = input[:idx]
+		rest = strings.TrimSpace(input[idx+1:])
+	}
+	fields := strings.Fields(strings.TrimPrefix(firstLine, "/"))
 	if len(fields) == 0 {
 		return "", false
 	}
@@ -357,7 +407,11 @@ func (m *replModel) activateSkillInput(input string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	msg, err := skills.ActivationMessage(skill, fields[1:])
+	args := fields[1:]
+	if rest != "" {
+		args = append(args, rest)
+	}
+	msg, err := skills.ActivationMessage(skill, args)
 	if err != nil {
 		return "", false
 	}
@@ -661,9 +715,20 @@ func (m replModel) View() tea.View {
 				elapsed = time.Since(m.loadingStartedAt)
 			}
 			spinnerText := " " + m.spinner.View() + " " + renderLoadingText(m.loadingText, elapsed)
+			if m.copyNotification != "" {
+				spinnerText += "  " + repltheme.AccentStyle.Render(m.copyNotification)
+			}
 			view.WriteString("\n")
 			view.WriteString(spinnerText)
 			view.WriteString("\n")
+		} else if m.copyNotification != "" {
+			view.WriteString("\n")
+			view.WriteString("  " + repltheme.AccentStyle.Render(m.copyNotification))
+			view.WriteString("\n")
+		}
+
+		if queuedView := m.renderQueuedInputs(); queuedView != "" {
+			view.WriteString(queuedView)
 		}
 
 		shellMode := strings.HasPrefix(m.textarea.Value(), "!")
@@ -720,11 +785,6 @@ func (m replModel) inputMetaView() string {
 
 	contextText := renderContextStatus(m.contextStatus)
 
-	copyText := ""
-	if m.copyNotification != "" {
-		copyText = repltheme.AccentStyle.Render(m.copyNotification)
-	}
-
 	timerText := ""
 	if m.showSpinner {
 		timerText = repltheme.LoadingTimerStyle.Render("⏱ " + m.loadingElapsedText())
@@ -735,9 +795,6 @@ func (m replModel) inputMetaView() string {
 		parts = append(parts, thinkingText)
 	}
 	parts = append(parts, contextText)
-	if copyText != "" {
-		parts = append(parts, copyText)
-	}
 	if timerText != "" {
 		parts = append(parts, timerText)
 	}
