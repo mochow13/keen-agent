@@ -103,9 +103,9 @@ func (m *Model) handleKeyMsg(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 	switch m.Step {
 	case StepProvider:
 		switch msg.String() {
-		case "up", "k":
+		case "up":
 			m.ProviderCursor = (m.ProviderCursor - 1 + len(m.ProviderList)) % len(m.ProviderList)
-		case "down", "j":
+		case "down":
 			m.ProviderCursor = (m.ProviderCursor + 1) % len(m.ProviderList)
 		case "enter":
 			m.SelectedProvider = m.ProviderList[m.ProviderCursor].ID
@@ -123,9 +123,9 @@ func (m *Model) handleKeyMsg(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 
 	case StepModel:
 		switch msg.String() {
-		case "up", "k":
+		case "up":
 			m.ModelCursor = (m.ModelCursor - 1 + len(m.ModelList)) % len(m.ModelList)
-		case "down", "j":
+		case "down":
 			m.ModelCursor = (m.ModelCursor + 1) % len(m.ModelList)
 		case "enter":
 			m.SelectedModel = m.ModelList[m.ModelCursor].ID
@@ -148,9 +148,9 @@ func (m *Model) handleKeyMsg(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 
 	case StepThinking:
 		switch msg.String() {
-		case "up", "k":
+		case "up":
 			m.ThinkingCursor = (m.ThinkingCursor - 1 + len(m.ThinkingOptions)) % len(m.ThinkingOptions)
-		case "down", "j":
+		case "down":
 			m.ThinkingCursor = (m.ThinkingCursor + 1) % len(m.ThinkingOptions)
 		case "enter":
 			m.SelectedThinking = m.ThinkingOptions[m.ThinkingCursor]

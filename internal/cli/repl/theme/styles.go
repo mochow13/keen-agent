@@ -126,7 +126,7 @@ var (
 	ReasoningStyle              = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
 	ErrorStyle                  = lipgloss.NewStyle().Foreground(ErrorColor)
 	InterruptedStyle            = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
-	LoadingTextStyled           = lipgloss.NewStyle().Foreground(TextDimColor)
+	LoadingTextStyled           = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
 	LoadingTextCodeStyle        = lipgloss.NewStyle().Foreground(PrimaryLightColor).Bold(true)
 	LoadingTextCodeShimmerMid   = lipgloss.NewStyle().Foreground(LoadingCodeShimmerMidColor).Bold(true)
 	LoadingTextCodeShimmerStyle = lipgloss.NewStyle().Foreground(LoadingCodeShimmerColor).Bold(true)
@@ -196,7 +196,7 @@ var (
 	AdversaryLabelStyle  = lipgloss.NewStyle().Foreground(TextPrimaryColor)
 	AdversaryChipStyle   = lipgloss.NewStyle().Background(SecondaryColor).Foreground(BlackColor).Bold(true).Padding(0, 1)
 
-	QueueItemStyle = lipgloss.NewStyle().Foreground(TextDimColor)
+	QueueItemStyle = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
 	QueueChipStyle = lipgloss.NewStyle().Background(SecondaryColor).Foreground(BlackColor).Bold(true).Padding(0, 1)
 
 	ShellChipStyle       = lipgloss.NewStyle().Background(AccentColor).Foreground(BlackColor).Bold(true).Padding(0, 1)

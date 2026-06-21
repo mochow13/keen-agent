@@ -407,12 +407,12 @@ func TestUpdate_RoutesToPermissionHandling(t *testing.T) {
 		t.Fatal("expected pending permission")
 	}
 
-	// Pressing 'j' should move the cursor down
-	result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	// Pressing down should move the cursor down
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown, Text: "down"})
 	updated := result.(*replModel)
 
 	if !updated.streamHandler.HasPendingPermission() {
-		t.Error("expected pending permission to remain after 'j' key")
+		t.Error("expected pending permission to remain after down key")
 	}
 }
 

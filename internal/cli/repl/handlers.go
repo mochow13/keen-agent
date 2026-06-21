@@ -358,7 +358,7 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 
 	if m.streamHandler != nil && m.streamHandler.HasPendingPermission() {
 		switch keyMsg.String() {
-		case "up", "k", "down", "j", keyEnter, keyEsc:
+		case "up", "down", keyEnter, keyEsc:
 			return m.handlePermissionKeyMsg(keyMsg)
 		}
 	}
@@ -579,10 +579,10 @@ func (m *replModel) handleSessionPickerKeyMsg(msg tea.Msg) (replModel, tea.Cmd) 
 	}
 
 	switch keyMsg.String() {
-	case keyUp, "k", keyShiftUp:
+	case keyUp, keyShiftUp:
 		m.sessionPicker.Move(-1)
 		m.updateViewportContent()
-	case keyDown, "j", keyShiftDown:
+	case keyDown, keyShiftDown:
 		m.sessionPicker.Move(1)
 		m.updateViewportContent()
 	case keyEnter:
@@ -610,11 +610,11 @@ func (m *replModel) handleSessionPickerKeyMsg(msg tea.Msg) (replModel, tea.Cmd) 
 
 func (m *replModel) handlePermissionKeyMsg(msg tea.KeyPressMsg) (replModel, tea.Cmd) {
 	switch msg.String() {
-	case "up", "k":
+	case "up":
 		m.streamHandler.MovePendingCursor(-1)
 		m.updateViewportContent()
 		m.scrollToBottomIfFollowing()
-	case "down", "j":
+	case "down":
 		m.streamHandler.MovePendingCursor(1)
 		m.updateViewportContent()
 		m.scrollToBottomIfFollowing()
