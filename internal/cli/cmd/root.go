@@ -167,6 +167,7 @@ func loadRootRuntime() (*providers.Registry, *config.Loader, *config.GlobalConfi
 		ThinkingEffort: globalCfg.ThinkingEffort,
 		BaseURL:        providerCfg.BaseURL,
 		AuthMode:       config.AuthModeForProvider(globalCfg.ActiveProvider),
+		Headers:        providerCfg.Headers,
 	}
 	needsSetup := resolvedCfg.AuthMode == config.AuthModeOAuth && !keenauth.NewOAuthManager(nil).HasCredential(globalCfg.ActiveProvider)
 	return registry, loader, globalCfg, resolvedCfg, needsSetup, nil
@@ -182,6 +183,7 @@ func applyRunOverrides(globalCfg *config.GlobalConfig, resolvedCfg *config.Resol
 		resolvedCfg.APIKey = providerCfg.APIKey
 		resolvedCfg.BaseURL = providerCfg.BaseURL
 		resolvedCfg.AuthMode = config.AuthModeForProvider(providerID)
+		resolvedCfg.Headers = providerCfg.Headers
 		if modelID == "" && len(providerCfg.Models) > 0 {
 			resolvedCfg.Model = providerCfg.Models[0]
 		}

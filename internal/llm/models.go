@@ -26,6 +26,7 @@ type ClientConfig struct {
 	BaseURL             string
 	MaxRetries          int
 	ContextWindowTokens int
+	Headers             map[string]string
 }
 
 func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
@@ -47,6 +48,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			ThinkingEffort:      cfg.ThinkingEffort,
 			BaseURL:             cfg.BaseURL,
 			ContextWindowTokens: contextWindowTokenCount,
+			Headers:             cfg.Headers,
 		})
 	case config.ProviderMiniMax:
 		return NewAnthropicClient(&ClientConfig{
@@ -55,6 +57,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			Model:               cfg.Model,
 			BaseURL:             cfg.BaseURL,
 			ContextWindowTokens: contextWindowTokenCount,
+			Headers:             cfg.Headers,
 		})
 	case config.ProviderGoogleAI:
 		return NewGenkitClient(&ClientConfig{
@@ -64,6 +67,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			ThinkingEffort:      cfg.ThinkingEffort,
 			BaseURL:             cfg.BaseURL,
 			ContextWindowTokens: contextWindowTokenCount,
+			Headers:             cfg.Headers,
 		})
 	case config.ProviderOpenAI:
 		return NewOpenAIResponsesClient(&ClientConfig{
@@ -73,6 +77,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			ThinkingEffort:      cfg.ThinkingEffort,
 			BaseURL:             cfg.BaseURL,
 			ContextWindowTokens: contextWindowTokenCount,
+			Headers:             cfg.Headers,
 		})
 	case config.ProviderOpenAICodex:
 		return NewOpenAICodexClient(&ClientConfig{
@@ -80,6 +85,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			Model:               cfg.Model,
 			ThinkingEffort:      cfg.ThinkingEffort,
 			ContextWindowTokens: contextWindowTokenCount,
+			Headers:             cfg.Headers,
 		})
 	case config.ProviderBedrock:
 		return NewBedrockClient(&ClientConfig{
@@ -89,6 +95,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			BaseURL:             cfg.BaseURL,
 			ThinkingEffort:      cfg.ThinkingEffort,
 			ContextWindowTokens: contextWindowTokenCount,
+			Headers:             cfg.Headers,
 		})
 	case config.ProviderDeepSeek,
 		config.ProviderMoonshotAI,
@@ -100,6 +107,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			ThinkingEffort:      cfg.ThinkingEffort,
 			BaseURL:             cfg.BaseURL,
 			ContextWindowTokens: contextWindowTokenCount,
+			Headers:             cfg.Headers,
 		})
 	case config.ProviderOpenCodeGo:
 		if isOpenCodeGoAnthropicModel(cfg.Model) {
@@ -109,6 +117,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 				Model:               cfg.Model,
 				BaseURL:             cfg.BaseURL,
 				ContextWindowTokens: contextWindowTokenCount,
+				Headers:             cfg.Headers,
 			})
 		}
 		return NewOpenAICompatibleClient(&ClientConfig{
@@ -118,6 +127,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			ThinkingEffort:      cfg.ThinkingEffort,
 			BaseURL:             cfg.BaseURL,
 			ContextWindowTokens: contextWindowTokenCount,
+			Headers:             cfg.Headers,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s. %s", cfg.Provider, config.ConfigFixHint)

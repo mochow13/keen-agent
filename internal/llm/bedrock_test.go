@@ -5,10 +5,13 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	brtypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	"github.com/mochow13/keen-agent/internal/config"
@@ -477,5 +480,61 @@ func TestNewClient_Bedrock(t *testing.T) {
 	}
 	if bedrockClient.contextWindowTokenCount != 1000000 {
 		t.Fatalf("expected Bedrock context window 1000000, got %d", bedrockClient.contextWindowTokenCount)
+	}
+}
+
+type staticCredentials struct {
+	Value aws.Credentials
+}
+
+func (s staticCredentials) Retrieve(ctx context.Context) (aws.Credentials, error) {
+	return s.Value, nil
+}
+
+func TestBedrockClient_CustomHeaders(t *testing.T) {
+	var captured http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = r.Header.Clone()
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"intentional failure"}`))
+	}))
+	defer srv.Close()
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion("us-east-1"),
+		awsconfig.WithCredentialsProvider(staticCredentials{Value: aws.Credentials{
+			AccessKeyID:     "AKID",
+			SecretAccessKey: "SECRET",
+		}}),
+	)
+	if err != nil {
+		t.Fatalf("load aws config: %v", err)
+	}
+
+	client := bedrockruntime.NewFromConfig(awsCfg, func(o *bedrockruntime.Options) {
+		o.BaseEndpoint = aws.String(srv.URL)
+		o.APIOptions = append(o.APIOptions, bedrockHeaderMiddleware(map[string]string{
+			"x-custom-header": "custom-value",
+		}))
+	})
+
+	c := &BedrockClient{client: client, model: "global.anthropic.claude-sonnet-4-6"}
+	c.streamImpl = func(ctx context.Context, params *bedrockruntime.ConverseStreamInput) (bedrockStream, error) {
+		out, err := c.client.ConverseStream(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		return out.GetStream(), nil
+	}
+
+	eventCh, err := c.StreamChat(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for range eventCh {
+	}
+
+	if captured.Get("x-custom-header") != "custom-value" {
+		t.Fatalf("expected x-custom-header %q, got %q", "custom-value", captured.Get("x-custom-header"))
 	}
 }

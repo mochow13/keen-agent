@@ -13,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	brtypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	"github.com/aws/smithy-go/auth/bearer"
+	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/mochow13/keen-agent/internal/tools"
 )
 
@@ -26,6 +28,19 @@ type bedrockStream interface {
 
 type bedrockStreamFactory func(ctx context.Context, params *bedrockruntime.ConverseStreamInput) (bedrockStream, error)
 
+func bedrockHeaderMiddleware(headers map[string]string) func(*middleware.Stack) error {
+	return func(stack *middleware.Stack) error {
+		return stack.Build.Add(middleware.BuildMiddlewareFunc("CustomHeaders", func(ctx context.Context, in middleware.BuildInput, next middleware.BuildHandler) (middleware.BuildOutput, middleware.Metadata, error) {
+			if req, ok := in.Request.(*smithyhttp.Request); ok {
+				for k, v := range headers {
+					req.Header.Set(k, v)
+				}
+			}
+			return next.HandleBuild(ctx, in)
+		}), middleware.After)
+	}
+}
+
 type BedrockClient struct {
 	client                  *bedrockruntime.Client
 	model                   string
@@ -33,6 +48,7 @@ type BedrockClient struct {
 	streamImpl              bedrockStreamFactory
 	pendingState            []brtypes.Message
 	contextWindowTokenCount int
+	headers                 map[string]string
 }
 
 type bedrockContentBlockState struct {
@@ -65,6 +81,9 @@ func NewBedrockClient(cfg *ClientConfig) (*BedrockClient, error) {
 		if cfg.BaseURL != "" {
 			o.BaseEndpoint = aws.String(cfg.BaseURL)
 		}
+		if len(cfg.Headers) > 0 {
+			o.APIOptions = append(o.APIOptions, bedrockHeaderMiddleware(cfg.Headers))
+		}
 	})
 
 	c := &BedrockClient{
@@ -72,6 +91,7 @@ func NewBedrockClient(cfg *ClientConfig) (*BedrockClient, error) {
 		model:                   cfg.Model,
 		maxRetries:              retryCount(cfg.MaxRetries),
 		contextWindowTokenCount: cfg.ContextWindowTokens,
+		headers:                 cfg.Headers,
 	}
 	c.streamImpl = func(ctx context.Context, params *bedrockruntime.ConverseStreamInput) (bedrockStream, error) {
 		out, err := c.client.ConverseStream(ctx, params)

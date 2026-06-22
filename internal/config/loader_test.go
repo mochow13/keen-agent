@@ -89,7 +89,7 @@ func TestLoader_SaveAndLoad(t *testing.T) {
 		ActiveProvider: ProviderOpenAI,
 		ActiveModel:    "gpt-4o",
 		Providers: map[string]ProviderConfig{
-			ProviderOpenAI: {Models: []string{"gpt-4o"}, APIKey: "sk-test"},
+			ProviderOpenAI: {Models: []string{"gpt-4o"}, APIKey: "sk-test", Headers: map[string]string{"x-custom": "value"}},
 		},
 	}
 
@@ -114,6 +114,9 @@ func TestLoader_SaveAndLoad(t *testing.T) {
 	}
 	if len(pc.Models) != 1 || pc.Models[0] != "gpt-4o" {
 		t.Errorf("expected models ['gpt-4o'], got %v", pc.Models)
+	}
+	if pc.Headers["x-custom"] != "value" {
+		t.Errorf("expected header x-custom=value, got %v", pc.Headers)
 	}
 }
 

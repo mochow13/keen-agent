@@ -171,6 +171,39 @@ func TestNewOpenAICompatibleClient_OpenAIProviderRejected(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleClient_StreamChat_CustomHeaders(t *testing.T) {
+	var gotHeaders http.Header
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client := &OpenAICompatibleClient{
+		provider: Provider(config.ProviderDeepSeek),
+		model:    "deepseek-v4-pro",
+		client:   openai.NewClient(option.WithBaseURL(server.URL), option.WithAPIKey("test-key")),
+		headers:  map[string]string{"x-custom-header": "custom-value"},
+	}
+	client.streamImpl = func(ctx context.Context, params openai.ChatCompletionNewParams, opts ...option.RequestOption) chatStream {
+		return &sdkChatStream{stream: client.client.Chat.Completions.NewStreaming(ctx, params, opts...)}
+	}
+
+	eventCh, err := client.StreamChat(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for range eventCh {
+	}
+
+	if gotHeaders.Get("x-custom-header") != "custom-value" {
+		t.Fatalf("expected x-custom-header %q, got %q", "custom-value", gotHeaders.Get("x-custom-header"))
+	}
+}
+
 func TestOpenAICompatibleClient_StreamChat_OpenCodeGoSessionHeader(t *testing.T) {
 	const sessionID = "f71b869f-bfbb-46ad-a7b4-99a94261f9e9"
 	const expectedSessionHeader = "f71b869fbfbb46ada7b499a94261f9e9"

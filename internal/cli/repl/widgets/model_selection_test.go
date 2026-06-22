@@ -219,6 +219,90 @@ func TestModelSelection_LongModelListScrollsWithCursor(t *testing.T) {
 	}
 }
 
+func TestModelSelection_SwitchProviderPreservesHeaders(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	registry := &providers.Registry{
+		Providers: []providers.Provider{
+			{
+				ID:   config.ProviderDeepSeek,
+				Name: "DeepSeek",
+				Models: []providers.Model{
+					{ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro"},
+				},
+			},
+			{
+				ID:   config.ProviderOpenAI,
+				Name: "OpenAI",
+				Models: []providers.Model{
+					{ID: "gpt-4o", Name: "GPT-4o"},
+				},
+			},
+		},
+	}
+
+	global := config.DefaultGlobalConfig()
+	loader := config.NewLoader()
+	resolved := &config.ResolvedConfig{}
+
+	// Seed DeepSeek provider config with custom headers.
+	global.SetProviderConfig(config.ProviderDeepSeek, config.ProviderConfig{
+		APIKey: "ds-key",
+		Models: []string{"deepseek-v4-pro"},
+		Headers: map[string]string{
+			"x-header-1": "val1",
+			"x-header-2": "val2",
+		},
+	})
+	if err := loader.Save(global); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	m := New(registry, global, loader, resolved, func(provider, model, apiKey string) error {
+		return nil
+	})
+
+	// Confirm first provider (DeepSeek) selected.
+	var cmd tea.Cmd
+	m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("did not expect command when entering provider selection")
+	}
+	if m.Step != StepModel {
+		t.Fatalf("expected StepModel, got %v", m.Step)
+	}
+	// Confirm model -> BaseURL step (DeepSeek supports custom base URL).
+	m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.Step != StepBaseURL {
+		t.Fatalf("expected StepBaseURL, got %v", m.Step)
+	}
+	// Confirm base URL -> API key step.
+	m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.Step != StepAPIKey {
+		t.Fatalf("expected StepAPIKey, got %v", m.Step)
+	}
+	// Confirm API key.
+	m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !cmdCalled(cmd) {
+		t.Fatal("expected completion command")
+	}
+	if resolved.Provider != config.ProviderDeepSeek {
+		t.Fatalf("expected provider %q, got %q", config.ProviderDeepSeek, resolved.Provider)
+	}
+	if len(resolved.Headers) != 2 || resolved.Headers["x-header-1"] != "val1" {
+		t.Fatalf("expected headers preserved, got %+v", resolved.Headers)
+	}
+}
+
+func cmdCalled(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	msg := cmd()
+	_, ok := msg.(modelSelectionCompleteMsg)
+	return ok
+}
+
 func TestVisibleListRangeKeepsCursorVisible(t *testing.T) {
 	tests := []struct {
 		name       string

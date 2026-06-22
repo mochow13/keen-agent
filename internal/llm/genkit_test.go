@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/tools"
+	"google.golang.org/genai"
 )
 
 func TestGenkitClient_StreamChat_Success(t *testing.T) {
@@ -877,5 +880,96 @@ func TestGenkitClient_PendingState_ClearedOnSuccess(t *testing.T) {
 	}
 	if len(client.pendingState) != 0 {
 		t.Fatal("expected pending state to be cleared after successful completion")
+	}
+}
+
+func TestBuildGenkitGenerateConfig_CustomHeaders(t *testing.T) {
+	cfg := buildGenkitGenerateConfig("", Provider(config.ProviderGoogleAI), map[string]string{
+		"x-custom-header": "custom-value",
+		"x-another":       "another-value",
+	})
+	if cfg == nil {
+		t.Fatal("expected config")
+	}
+	if cfg.HTTPOptions == nil {
+		t.Fatal("expected HTTPOptions")
+	}
+	if got := cfg.HTTPOptions.Headers.Get("x-custom-header"); got != "custom-value" {
+		t.Fatalf("expected x-custom-header %q, got %q", "custom-value", got)
+	}
+	if got := cfg.HTTPOptions.Headers.Get("x-another"); got != "another-value" {
+		t.Fatalf("expected x-another %q, got %q", "another-value", got)
+	}
+}
+
+func TestBuildGenkitGenerateConfig_HeadersWithThinking(t *testing.T) {
+	cfg := buildGenkitGenerateConfig("low", Provider(config.ProviderGoogleAI), map[string]string{
+		"x-custom-header": "custom-value",
+	})
+	if cfg == nil {
+		t.Fatal("expected config")
+	}
+	if cfg.ThinkingConfig == nil || cfg.ThinkingConfig.ThinkingBudget == nil {
+		t.Fatal("expected thinking config")
+	}
+	if cfg.HTTPOptions == nil {
+		t.Fatal("expected HTTPOptions")
+	}
+	if got := cfg.HTTPOptions.Headers.Get("x-custom-header"); got != "custom-value" {
+		t.Fatalf("expected x-custom-header %q, got %q", "custom-value", got)
+	}
+}
+
+func TestBuildGenkitGenerateConfig_NoHeaders(t *testing.T) {
+	cfg := buildGenkitGenerateConfig("", Provider(config.ProviderGoogleAI), nil)
+	if cfg != nil {
+		t.Fatalf("expected nil config without thinking or headers, got %+v", cfg)
+	}
+}
+
+func TestGenkitGenerateConfig_CustomHeadersReachWire(t *testing.T) {
+	ctx := context.Background()
+
+	var capturedHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"candidates": [{
+				"content": {
+					"parts": [{"text": "hello"}],
+					"role": "model"
+				}
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: "test-api-key",
+		HTTPOptions: genai.HTTPOptions{
+			BaseURL: server.URL,
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create genai client: %v", err)
+	}
+
+	cfg := buildGenkitGenerateConfig("", Provider(config.ProviderGoogleAI), map[string]string{
+		"x-custom-header": "custom-value",
+		"x-another":       "another-value",
+	})
+
+	_, err = client.Models.GenerateContent(ctx, "gemini-test", genai.Text("hi"), cfg)
+	if err != nil {
+		t.Fatalf("GenerateContent failed: %v", err)
+	}
+
+	if got := capturedHeaders.Get("x-custom-header"); got != "custom-value" {
+		t.Fatalf("expected x-custom-header %q, got %q", "custom-value", got)
+	}
+	if got := capturedHeaders.Get("x-another"); got != "another-value" {
+		t.Fatalf("expected x-another %q, got %q", "another-value", got)
 	}
 }

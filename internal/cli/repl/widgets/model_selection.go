@@ -298,14 +298,11 @@ func (m *Model) handlePasteMsg(msg tea.PasteMsg) (*Model, tea.Cmd) {
 }
 
 func (m *Model) complete() (*Model, tea.Cmd) {
-	existingKey := ""
-	if providerCfg, exists := m.globalCfg.GetProviderConfig(m.SelectedProvider); exists {
-		existingKey = providerCfg.APIKey
-	}
+	existing, exists := m.globalCfg.GetProviderConfig(m.SelectedProvider)
 
 	apiKey := m.APIKeyInput
-	if apiKey == "" && existingKey != "" {
-		apiKey = existingKey
+	if apiKey == "" && exists {
+		apiKey = existing.APIKey
 	}
 
 	if config.RequiresAPIKey(m.SelectedProvider) && apiKey == "" {
@@ -332,6 +329,9 @@ func (m *Model) complete() (*Model, tea.Cmd) {
 	if supportsBaseURL(m.SelectedProvider) {
 		providerCfg.BaseURL = m.BaseURLInput
 	}
+	if exists {
+		providerCfg.Headers = existing.Headers
+	}
 	m.globalCfg.SetProviderConfig(m.SelectedProvider, providerCfg)
 
 	if err := m.loader.Save(m.globalCfg); err != nil {
@@ -345,6 +345,7 @@ func (m *Model) complete() (*Model, tea.Cmd) {
 	m.resolvedCfg.ThinkingEffort = storedEffort
 	m.resolvedCfg.BaseURL = providerCfg.BaseURL
 	m.resolvedCfg.AuthMode = config.AuthModeForProvider(m.SelectedProvider)
+	m.resolvedCfg.Headers = providerCfg.Headers
 
 	if err := m.onComplete(m.SelectedProvider, m.SelectedModel, apiKey); err != nil {
 		m.ErrorMessage = fmt.Sprintf("Failed to initialize LLM client: %v", err)

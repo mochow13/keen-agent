@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -65,6 +66,39 @@ func TestNewOpenAIResponsesClient_OpenAI(t *testing.T) {
 	}
 	if client.model != "gpt-5.4" {
 		t.Fatalf("expected model gpt-5.4, got %s", client.model)
+	}
+}
+
+func TestOpenAIResponsesClient_StreamChat_CustomHeaders(t *testing.T) {
+	var gotHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`data: {"type":"response.completed","sequence_number":1,"response":{"id":"resp_1","created_at":0,"metadata":{},"model":"gpt-5.4","object":"response","output":[],"parallel_tool_calls":false,"temperature":1,"tool_choice":"auto","tools":[],"top_p":1}}` + "\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client := &OpenAIResponsesClient{
+		provider: Provider(config.ProviderOpenAI),
+		model:    "gpt-5.4",
+		client:   openai.NewClient(option.WithBaseURL(server.URL), option.WithAPIKey("test-key")),
+		headers:  map[string]string{"x-custom-header": "custom-value"},
+	}
+	client.responseStreamImpl = func(ctx context.Context, params responses.ResponseNewParams, opts ...option.RequestOption) responseStream {
+		return &sdkResponseStream{stream: client.client.Responses.NewStreaming(ctx, params, opts...)}
+	}
+
+	eventCh, err := client.StreamChat(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for range eventCh {
+	}
+
+	if gotHeaders.Get("x-custom-header") != "custom-value" {
+		t.Fatalf("expected x-custom-header %q, got %q", "custom-value", gotHeaders.Get("x-custom-header"))
 	}
 }
 

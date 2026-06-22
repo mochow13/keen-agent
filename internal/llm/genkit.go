@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
@@ -29,6 +30,7 @@ type GenkitClient struct {
 	streamImpl              streamFunc
 	pendingState            []*ai.Message
 	contextWindowTokenCount int
+	headers                 map[string]string
 }
 
 func NewGenkitClient(cfg *ClientConfig) (*GenkitClient, error) {
@@ -59,6 +61,7 @@ func NewGenkitClient(cfg *ClientConfig) (*GenkitClient, error) {
 		maxRetries:              retryCount(cfg.MaxRetries),
 		contextWindowTokenCount: cfg.ContextWindowTokens,
 		streamImpl:              genkit.GenerateStream,
+		headers:                 cfg.Headers,
 	}, nil
 }
 
@@ -102,6 +105,33 @@ func budgetForEffort(effort string) *int32 {
 		return nil
 	}
 	return &b
+}
+
+func buildGenkitGenerateConfig(thinkingEffort string, provider Provider, headers map[string]string) *genai.GenerateContentConfig {
+	var cfg *genai.GenerateContentConfig
+	if thinkingEffort != "" && thinkingEffort != "off" && provider == Provider(config.ProviderGoogleAI) {
+		budget := budgetForEffort(thinkingEffort)
+		if budget != nil {
+			cfg = &genai.GenerateContentConfig{
+				ThinkingConfig: &genai.ThinkingConfig{
+					IncludeThoughts: true,
+					ThinkingBudget:  budget,
+				},
+			}
+		}
+	}
+	if len(headers) > 0 {
+		if cfg == nil {
+			cfg = &genai.GenerateContentConfig{}
+		}
+		cfg.HTTPOptions = &genai.HTTPOptions{
+			Headers: make(http.Header, len(headers)),
+		}
+		for k, v := range headers {
+			cfg.HTTPOptions.Headers.Set(k, v)
+		}
+	}
+	return cfg
 }
 
 func (c *GenkitClient) collectTurnWithRetry(
@@ -209,16 +239,8 @@ func (c *GenkitClient) StreamChat(
 				ai.WithMessages(aiMessages...),
 			}
 
-			if c.thinkingEffort != "" && c.thinkingEffort != "off" && c.provider == Provider(config.ProviderGoogleAI) {
-				budget := budgetForEffort(c.thinkingEffort)
-				if budget != nil {
-					opts = append(opts, ai.WithConfig(&genai.GenerateContentConfig{
-						ThinkingConfig: &genai.ThinkingConfig{
-							IncludeThoughts: true,
-							ThinkingBudget:  budget,
-						},
-					}))
-				}
+			if genCfg := buildGenkitGenerateConfig(c.thinkingEffort, c.provider, c.headers); genCfg != nil {
+				opts = append(opts, ai.WithConfig(genCfg))
 			}
 
 			if len(genkitTools) > 0 {

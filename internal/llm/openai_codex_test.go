@@ -116,6 +116,52 @@ func TestOpenAICodexClientRequestTargetsCodexEndpointAndOAuthHeaders(t *testing.
 	}
 }
 
+func TestOpenAICodexClientRequestCustomHeaders(t *testing.T) {
+	store := auth.NewStoreAt(filepath.Join(t.TempDir(), "auth.json"))
+	if err := store.Set(auth.OpenAICodexProviderID, auth.OAuthCredential{
+		Type:         "oauth",
+		AccessToken:  "oauth-access",
+		RefreshToken: "refresh",
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("seed auth store: %v", err)
+	}
+
+	var gotCustom string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCustom = r.Header.Get("x-custom-header")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"type":"response.completed","sequence_number":1,"response":{"id":"r1","created_at":0,"metadata":{},"model":"gpt-5.4","object":"response","output":[],"parallel_tool_calls":false,"temperature":1,"tool_choice":"auto","tools":[],"top_p":1}}` + "\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client := &OpenAICodexClient{
+		model:       "gpt-5.4",
+		client:      openai.NewClient(option.WithBaseURL(server.URL + "/backend-api/codex/")),
+		authManager: auth.NewOAuthManager(store),
+		userAgent:   "keen-agent-test",
+		headers:     map[string]string{"x-custom-header": "custom-value"},
+	}
+	client.responseStreamImpl = func(ctx context.Context, params responses.ResponseNewParams, opts ...option.RequestOption) responseStream {
+		return &sdkResponseStream{stream: client.client.Responses.NewStreaming(ctx, params, opts...)}
+	}
+
+	ch, err := client.StreamChat(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("StreamChat() failed: %v", err)
+	}
+	for ev := range ch {
+		if ev.Type == StreamEventTypeError {
+			t.Fatalf("unexpected stream error: %v", ev.Error)
+		}
+	}
+
+	if gotCustom != "custom-value" {
+		t.Fatalf("expected x-custom-header %q, got %q", "custom-value", gotCustom)
+	}
+}
+
 func TestOpenAICodexClientSetsInstructionsStoreAndReasoning(t *testing.T) {
 	client := newTestCodexClient(t)
 	client.thinkingEffort = "high"

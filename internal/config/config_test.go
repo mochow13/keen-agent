@@ -157,6 +157,28 @@ func TestResolve_PropagatesBaseURL(t *testing.T) {
 	}
 }
 
+func TestResolve_PropagatesHeaders(t *testing.T) {
+	global := &GlobalConfig{
+		ActiveProvider: ProviderDeepSeek,
+		Providers: map[string]ProviderConfig{
+			ProviderDeepSeek: {
+				Models:  []string{"deepseek-v4-pro"},
+				APIKey:  "sk-test",
+				Headers: map[string]string{"x_header_1": "val1", "x_header_2": "val2"},
+			},
+		},
+	}
+	session := &SessionConfig{}
+
+	resolved, err := Resolve(global, session)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resolved.Headers) != 2 || resolved.Headers["x_header_1"] != "val1" || resolved.Headers["x_header_2"] != "val2" {
+		t.Errorf("expected headers map, got %v", resolved.Headers)
+	}
+}
+
 func TestResolve_OpenAICodexAllowsMissingAPIKey(t *testing.T) {
 	global := &GlobalConfig{
 		ActiveProvider: ProviderOpenAICodex,

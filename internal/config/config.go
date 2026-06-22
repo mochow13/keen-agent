@@ -35,9 +35,10 @@ type GlobalConfig struct {
 }
 
 type ProviderConfig struct {
-	Models  []string `json:"models"`
-	APIKey  string   `json:"api_key"`
-	BaseURL string   `json:"base_url,omitempty"`
+	Models  []string          `json:"models"`
+	APIKey  string            `json:"api_key"`
+	BaseURL string            `json:"base_url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 func (p ProviderConfig) hasModel(model string) bool {
@@ -57,6 +58,7 @@ type ResolvedConfig struct {
 	ThinkingEffort string
 	BaseURL        string
 	AuthMode       string
+	Headers        map[string]string
 }
 
 const (
@@ -134,6 +136,7 @@ func Resolve(global *GlobalConfig, session *SessionConfig) (*ResolvedConfig, err
 		ThinkingEffort: global.ThinkingEffort,
 		BaseURL:        providerGlobal.BaseURL,
 		AuthMode:       AuthModeForProvider(provider),
+		Headers:        providerGlobal.Headers,
 	}
 
 	slog.Debug("config resolved", "provider", resolved.Provider, "model", resolved.Model)
@@ -175,6 +178,7 @@ func ResolveAdversary(global *GlobalConfig) (*ResolvedConfig, error) {
 		APIKey:   provCfg.APIKey,
 		BaseURL:  provCfg.BaseURL,
 		AuthMode: AuthModeForProvider(global.AdversaryProvider),
+		Headers:  provCfg.Headers,
 	}, nil
 }
 

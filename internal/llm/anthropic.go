@@ -67,6 +67,7 @@ type AnthropicClient struct {
 	streamImpl              anthropicStreamFactory
 	pendingState            []anthropic.MessageParam
 	contextWindowTokenCount int
+	headers                 map[string]string
 }
 
 func NewAnthropicClient(cfg *ClientConfig) (*AnthropicClient, error) {
@@ -86,6 +87,7 @@ func NewAnthropicClient(cfg *ClientConfig) (*AnthropicClient, error) {
 		thinkingEffort:          cfg.ThinkingEffort,
 		maxRetries:              retryCount(cfg.MaxRetries),
 		contextWindowTokenCount: cfg.ContextWindowTokens,
+		headers:                 cfg.Headers,
 	}
 	c.streamImpl = func(ctx context.Context, params anthropic.MessageNewParams, opts ...option.RequestOption) anthropicStream {
 		return &sdkAnthropicStream{stream: c.client.Messages.NewStreaming(ctx, params, opts...)}
@@ -506,12 +508,14 @@ func (c *AnthropicClient) StreamChat(
 }
 
 func (c *AnthropicClient) requestOptions(opts StreamOptions) []option.RequestOption {
-	if c.provider != Provider(config.ProviderOpenCodeGo) || opts.SessionID == "" {
-		return nil
+	var requestOpts []option.RequestOption
+	for k, v := range c.headers {
+		requestOpts = append(requestOpts, option.WithHeader(k, v))
 	}
-	return []option.RequestOption{
-		option.WithHeader("x-opencode-session", opencodeSessionID(opts.SessionID)),
+	if c.provider == Provider(config.ProviderOpenCodeGo) && opts.SessionID != "" {
+		requestOpts = append(requestOpts, option.WithHeader("x-opencode-session", opencodeSessionID(opts.SessionID)))
 	}
+	return requestOpts
 }
 
 func (c *AnthropicClient) Reset() {

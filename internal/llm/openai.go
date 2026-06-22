@@ -61,6 +61,7 @@ type OpenAICompatibleClient struct {
 	streamImpl              streamFactory
 	pendingState            []openai.ChatCompletionMessageParamUnion
 	contextWindowTokenCount int
+	headers                 map[string]string
 }
 
 func NewOpenAICompatibleClient(cfg *ClientConfig) (*OpenAICompatibleClient, error) {
@@ -85,6 +86,7 @@ func NewOpenAICompatibleClient(cfg *ClientConfig) (*OpenAICompatibleClient, erro
 		maxRetries:              retryCount(cfg.MaxRetries),
 		client:                  client,
 		contextWindowTokenCount: cfg.ContextWindowTokens,
+		headers:                 cfg.Headers,
 	}
 	c.streamImpl = func(ctx context.Context, params openai.ChatCompletionNewParams, opts ...option.RequestOption) chatStream {
 		return &sdkChatStream{stream: c.client.Chat.Completions.NewStreaming(ctx, params, opts...)}
@@ -525,12 +527,14 @@ func (c *OpenAICompatibleClient) StreamChat(
 }
 
 func (c *OpenAICompatibleClient) requestOptions(opts StreamOptions) []option.RequestOption {
-	if c.provider != Provider(config.ProviderOpenCodeGo) || opts.SessionID == "" {
-		return nil
+	var requestOpts []option.RequestOption
+	for k, v := range c.headers {
+		requestOpts = append(requestOpts, option.WithHeader(k, v))
 	}
-	return []option.RequestOption{
-		option.WithHeader("x-opencode-session", opencodeSessionID(opts.SessionID)),
+	if c.provider == Provider(config.ProviderOpenCodeGo) && opts.SessionID != "" {
+		requestOpts = append(requestOpts, option.WithHeader("x-opencode-session", opencodeSessionID(opts.SessionID)))
 	}
+	return requestOpts
 }
 
 func (c *OpenAICompatibleClient) Reset() {

@@ -36,6 +36,7 @@ type OpenAICodexClient struct {
 	userAgent               string
 	pendingState            []responses.ResponseInputItemUnionParam
 	contextWindowTokenCount int
+	headers                 map[string]string
 }
 
 func NewOpenAICodexClient(cfg *ClientConfig) (*OpenAICodexClient, error) {
@@ -51,6 +52,7 @@ func NewOpenAICodexClient(cfg *ClientConfig) (*OpenAICodexClient, error) {
 		contextWindowTokenCount: cfg.ContextWindowTokens,
 		authManager:             auth.NewOAuthManager(nil),
 		userAgent:               fmt.Sprintf("keen-agent (%s; %s)", runtime.GOOS, runtime.GOARCH),
+		headers:                 cfg.Headers,
 	}
 	c.responseStreamImpl = func(ctx context.Context, params responses.ResponseNewParams, opts ...option.RequestOption) responseStream {
 		return &sdkResponseStream{stream: c.client.Responses.NewStreaming(ctx, params, opts...)}
@@ -534,13 +536,17 @@ func (c *OpenAICodexClient) requestOptions(ctx context.Context) ([]option.Reques
 	if err != nil {
 		return nil, err
 	}
-	opts := []option.RequestOption{
+	opts := make([]option.RequestOption, 0, len(c.headers)+5)
+	for k, v := range c.headers {
+		opts = append(opts, option.WithHeader(k, v))
+	}
+	opts = append(opts,
 		option.WithHeader("Authorization", "Bearer "+cred.AccessToken),
 		option.WithHeader("originator", "keen-agent"),
 		option.WithHeader("User-Agent", c.userAgent),
 		option.WithHeaderDel("OpenAI-Organization"),
 		option.WithHeaderDel("OpenAI-Project"),
-	}
+	)
 	if cred.AccountID != "" {
 		opts = append(opts, option.WithHeader("ChatGPT-Account-Id", cred.AccountID))
 	}

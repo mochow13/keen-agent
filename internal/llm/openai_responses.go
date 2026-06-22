@@ -56,6 +56,7 @@ type OpenAIResponsesClient struct {
 	responseStreamImpl      responseStreamFactory
 	pendingState            []responses.ResponseInputItemUnionParam
 	contextWindowTokenCount int
+	headers                 map[string]string
 }
 
 func NewOpenAIResponsesClient(cfg *ClientConfig) (*OpenAIResponsesClient, error) {
@@ -78,6 +79,7 @@ func NewOpenAIResponsesClient(cfg *ClientConfig) (*OpenAIResponsesClient, error)
 		maxRetries:              retryCount(cfg.MaxRetries),
 		client:                  client,
 		contextWindowTokenCount: cfg.ContextWindowTokens,
+		headers:                 cfg.Headers,
 	}
 	c.responseStreamImpl = func(ctx context.Context, params responses.ResponseNewParams, opts ...option.RequestOption) responseStream {
 		return &sdkResponseStream{stream: c.client.Responses.NewStreaming(ctx, params, opts...)}
@@ -189,7 +191,7 @@ func (c *OpenAIResponsesClient) StreamChat(
 				params.Tools = responseTools
 			}
 
-			completed, streamedContent, toolCalls, err := c.collectTurnWithRetry(ctx, params, eventCh)
+			completed, streamedContent, toolCalls, err := c.collectTurnWithRetry(ctx, params, eventCh, c.requestOptions()...)
 			if err != nil {
 				c.exitIncomplete(eventCh, input, turnStartLen, replayedPendingInput, err, oneShot)
 				return
@@ -238,6 +240,14 @@ func (c *OpenAIResponsesClient) StreamChat(
 
 func (c *OpenAIResponsesClient) Reset() {
 	c.pendingState = nil
+}
+
+func (c *OpenAIResponsesClient) requestOptions() []option.RequestOption {
+	var requestOpts []option.RequestOption
+	for k, v := range c.headers {
+		requestOpts = append(requestOpts, option.WithHeader(k, v))
+	}
+	return requestOpts
 }
 
 func (c *OpenAIResponsesClient) injectPendingState(input []responses.ResponseInputItemUnionParam) ([]responses.ResponseInputItemUnionParam, []responses.ResponseInputItemUnionParam) {
@@ -299,10 +309,11 @@ func (c *OpenAIResponsesClient) collectTurnWithRetry(
 	ctx context.Context,
 	params responses.ResponseNewParams,
 	eventCh chan<- StreamEvent,
+	opts ...option.RequestOption,
 ) (*responses.Response, string, []responses.ResponseFunctionToolCall, error) {
 	maxRetries := retryCount(c.maxRetries)
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		completed, streamedContent, toolCalls, err := c.collectTurn(ctx, params, eventCh)
+		completed, streamedContent, toolCalls, err := c.collectTurn(ctx, params, eventCh, opts...)
 		if err == nil {
 			return completed, streamedContent, toolCalls, nil
 		}
@@ -327,8 +338,9 @@ func (c *OpenAIResponsesClient) collectTurn(
 	ctx context.Context,
 	params responses.ResponseNewParams,
 	eventCh chan<- StreamEvent,
+	opts ...option.RequestOption,
 ) (*responses.Response, string, []responses.ResponseFunctionToolCall, error) {
-	stream := c.responseStreamImpl(ctx, params)
+	stream := c.responseStreamImpl(ctx, params, opts...)
 	var completed *responses.Response
 	var streamedContent strings.Builder
 
