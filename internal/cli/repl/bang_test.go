@@ -73,6 +73,23 @@ func TestStartBangCommand_ReportsTimeout(t *testing.T) {
 	}
 }
 
+func TestStartBangCommand_ContextCancel_UnblocksFloodingCommand(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	events := startBangCommand(ctx, "while true; do echo x; done")
+
+	// Give the goroutine time to fill the channel buffer and block on a send.
+	time.Sleep(50 * time.Millisecond)
+
+	cancel()
+
+	done := lastBangDoneMsg(t, events)
+	if !done.canceled {
+		t.Fatal("expected cancellation")
+	}
+}
+
 func TestWaitForBangEvent_NilChannelReturnsNil(t *testing.T) {
 	if cmd := waitForBangEvent(nil); cmd != nil {
 		t.Fatal("expected nil command for nil event channel")
@@ -135,6 +152,72 @@ func TestCancelBangCommand_ClearsCancelFunc(t *testing.T) {
 	}
 	if m.bang.cancel != nil {
 		t.Fatal("expected cancel function to be cleared")
+	}
+}
+
+func TestHandleKeyMsg_CtrlC_CancelsBang(t *testing.T) {
+	m := newTestModel()
+	m, waitCmd := m.handleBangCommand("!sleep 2")
+	if !m.bang.active {
+		t.Fatal("expected bang command to be active")
+	}
+
+	cancelCalled := false
+	originalCancel := m.bang.cancel
+	m.bang.cancel = func() {
+		cancelCalled = true
+		if originalCancel != nil {
+			originalCancel()
+		}
+	}
+
+	newM, cmd := m.handleKeyMsg(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !cancelCalled {
+		t.Fatal("expected ctrl+c to call cancelBangCommand")
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd after ctrl+c cancels bang")
+	}
+
+	for i := 0; i < 20 && newM.bang.active; i++ {
+		newM, waitCmd = processCmd(newM, waitCmd)
+	}
+	if newM.bang.active {
+		t.Fatal("expected bang command to stop after ctrl+c cancellation")
+	}
+}
+
+func TestUpdate_CtrlC_CancelsBang(t *testing.T) {
+	m := newTestModel()
+	m, waitCmd := m.handleBangCommand("!sleep 2")
+	if !m.bang.active {
+		t.Fatal("expected bang command to be active")
+	}
+
+	cancelCalled := false
+	originalCancel := m.bang.cancel
+	m.bang.cancel = func() {
+		cancelCalled = true
+		if originalCancel != nil {
+			originalCancel()
+		}
+	}
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	newM := updated.(*replModel)
+	if !cancelCalled {
+		t.Fatal("expected ctrl+c to call cancelBangCommand through Update")
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd after ctrl+c cancels bang through Update")
+	}
+
+	for i := 0; i < 20 && newM.bang.active; i++ {
+		updatedM, _ := processCmd(*newM, waitCmd)
+		newM = &updatedM
+	}
+	if newM.bang.active {
+		t.Fatal("expected bang command to stop after ctrl+c cancellation through Update")
 	}
 }
 

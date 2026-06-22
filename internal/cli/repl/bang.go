@@ -46,8 +46,8 @@ func startBangCommand(ctx context.Context, command string) <-chan tea.Msg {
 
 		var wg sync.WaitGroup
 		wg.Add(2)
-		go readBangLines(events, &wg, bangStreamStdout, stdout)
-		go readBangLines(events, &wg, bangStreamStderr, stderr)
+		go readBangLines(ctx, events, &wg, bangStreamStdout, stdout)
+		go readBangLines(ctx, events, &wg, bangStreamStderr, stderr)
 		wg.Wait()
 
 		err = cmd.Wait()
@@ -68,7 +68,7 @@ func startBangCommand(ctx context.Context, command string) <-chan tea.Msg {
 	return events
 }
 
-func readBangLines(events chan<- tea.Msg, wg *sync.WaitGroup, stream string, r io.Reader) {
+func readBangLines(ctx context.Context, events chan<- tea.Msg, wg *sync.WaitGroup, stream string, r io.Reader) {
 	defer wg.Done()
 
 	reader := bufio.NewReader(r)
@@ -76,7 +76,11 @@ func readBangLines(events chan<- tea.Msg, wg *sync.WaitGroup, stream string, r i
 		line, err := reader.ReadString('\n')
 		line = strings.TrimRight(line, "\r\n")
 		if line != "" {
-			events <- bangOutputMsg{stream: stream, line: line}
+			select {
+			case events <- bangOutputMsg{stream: stream, line: line}:
+			case <-ctx.Done():
+				return
+			}
 		}
 		if err != nil {
 			return
