@@ -195,16 +195,23 @@ func waitForMCPStartup(runtime keenmcp.Runtime) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		_ = runtime.WaitInitialScan(ctx)
-		return mcpStartupStatusMsg{Statuses: runtime.Servers()}
+		err := runtime.WaitInitialScan(ctx)
+		return mcpStartupStatusMsg{Statuses: runtime.Servers(), Err: err}
 	}
 }
 
-func (m *replModel) handleMCPStartupStatus(statuses []keenmcp.ServerStatus) {
-	m.syncMCPSkills(statuses)
+func (m *replModel) handleMCPStartupStatus(msg mcpStartupStatusMsg) {
+	m.syncMCPSkills(msg.Statuses)
+
+	if msg.Err != nil {
+		m.output.AddLine(wrapTextWithStyle("  MCP startup timed out: "+msg.Err.Error(), repltheme.ErrorStyle, m.messageWidth()))
+		m.output.AddEmptyLine()
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
+	}
 
 	var failed []keenmcp.ServerStatus
-	for _, status := range statuses {
+	for _, status := range msg.Statuses {
 		if isMCPFailureState(status.State) {
 			failed = append(failed, status)
 		}
@@ -213,11 +220,11 @@ func (m *replModel) handleMCPStartupStatus(statuses []keenmcp.ServerStatus) {
 		return
 	}
 	for _, status := range failed {
-		msg := "  MCP connection failed for " + status.Name + ". Try `/mcp connect " + status.Name + "` to connect."
+		line := "  MCP connection failed for " + status.Name + ". Try `/mcp connect " + status.Name + "` to connect."
 		if status.LastError != "" {
-			msg += " (" + status.LastError + ")"
+			line += " (" + status.LastError + ")"
 		}
-		m.output.AddLine(wrapTextWithStyle(msg, repltheme.ErrorStyle, m.messageWidth()))
+		m.output.AddLine(wrapTextWithStyle(line, repltheme.ErrorStyle, m.messageWidth()))
 	}
 	m.output.AddEmptyLine()
 	m.updateViewportContent()
@@ -319,6 +326,7 @@ func (m *replModel) refreshMCPSkill(server, description string) bool {
 
 func (m *replModel) handleMCPConnectDone(msg mcpConnectDoneMsg) {
 	m.stopLoading()
+	m.adjustTextareaHeight()
 	changed := false
 	if msg.Err != nil {
 		m.output.AddError("MCP connect failed for "+msg.Server+": "+msg.Err.Error(), repltheme.ErrorStyle)
@@ -614,11 +622,18 @@ func (m *replModel) spinnerHeight() int {
 	return 0
 }
 
+func (m *replModel) copyNotificationHeight() int {
+	if m.copyNotification == "" || m.showSpinner {
+		return 0
+	}
+	return 2
+}
+
 func (m *replModel) adjustTextareaHeight() {
 	if m.height <= 0 {
 		return
 	}
-	m.viewport.SetHeight(m.height - m.textarea.Height() - 4 - m.spinnerHeight() - m.suggestion.Height() - m.queuedHeight())
+	m.viewport.SetHeight(m.height - m.textarea.Height() - 4 - m.spinnerHeight() - m.copyNotificationHeight() - m.suggestion.Height() - m.queuedHeight())
 }
 
 func (m replModel) isAtTopOfInput() bool {
@@ -827,7 +842,7 @@ func (m *replModel) applyWindowSize(msg tea.WindowSizeMsg) {
 		m.output.SetWidth(msg.Width)
 	}
 	m.viewport.SetWidth(msg.Width)
-	m.viewport.SetHeight(msg.Height - m.textarea.Height() - 4 - m.spinnerHeight() - m.suggestion.Height())
+	m.viewport.SetHeight(msg.Height - m.textarea.Height() - 4 - m.spinnerHeight() - m.copyNotificationHeight() - m.suggestion.Height() - m.queuedHeight())
 
 	if !m.initialScreenDone && msg.Width > 0 {
 		for _, line := range buildInitialScreen(m.ctx, m.lastSession, m.width) {

@@ -36,8 +36,11 @@ func NewRootCommand(version string) *cobra.Command {
 				wd = "."
 			}
 
-			mcpManager, closeMCP := startMCPRuntime(context.Background())
+			mcpManager, closeMCP, mcpErr := startMCPRuntime(context.Background())
 			defer closeMCP()
+			if mcpErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "MCP unavailable: %v\n", mcpErr)
+			}
 
 			return repl.RunREPL(version, wd, resolvedCfg, loader, globalCfg, registry, needsSetup, mcpManager)
 		},
@@ -48,25 +51,23 @@ func NewRootCommand(version string) *cobra.Command {
 	return cmd
 }
 
-func startMCPRuntime(ctx context.Context) (keenmcp.Runtime, func()) {
+func startMCPRuntime(ctx context.Context) (keenmcp.Runtime, func(), error) {
 	manager, err := newMCPManager()
 	if err != nil {
-		slog.Warn("MCP startup skipped", "error", err)
-		return nil, func() {}
+		return nil, func() {}, err
 	}
 	if err := manager.Start(ctx); err != nil {
-		slog.Warn("MCP startup failed", "error", err)
 		if closeErr := manager.Close(); closeErr != nil {
 			slog.Warn("MCP shutdown failed after startup error", "error", closeErr)
 		}
-		return nil, func() {}
+		return nil, func() {}, err
 	}
 	slog.Debug("MCP manager started")
 	return manager, func() {
 		if err := manager.Close(); err != nil {
 			slog.Warn("MCP shutdown failed", "error", err)
 		}
-	}
+	}, nil
 }
 
 func newRunCommand() *cobra.Command {
@@ -115,8 +116,11 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, closeMCP := startMCPRuntime(context.Background())
+			_, closeMCP, mcpErr := startMCPRuntime(context.Background())
 			defer closeMCP()
+			if mcpErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "MCP unavailable: %v\n", mcpErr)
+			}
 
 			_, err = repl.RunHeadless(context.Background(), repl.HeadlessRunOptions{
 				WorkingDir: wd,

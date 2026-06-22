@@ -57,6 +57,22 @@ func TestHandleEnterKey_ActiveStream(t *testing.T) {
 	}
 }
 
+func TestHandleEnterKey_ActiveStream_AdjustsViewportHeight(t *testing.T) {
+	m := newTestModel()
+	m.textarea.SetValue("some input")
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+	m.adjustTextareaHeight()
+
+	before := m.viewport.Height()
+	newM, _ := m.handleEnterKey()
+	after := newM.viewport.Height()
+
+	if after != before-newM.queuedHeight() {
+		t.Errorf("expected viewport height to decrease by queued height %d, got before=%d after=%d", newM.queuedHeight(), before, after)
+	}
+}
+
 func TestHandleBangCommand_ReturnsBeforeCommandCompletes(t *testing.T) {
 	m := newTestModel()
 
@@ -392,7 +408,7 @@ func TestHandleMCPStartupStatusGeneratesConnectedSkillsWithoutChangingStatus(t *
 		"deepwiki": {{Name: "ask", Description: "Ask DeepWiki", InputSchema: map[string]any{"type": "object"}}},
 	}}
 
-	m.handleMCPStartupStatus([]keenmcp.ServerStatus{{Name: "deepwiki", State: keenmcp.StateConnected, Description: "Ask questions about DeepWiki."}})
+	m.handleMCPStartupStatus(mcpStartupStatusMsg{Statuses: []keenmcp.ServerStatus{{Name: "deepwiki", State: keenmcp.StateConnected, Description: "Ask questions about DeepWiki."}}})
 
 	if _, ok := skills.Find(m.appState.GetSkills().Skills, "mcp:deepwiki"); !ok {
 		t.Fatalf("expected mcp:deepwiki skill to be reloaded")
@@ -420,7 +436,7 @@ func TestHandleMCPStartupStatusDisablesFailedSkills(t *testing.T) {
 	}
 	m.appState.ReloadSkills()
 
-	m.handleMCPStartupStatus([]keenmcp.ServerStatus{{Name: "posthog", State: keenmcp.StateAuthRequired, LastError: "auth required"}})
+	m.handleMCPStartupStatus(mcpStartupStatusMsg{Statuses: []keenmcp.ServerStatus{{Name: "posthog", State: keenmcp.StateAuthRequired, LastError: "auth required"}}})
 
 	if m.appState.GetSkillsConfig().Enabled("mcp:posthog") {
 		t.Fatalf("expected mcp:posthog skill to be disabled")
@@ -456,7 +472,7 @@ func TestHandleMCPStartupStatusRemovesUnconfiguredSkillStatuses(t *testing.T) {
 	}
 	m.appState.ReloadSkills()
 
-	m.handleMCPStartupStatus([]keenmcp.ServerStatus{{Name: "context7", State: keenmcp.StateConnected}})
+	m.handleMCPStartupStatus(mcpStartupStatusMsg{Statuses: []keenmcp.ServerStatus{{Name: "context7", State: keenmcp.StateConnected}}})
 
 	cfg := m.appState.GetSkillsConfig()
 	if _, ok := cfg.IsEnabled["mcp:deepwiki"]; ok {
@@ -482,10 +498,10 @@ func TestHandleMCPStartupStatusShowsFailures(t *testing.T) {
 	m.viewport.SetWidth(50)
 	m.output.SetWidth(50)
 
-	m.handleMCPStartupStatus([]keenmcp.ServerStatus{
+	m.handleMCPStartupStatus(mcpStartupStatusMsg{Statuses: []keenmcp.ServerStatus{
 		{Name: "deepwiki", State: keenmcp.StateConnected},
 		{Name: "posthog", State: keenmcp.StateAuthRequired, LastError: "mcp authentication required because the stored token is missing or expired"},
-	})
+	}})
 
 	out := ansi.Strip(m.output.Join())
 	if strings.Contains(out, "deepwiki") {
@@ -499,6 +515,20 @@ func TestHandleMCPStartupStatusShowsFailures(t *testing.T) {
 		if lipgloss.Width(line) > 46 {
 			t.Fatalf("MCP startup notice exceeds content width (%d > 46): %q", lipgloss.Width(line), line)
 		}
+	}
+}
+
+func TestHandleMCPStartupStatusShowsWaitError(t *testing.T) {
+	m := newTestModel()
+	m.width = 50
+	m.viewport.SetWidth(50)
+	m.output.SetWidth(50)
+
+	m.handleMCPStartupStatus(mcpStartupStatusMsg{Err: context.DeadlineExceeded})
+
+	out := ansi.Strip(m.output.Join())
+	if !strings.Contains(out, "timed out") {
+		t.Fatalf("output = %q, want timeout notice", out)
 	}
 }
 
@@ -1581,6 +1611,21 @@ func TestHandleEnterKey_AdversaryQueuedWhenBusy(t *testing.T) {
 	}
 	if cmd != nil {
 		t.Error("expected nil cmd when queueing /adversary")
+	}
+}
+
+func TestHandleEnterKey_AdversaryQueuedWhenBusy_AdjustsViewportHeight(t *testing.T) {
+	m := newTestModel()
+	m.showSpinner = true
+	m.adjustTextareaHeight()
+
+	before := m.viewport.Height()
+	m.textarea.SetValue("/adversary focus on error handling")
+	newM, _ := m.handleEnterKey()
+	after := newM.viewport.Height()
+
+	if after != before-newM.queuedHeight() {
+		t.Errorf("expected viewport height to decrease by queued height %d, got before=%d after=%d", newM.queuedHeight(), before, after)
 	}
 }
 

@@ -261,6 +261,7 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 			if len(m.queuedInputs) < maxQueuedInputs {
 				m.queuedInputs = append(m.queuedInputs, input)
 				m.textarea.Reset()
+				m.adjustTextareaHeight()
 				return *m, nil
 			}
 			return *m, m.showNotification("Queue is full")
@@ -304,6 +305,7 @@ func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
 			if len(m.queuedInputs) < maxQueuedInputs {
 				m.queuedInputs = append(m.queuedInputs, input)
 				m.textarea.Reset()
+				m.adjustTextareaHeight()
 				return *m, nil
 			}
 			return *m, m.showNotification("Queue is full")
@@ -385,6 +387,7 @@ func (m *replModel) showNotification(msg string) tea.Cmd {
 	expiresAt := time.Now().Add(copyNotificationTimeout)
 	m.copyNotification = msg
 	m.copyNotificationExpiresAt = expiresAt
+	m.adjustTextareaHeight()
 	return clearCopyNotificationCmd(expiresAt)
 }
 
@@ -533,7 +536,7 @@ func (m replModel) updateNormalMode(msg tea.Msg) (replModel, tea.Cmd) {
 		m.handleUpdateCheckMsg(msg)
 		return m, nil
 	case mcpStartupStatusMsg:
-		m.handleMCPStartupStatus(msg.Statuses)
+		m.handleMCPStartupStatus(msg)
 		return m, nil
 	case mcpConnectDoneMsg:
 		m.handleMCPConnectDone(msg)
@@ -542,6 +545,7 @@ func (m replModel) updateNormalMode(msg tea.Msg) (replModel, tea.Cmd) {
 		if m.copyNotificationExpiresAt.UnixNano() == msg.expiresAt {
 			m.copyNotification = ""
 			m.copyNotificationExpiresAt = time.Time{}
+			m.adjustTextareaHeight()
 		}
 		return m, nil
 	case diffReadyMsg:
