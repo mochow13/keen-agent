@@ -41,13 +41,14 @@ const (
 )
 
 type replContext struct {
-	version    string
-	workingDir string
-	cfg        *config.ResolvedConfig
-	globalCfg  *config.GlobalConfig
-	loader     *config.Loader
-	registry   *providers.Registry
-	mcp        keenmcp.Runtime
+	version       string
+	workingDir    string
+	cfg           *config.ResolvedConfig
+	globalCfg     *config.GlobalConfig
+	loader        *config.Loader
+	registry      *providers.Registry
+	mcp           keenmcp.Runtime
+	resumeSession *session.LoadedSession
 }
 
 type replModel struct {
@@ -222,6 +223,12 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 	model.streamHandler.workingDir = ctx.workingDir
 	model.streamHandler.showThinking = model.showThinking
 
+	if ctx.resumeSession != nil {
+		model.sessions.setSession(ctx.resumeSession.Session)
+		model.replayLoadedSession(ctx.resumeSession)
+		model.initialScreenDone = true
+	}
+
 	historyDir, err := os.UserHomeDir()
 	if err == nil {
 		historyDir = filepath.Join(historyDir, ".keen-agent")
@@ -251,7 +258,7 @@ func (m replModel) Init() tea.Cmd {
 }
 
 func (m *replModel) handleEnterKey() (replModel, tea.Cmd) {
-	input := m.textarea.Value()
+	input := strings.TrimSpace(m.textarea.Value())
 	if input == "" {
 		return *m, nil
 	}
@@ -871,22 +878,24 @@ func RunREPL(
 	registry *providers.Registry,
 	needsSetup bool,
 	mcpRuntime keenmcp.Runtime,
-) error {
+	resumeSession *session.LoadedSession,
+) (string, error) {
 	ctx := &replContext{
-		version:    version,
-		workingDir: workingDir,
-		cfg:        cfg,
-		globalCfg:  globalCfg,
-		loader:     loader,
-		registry:   registry,
-		mcp:        mcpRuntime,
+		version:       version,
+		workingDir:    workingDir,
+		cfg:           cfg,
+		globalCfg:     globalCfg,
+		loader:        loader,
+		registry:      registry,
+		mcp:           mcpRuntime,
+		resumeSession: resumeSession,
 	}
 
 	var llmClient llm.LLMClient
 	if cfg.Model != "" && (!config.RequiresAPIKey(cfg.Provider) || cfg.APIKey != "") {
 		client, err := llm.NewClient(cfg)
 		if err != nil {
-			return fmt.Errorf("failed to initialize LLM client: %w", err)
+			return "", fmt.Errorf("failed to initialize LLM client: %w", err)
 		}
 		llmClient = client
 	}
@@ -894,8 +903,8 @@ func RunREPL(
 	m := initialModel(ctx, llmClient, needsSetup)
 	p := tea.NewProgram(&m)
 	if _, err := p.Run(); err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return m.sessions.currentID(), nil
 }

@@ -110,6 +110,13 @@ func (s *replSessionState) load(summary session.Summary) (*session.LoadedSession
 	return loaded, nil
 }
 
+func (s *replSessionState) setSession(session *session.Session) {
+	if s == nil {
+		return
+	}
+	s.current = session
+}
+
 func buildAssistantTurnEvent(
 	segments []streamSegment,
 	message llm.Message,

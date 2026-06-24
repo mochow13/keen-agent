@@ -668,6 +668,39 @@ func TestSpinnerHeight_IncludesCompactionSpinner(t *testing.T) {
 	}
 }
 
+func TestCopyNotificationHeight(t *testing.T) {
+	m := newTestModel()
+	if got := m.copyNotificationHeight(); got != 0 {
+		t.Fatalf("expected notification height 0 when empty, got %d", got)
+	}
+
+	m.copyNotification = copyNotificationMessage
+	if got := m.copyNotificationHeight(); got != 2 {
+		t.Fatalf("expected notification height 2, got %d", got)
+	}
+
+	m.showSpinner = true
+	if got := m.copyNotificationHeight(); got != 0 {
+		t.Fatalf("expected notification height 0 when spinner is shown, got %d", got)
+	}
+}
+
+func TestNotificationAdjustsViewportHeight(t *testing.T) {
+	m := newTestModel()
+	m.applyWindowSize(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+	baseHeight := m.viewport.Height()
+
+	m.showNotification(copyNotificationMessage)
+	if got := m.viewport.Height(); got != baseHeight-2 {
+		t.Fatalf("expected viewport height %d with notification, got %d", baseHeight-2, got)
+	}
+
+	updated, _ := m.updateNormalMode(copyNotificationExpiredMsg{expiresAt: m.copyNotificationExpiresAt.UnixNano()})
+	if got := updated.viewport.Height(); got != baseHeight {
+		t.Fatalf("expected viewport height %d after notification expires, got %d", baseHeight, got)
+	}
+}
+
 func TestFormatLoadingElapsed(t *testing.T) {
 	tests := []struct {
 		name string

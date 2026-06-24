@@ -318,6 +318,7 @@ func (m *replModel) handleSuggestionKeyMsg(keyMsg tea.KeyPressMsg) (bool, replMo
 	case keyEsc:
 		if m.streamHandler == nil || !m.streamHandler.IsActive() {
 			m.suggestion.Refresh("")
+			m.adjustTextareaHeight()
 			return true, *m, nil
 		}
 	}

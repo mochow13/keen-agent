@@ -339,6 +339,7 @@ func (m *replModel) handleMCPCommand(input string) (replModel, tea.Cmd) {
 	}
 
 	m.startLoading("Connecting to MCP server " + server + "...")
+	m.adjustTextareaHeight()
 	m.updateViewportContent()
 	m.viewport.GotoBottom()
 	return *m, tea.Batch(m.spinner.Tick, m.connectMCPCmd(server))

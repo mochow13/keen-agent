@@ -14,6 +14,7 @@ import (
 	"github.com/mochow13/keen-agent/internal/llm"
 	keenmcp "github.com/mochow13/keen-agent/internal/mcp"
 	"github.com/mochow13/keen-agent/internal/providers"
+	"github.com/mochow13/keen-agent/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +23,8 @@ var newMCPManager = func(opts ...keenmcp.Option) (keenmcp.Runtime, error) {
 }
 
 func NewRootCommand(version string) *cobra.Command {
+	var resumeSessionID string
+
 	cmd := &cobra.Command{
 		Use:   "keen-agent",
 		Short: "Keen Agent - A generic agent harness",
@@ -36,17 +39,33 @@ func NewRootCommand(version string) *cobra.Command {
 				wd = "."
 			}
 
+			var resumeSession *session.LoadedSession
+			if resumeSessionID != "" {
+				resumeSession, err = loadResumeSession(wd, resumeSessionID)
+				if err != nil {
+					return err
+				}
+			}
+
 			mcpManager, closeMCP, mcpErr := startMCPRuntime(context.Background())
 			defer closeMCP()
 			if mcpErr != nil {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "MCP unavailable: %v\n", mcpErr)
 			}
 
-			return repl.RunREPL(version, wd, resolvedCfg, loader, globalCfg, registry, needsSetup, mcpManager)
+			sessionID, err := repl.RunREPL(version, wd, resolvedCfg, loader, globalCfg, registry, needsSetup, mcpManager, resumeSession)
+			if err != nil {
+				return err
+			}
+			if sessionID != "" {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nRun `keen-agent --resume %s` to resume the session\n", sessionID)
+			}
+			return nil
 		},
 	}
 
 	cmd.Version = version
+	cmd.Flags().StringVar(&resumeSessionID, "resume", "", "resume a specific Keen Agent session by ID")
 	cmd.AddCommand(newRunCommand())
 	return cmd
 }

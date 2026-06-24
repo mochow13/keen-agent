@@ -41,6 +41,14 @@ func TestNewRootCommand_HasRunCommand(t *testing.T) {
 	}
 }
 
+func TestNewRootCommand_HasResumeFlag(t *testing.T) {
+	cmd := NewRootCommand("0.1.0")
+
+	if cmd.Flags().Lookup("resume") == nil {
+		t.Fatal("expected root command to have --resume flag")
+	}
+}
+
 func TestNewRootCommand_RunCommandHasModelProviderFlags(t *testing.T) {
 	cmd := NewRootCommand("0.1.0")
 
