@@ -305,11 +305,6 @@ func (m *Model) complete() (*Model, tea.Cmd) {
 		apiKey = existing.APIKey
 	}
 
-	if config.RequiresAPIKey(m.SelectedProvider) && apiKey == "" {
-		m.ErrorMessage = "API key is required"
-		return m, nil
-	}
-
 	storedEffort := m.SelectedThinking
 
 	// If model doesn't support configurable effort, clear any stale value
@@ -331,6 +326,12 @@ func (m *Model) complete() (*Model, tea.Cmd) {
 	}
 	if exists {
 		providerCfg.Headers = existing.Headers
+		providerCfg.APIKeyHelper = existing.APIKeyHelper
+	}
+	resolvedAPIKey, err := config.ResolveProviderAPIKey(m.SelectedProvider, providerCfg)
+	if err != nil {
+		m.ErrorMessage = err.Error()
+		return m, nil
 	}
 	m.globalCfg.SetProviderConfig(m.SelectedProvider, providerCfg)
 
@@ -341,13 +342,13 @@ func (m *Model) complete() (*Model, tea.Cmd) {
 
 	m.resolvedCfg.Provider = m.SelectedProvider
 	m.resolvedCfg.Model = m.SelectedModel
-	m.resolvedCfg.APIKey = apiKey
+	m.resolvedCfg.APIKey = resolvedAPIKey
 	m.resolvedCfg.ThinkingEffort = storedEffort
 	m.resolvedCfg.BaseURL = providerCfg.BaseURL
 	m.resolvedCfg.AuthMode = config.AuthModeForProvider(m.SelectedProvider)
 	m.resolvedCfg.Headers = providerCfg.Headers
 
-	if err := m.onComplete(m.SelectedProvider, m.SelectedModel, apiKey); err != nil {
+	if err := m.onComplete(m.SelectedProvider, m.SelectedModel, resolvedAPIKey); err != nil {
 		m.ErrorMessage = fmt.Sprintf("Failed to initialize LLM client: %v", err)
 		return m, nil
 	}

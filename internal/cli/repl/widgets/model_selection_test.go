@@ -162,6 +162,65 @@ func TestModelSelection_BedrockAPIKeyCanBeSkipped(t *testing.T) {
 	}
 }
 
+func TestModelSelection_UsesAPIKeyHelperForResolvedKey(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	registry := &providers.Registry{
+		Providers: []providers.Provider{
+			{
+				ID:   config.ProviderAnthropic,
+				Name: "Anthropic",
+				Models: []providers.Model{
+					{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6"},
+				},
+			},
+		},
+	}
+	global := config.DefaultGlobalConfig()
+	global.SetProviderConfig(config.ProviderAnthropic, config.ProviderConfig{
+		APIKeyHelper: "printf helper-key",
+		Models:       []string{"claude-sonnet-4-6"},
+	})
+	resolved := &config.ResolvedConfig{}
+
+	var completedAPIKey string
+	m := New(registry, global, config.NewLoader(), resolved, func(provider, model, apiKey string) error {
+		completedAPIKey = apiKey
+		return nil
+	})
+
+	var cmd tea.Cmd
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.Step != StepBaseURL {
+		t.Fatalf("expected StepBaseURL, got %v", m.Step)
+	}
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.Step != StepAPIKey {
+		t.Fatalf("expected StepAPIKey, got %v", m.Step)
+	}
+	m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !cmdCalled(cmd) {
+		t.Fatal("expected completion command")
+	}
+	if resolved.APIKey != "helper-key" {
+		t.Fatalf("expected resolved helper key, got %q", resolved.APIKey)
+	}
+	if completedAPIKey != "helper-key" {
+		t.Fatalf("expected completion helper key, got %q", completedAPIKey)
+	}
+	saved, ok := global.GetProviderConfig(config.ProviderAnthropic)
+	if !ok {
+		t.Fatal("expected saved provider config")
+	}
+	if saved.APIKey != "" {
+		t.Fatalf("expected helper output not to be persisted, got APIKey %q", saved.APIKey)
+	}
+	if saved.APIKeyHelper != "printf helper-key" {
+		t.Fatalf("expected api key helper preserved, got %q", saved.APIKeyHelper)
+	}
+}
+
 func TestModelSelection_LongModelListScrollsWithCursor(t *testing.T) {
 	models := make([]providers.Model, 14)
 	for i := range models {

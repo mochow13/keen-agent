@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -75,240 +76,50 @@ func TestGlobalConfig_AddModel(t *testing.T) {
 	}
 }
 
-func TestGlobalConfig_GetFirstModel(t *testing.T) {
-	g := &GlobalConfig{
-		Providers: map[string]ProviderConfig{
-			ProviderAnthropic: {Models: []string{"claude-3-sonnet", "claude-3-opus"}},
-		},
-	}
-
-	first := g.GetFirstModel(ProviderAnthropic)
-	if first != "claude-3-sonnet" {
-		t.Errorf("expected first model 'claude-3-sonnet', got %q", first)
-	}
-
-	first = g.GetFirstModel(ProviderOpenAI)
-	if first != "" {
-		t.Errorf("expected empty string for no models, got %q", first)
-	}
-}
-
-func TestProviderConfig_hasModel(t *testing.T) {
-	pc := ProviderConfig{Models: []string{"claude-3-sonnet", "claude-3-opus"}}
-
-	if !pc.hasModel("claude-3-sonnet") {
-		t.Error("expected hasModel('claude-3-sonnet') to be true")
-	}
-	if !pc.hasModel("claude-3-opus") {
-		t.Error("expected hasModel('claude-3-opus') to be true")
-	}
-	if pc.hasModel("gpt-4o") {
-		t.Error("expected hasModel('gpt-4o') to be false")
-	}
-}
-
-func TestResolve(t *testing.T) {
-	global := &GlobalConfig{
-		ActiveProvider: ProviderAnthropic,
-		ThinkingEffort: "high",
-		Providers: map[string]ProviderConfig{
-			ProviderAnthropic: {Models: []string{"claude-3-sonnet"}, APIKey: "sk-ant-test"},
-		},
-	}
-	session := &SessionConfig{}
-
-	resolved, err := Resolve(global, session)
+func TestResolveProviderAPIKey_TrimsAPIKey(t *testing.T) {
+	apiKey, err := ResolveProviderAPIKey(ProviderMiniMax, ProviderConfig{APIKey: "\n  minimax-key\t"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resolved.Provider != ProviderAnthropic {
-		t.Errorf("expected provider %q, got %q", ProviderAnthropic, resolved.Provider)
-	}
-	if resolved.APIKey != "sk-ant-test" {
-		t.Errorf("expected api key 'sk-ant-test', got %q", resolved.APIKey)
-	}
-	if resolved.Model != "claude-3-sonnet" {
-		t.Errorf("expected model 'claude-3-sonnet', got %q", resolved.Model)
-	}
-	if resolved.ThinkingEffort != "high" {
-		t.Errorf("expected thinking effort 'high', got %q", resolved.ThinkingEffort)
+	if apiKey != "minimax-key" {
+		t.Fatalf("expected trimmed API key, got %q", apiKey)
 	}
 }
 
-func TestResolve_PropagatesBaseURL(t *testing.T) {
-	global := &GlobalConfig{
-		ActiveProvider: ProviderAnthropic,
-		Providers: map[string]ProviderConfig{
-			ProviderAnthropic: {
-				Models:  []string{"claude-3-sonnet"},
-				APIKey:  "sk-ant-test",
-				BaseURL: "https://my-proxy.example.com/v1",
-			},
-		},
+func TestResolveProviderAPIKey_AllowsMissingAPIKeyForOAuthAndAWS(t *testing.T) {
+	if apiKey, err := ResolveProviderAPIKey(ProviderOpenAICodex, ProviderConfig{}); err != nil || apiKey != "" {
+		t.Fatalf("openai-codex API key = %q, err = %v", apiKey, err)
 	}
-	session := &SessionConfig{}
+	if apiKey, err := ResolveProviderAPIKey(ProviderBedrock, ProviderConfig{}); err != nil || apiKey != "" {
+		t.Fatalf("bedrock API key = %q, err = %v", apiKey, err)
+	}
+}
 
-	resolved, err := Resolve(global, session)
+func TestResolveProviderAPIKey_UsesHelperOverConfiguredAPIKey(t *testing.T) {
+	apiKey, err := ResolveProviderAPIKey(ProviderAnthropic, ProviderConfig{
+		APIKey:       "stored-key",
+		APIKeyHelper: "printf ' helper-key\\n'",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resolved.BaseURL != "https://my-proxy.example.com/v1" {
-		t.Errorf("expected BaseURL 'https://my-proxy.example.com/v1', got %q", resolved.BaseURL)
+	if apiKey != "helper-key" {
+		t.Fatalf("expected helper API key, got %q", apiKey)
 	}
 }
 
-func TestResolve_PropagatesHeaders(t *testing.T) {
-	global := &GlobalConfig{
-		ActiveProvider: ProviderDeepSeek,
-		Providers: map[string]ProviderConfig{
-			ProviderDeepSeek: {
-				Models:  []string{"deepseek-v4-pro"},
-				APIKey:  "sk-test",
-				Headers: map[string]string{"x_header_1": "val1", "x_header_2": "val2"},
-			},
-		},
-	}
-	session := &SessionConfig{}
-
-	resolved, err := Resolve(global, session)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(resolved.Headers) != 2 || resolved.Headers["x_header_1"] != "val1" || resolved.Headers["x_header_2"] != "val2" {
-		t.Errorf("expected headers map, got %v", resolved.Headers)
-	}
-}
-
-func TestResolve_OpenAICodexAllowsMissingAPIKey(t *testing.T) {
-	global := &GlobalConfig{
-		ActiveProvider: ProviderOpenAICodex,
-		ActiveModel:    "gpt-5.4",
-		ThinkingEffort: "medium",
-		Providers: map[string]ProviderConfig{
-			ProviderOpenAICodex: {Models: []string{"gpt-5.4"}},
-		},
-	}
-
-	resolved, err := Resolve(global, &SessionConfig{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resolved.APIKey != "" {
-		t.Fatalf("expected empty API key, got %q", resolved.APIKey)
-	}
-	if resolved.AuthMode != AuthModeOAuth {
-		t.Fatalf("expected oauth auth mode, got %q", resolved.AuthMode)
-	}
-}
-
-func TestResolve_BedrockAllowsMissingAPIKey(t *testing.T) {
-	global := &GlobalConfig{
-		ActiveProvider: ProviderBedrock,
-		ActiveModel:    "global.anthropic.claude-sonnet-4-6",
-		Providers: map[string]ProviderConfig{
-			ProviderBedrock: {Models: []string{"global.anthropic.claude-sonnet-4-6"}},
-		},
-	}
-
-	resolved, err := Resolve(global, &SessionConfig{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resolved.APIKey != "" {
-		t.Fatalf("expected empty API key, got %q", resolved.APIKey)
-	}
-	if resolved.AuthMode != AuthModeAWS {
-		t.Fatalf("expected aws auth mode, got %q", resolved.AuthMode)
-	}
-}
-
-func TestResolve_BedrockAllowsConfiguredAPIKey(t *testing.T) {
-	global := &GlobalConfig{
-		ActiveProvider: ProviderBedrock,
-		ActiveModel:    "global.anthropic.claude-sonnet-4-6",
-		Providers: map[string]ProviderConfig{
-			ProviderBedrock: {
-				Models: []string{"global.anthropic.claude-sonnet-4-6"},
-				APIKey: "bedrock-key",
-			},
-		},
-	}
-
-	resolved, err := Resolve(global, &SessionConfig{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resolved.APIKey != "bedrock-key" {
-		t.Fatalf("expected configured API key, got %q", resolved.APIKey)
-	}
-	if resolved.AuthMode != AuthModeAWS {
-		t.Fatalf("expected aws auth mode, got %q", resolved.AuthMode)
-	}
-}
-
-func TestResolve_WithSessionOverrides(t *testing.T) {
-	global := &GlobalConfig{
-		ActiveProvider: ProviderAnthropic,
-		ActiveModel:    "claude-3-sonnet",
-		Providers: map[string]ProviderConfig{
-			ProviderAnthropic: {Models: []string{"claude-3-sonnet"}, APIKey: "sk-ant-test"},
-		},
-	}
-	session := &SessionConfig{
-		Provider: ProviderOpenAI,
-		APIKey:   "sk-openai-test",
-		Model:    "gpt-4o",
-	}
-
-	resolved, err := Resolve(global, session)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resolved.Provider != ProviderOpenAI {
-		t.Errorf("expected provider %q, got %q", ProviderOpenAI, resolved.Provider)
-	}
-	if resolved.APIKey != "sk-openai-test" {
-		t.Errorf("expected api key 'sk-openai-test', got %q", resolved.APIKey)
-	}
-	if resolved.Model != "gpt-4o" {
-		t.Errorf("expected model 'gpt-4o', got %q", resolved.Model)
-	}
-}
-
-func TestResolve_TrimsAPIKey(t *testing.T) {
-	global := &GlobalConfig{
-		ActiveProvider: ProviderMiniMax,
-		Providers: map[string]ProviderConfig{
-			ProviderMiniMax: {Models: []string{"MiniMax-M2.7"}, APIKey: "\n  minimax-key\t"},
-		},
-	}
-
-	resolved, err := Resolve(global, &SessionConfig{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resolved.APIKey != "minimax-key" {
-		t.Fatalf("expected trimmed API key, got %q", resolved.APIKey)
-	}
-}
-
-func TestResolve_MissingProvider(t *testing.T) {
-	global := &GlobalConfig{}
-	session := &SessionConfig{}
-
-	_, err := Resolve(global, session)
+func TestResolveProviderAPIKey_HelperFailureFails(t *testing.T) {
+	_, err := ResolveProviderAPIKey(ProviderAnthropic, ProviderConfig{APIKeyHelper: "exit 7"})
 	if err == nil {
-		t.Fatal("expected error for missing provider, got nil")
+		t.Fatal("expected error for failing helper")
+	}
+	if !strings.Contains(err.Error(), "apiKeyHelper failed") {
+		t.Fatalf("expected helper failure error, got %v", err)
 	}
 }
 
-func TestResolve_MissingAPIKey(t *testing.T) {
-	global := &GlobalConfig{
-		ActiveProvider: ProviderAnthropic,
-	}
-	session := &SessionConfig{}
-
-	_, err := Resolve(global, session)
+func TestResolveProviderAPIKey_MissingAPIKey(t *testing.T) {
+	_, err := ResolveProviderAPIKey(ProviderAnthropic, ProviderConfig{})
 	if err == nil {
 		t.Fatal("expected error for missing API key, got nil")
 	}

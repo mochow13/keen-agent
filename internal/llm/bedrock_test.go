@@ -518,7 +518,7 @@ func TestBedrockClient_CustomHeaders(t *testing.T) {
 		}))
 	})
 
-	c := &BedrockClient{client: client, model: "global.anthropic.claude-sonnet-4-6"}
+	c := &BedrockClient{client: client, model: "global.anthropic.claude-sonnet-4-6", maxRetries: 1}
 	c.streamImpl = func(ctx context.Context, params *bedrockruntime.ConverseStreamInput) (bedrockStream, error) {
 		out, err := c.client.ConverseStream(ctx, params)
 		if err != nil {

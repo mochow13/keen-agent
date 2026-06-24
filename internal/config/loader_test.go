@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -35,7 +36,8 @@ func TestLoader_Load_ExistingConfigFile(t *testing.T) {
 		"providers": {
 			"anthropic": {
 			"models": ["claude-3-sonnet"],
-			"api_key": "sk-test"
+			"api_key": "sk-test",
+			"api_key_helper": "printf helper-key"
 			}
 		}
 	}`
@@ -58,6 +60,9 @@ func TestLoader_Load_ExistingConfigFile(t *testing.T) {
 	}
 	if len(pc.Models) != 1 || pc.Models[0] != "claude-3-sonnet" {
 		t.Errorf("expected models ['claude-3-sonnet'], got %v", pc.Models)
+	}
+	if pc.APIKeyHelper != "printf helper-key" {
+		t.Errorf("expected apiKeyHelper to load, got %q", pc.APIKeyHelper)
 	}
 }
 
@@ -89,7 +94,12 @@ func TestLoader_SaveAndLoad(t *testing.T) {
 		ActiveProvider: ProviderOpenAI,
 		ActiveModel:    "gpt-4o",
 		Providers: map[string]ProviderConfig{
-			ProviderOpenAI: {Models: []string{"gpt-4o"}, APIKey: "sk-test", Headers: map[string]string{"x-custom": "value"}},
+			ProviderOpenAI: {
+				Models:       []string{"gpt-4o"},
+				APIKey:       "sk-test",
+				APIKeyHelper: "example-auth login > /dev/null 2>&1 && example-auth token",
+				Headers:      map[string]string{"x-custom": "value"},
+			},
 		},
 	}
 
@@ -117,6 +127,16 @@ func TestLoader_SaveAndLoad(t *testing.T) {
 	}
 	if pc.Headers["x-custom"] != "value" {
 		t.Errorf("expected header x-custom=value, got %v", pc.Headers)
+	}
+	if pc.APIKeyHelper != "example-auth login > /dev/null 2>&1 && example-auth token" {
+		t.Errorf("expected apiKeyHelper to round-trip, got %q", pc.APIKeyHelper)
+	}
+	data, err := os.ReadFile(ConfigPath())
+	if err != nil {
+		t.Fatalf("failed to read saved config: %v", err)
+	}
+	if !strings.Contains(string(data), `"api_key_helper": "example-auth login > /dev/null 2>&1 && example-auth token"`) {
+		t.Fatalf("expected unescaped api_key_helper, got %s", string(data))
 	}
 }
 

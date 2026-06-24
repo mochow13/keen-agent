@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -38,13 +39,16 @@ func (l *Loader) Save(cfg *GlobalConfig) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(cfg); err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
 	path := ConfigPath()
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, buf.Bytes(), 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 

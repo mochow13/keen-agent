@@ -183,10 +183,18 @@ func loadRootRuntime() (*providers.Registry, *config.Loader, *config.GlobalConfi
 	if !ok {
 		return nil, nil, nil, nil, false, fmt.Errorf("failed to get provider config for %q", globalCfg.ActiveProvider)
 	}
+	apiKey, err := config.ResolveProviderAPIKey(globalCfg.ActiveProvider, providerCfg)
+	if err != nil {
+		return nil, nil, nil, nil, false, err
+	}
+	activeModel := globalCfg.ActiveModel
+	if activeModel == "" && len(providerCfg.Models) > 0 {
+		activeModel = providerCfg.Models[0]
+	}
 	resolvedCfg := &config.ResolvedConfig{
 		Provider:       globalCfg.ActiveProvider,
-		Model:          globalCfg.ActiveModel,
-		APIKey:         providerCfg.APIKey,
+		Model:          activeModel,
+		APIKey:         apiKey,
 		ThinkingEffort: globalCfg.ThinkingEffort,
 		BaseURL:        providerCfg.BaseURL,
 		AuthMode:       config.AuthModeForProvider(globalCfg.ActiveProvider),
@@ -202,8 +210,12 @@ func applyRunOverrides(globalCfg *config.GlobalConfig, resolvedCfg *config.Resol
 		if !ok {
 			return fmt.Errorf("provider %q is not configured", providerID)
 		}
+		apiKey, err := config.ResolveProviderAPIKey(providerID, providerCfg)
+		if err != nil {
+			return err
+		}
 		resolvedCfg.Provider = providerID
-		resolvedCfg.APIKey = providerCfg.APIKey
+		resolvedCfg.APIKey = apiKey
 		resolvedCfg.BaseURL = providerCfg.BaseURL
 		resolvedCfg.AuthMode = config.AuthModeForProvider(providerID)
 		resolvedCfg.Headers = providerCfg.Headers

@@ -1,12 +1,14 @@
 package config
 
 import (
+	"context"
 	"fmt"
-	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 const (
@@ -35,20 +37,11 @@ type GlobalConfig struct {
 }
 
 type ProviderConfig struct {
-	Models  []string          `json:"models"`
-	APIKey  string            `json:"api_key"`
-	BaseURL string            `json:"base_url,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-}
-
-func (p ProviderConfig) hasModel(model string) bool {
-	return slices.Contains(p.Models, model)
-}
-
-type SessionConfig struct {
-	Provider string
-	APIKey   string
-	Model    string
+	Models       []string          `json:"models"`
+	APIKey       string            `json:"api_key"`
+	APIKeyHelper string            `json:"api_key_helper,omitempty"`
+	BaseURL      string            `json:"base_url,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty"`
 }
 
 type ResolvedConfig struct {
@@ -94,55 +87,6 @@ func (g *GlobalConfig) AddModel(provider string, model string) {
 	g.SetProviderConfig(provider, cfg)
 }
 
-func (g *GlobalConfig) GetFirstModel(provider string) string {
-	cfg, ok := g.GetProviderConfig(provider)
-	if !ok {
-		return ""
-	}
-	if len(cfg.Models) > 0 {
-		return cfg.Models[0]
-	}
-	return ""
-}
-
-func Resolve(global *GlobalConfig, session *SessionConfig) (*ResolvedConfig, error) {
-	provider := session.Provider
-	if provider == "" {
-		provider = global.ActiveProvider
-	}
-	if provider == "" {
-		return nil, fmt.Errorf("no provider configured. %s", ConfigFixHint)
-	}
-
-	providerGlobal, ok := global.GetProviderConfig(provider)
-	if !ok {
-		providerGlobal = ProviderConfig{}
-	}
-	apiKey := normalizeAPIKey(firstNonEmpty(session.APIKey, providerGlobal.APIKey))
-	if RequiresAPIKey(provider) && apiKey == "" {
-		return nil, fmt.Errorf("no API key configured for %s. %s", provider, ConfigFixHint)
-	}
-
-	model := firstNonEmpty(
-		session.Model,
-		global.ActiveModel,
-		global.GetFirstModel(provider),
-	)
-
-	resolved := &ResolvedConfig{
-		Provider:       provider,
-		APIKey:         apiKey,
-		Model:          model,
-		ThinkingEffort: global.ThinkingEffort,
-		BaseURL:        providerGlobal.BaseURL,
-		AuthMode:       AuthModeForProvider(provider),
-		Headers:        providerGlobal.Headers,
-	}
-
-	slog.Debug("config resolved", "provider", resolved.Provider, "model", resolved.Model)
-	return resolved, nil
-}
-
 func RequiresAPIKey(provider string) bool {
 	return AuthModeForProvider(provider) == AuthModeAPIKey
 }
@@ -167,15 +111,59 @@ func DefaultGlobalConfig() *GlobalConfig {
 	}
 }
 
+func ResolveProviderAPIKey(provider string, providerCfg ProviderConfig) (string, error) {
+	if strings.TrimSpace(providerCfg.APIKeyHelper) != "" {
+		apiKey, err := runAPIKeyHelper(provider, providerCfg.APIKeyHelper)
+		if err != nil {
+			return "", err
+		}
+		return apiKey, nil
+	}
+
+	apiKey := normalizeAPIKey(providerCfg.APIKey)
+	if RequiresAPIKey(provider) && apiKey == "" {
+		return "", fmt.Errorf("no API key configured for %s. %s", provider, ConfigFixHint)
+	}
+	return apiKey, nil
+}
+
+func runAPIKeyHelper(provider string, helper string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", helper)
+	return runAPIKeyHelperCommand(ctx, provider, cmd)
+}
+
+func runAPIKeyHelperCommand(ctx context.Context, provider string, cmd *exec.Cmd) (string, error) {
+	output, err := cmd.Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		return "", fmt.Errorf("apiKeyHelper timed out for %s", provider)
+	}
+	if err != nil {
+		return "", fmt.Errorf("apiKeyHelper failed for %s: %w", provider, err)
+	}
+
+	apiKey := normalizeAPIKey(string(output))
+	if apiKey == "" {
+		return "", fmt.Errorf("apiKeyHelper returned empty API key for %s", provider)
+	}
+	return apiKey, nil
+}
+
 func ResolveAdversary(global *GlobalConfig) (*ResolvedConfig, error) {
 	if global.AdversaryProvider == "" || global.AdversaryModel == "" {
 		return nil, fmt.Errorf("adversary model not configured")
 	}
 	provCfg := global.Providers[global.AdversaryProvider]
+	apiKey, err := ResolveProviderAPIKey(global.AdversaryProvider, provCfg)
+	if err != nil {
+		return nil, err
+	}
 	return &ResolvedConfig{
 		Provider: global.AdversaryProvider,
 		Model:    global.AdversaryModel,
-		APIKey:   provCfg.APIKey,
+		APIKey:   apiKey,
 		BaseURL:  provCfg.BaseURL,
 		AuthMode: AuthModeForProvider(global.AdversaryProvider),
 		Headers:  provCfg.Headers,
@@ -196,15 +184,6 @@ func ConfigDir() string {
 		home = "."
 	}
 	return filepath.Join(home, ".keen-agent")
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func normalizeAPIKey(key string) string {

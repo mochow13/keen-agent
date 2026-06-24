@@ -193,7 +193,7 @@ func emitChunk(eventCh chan<- StreamEvent, content string) {
 	}
 }
 
-const defaultMaxRetries = 10
+const defaultMaxRetries = 6
 
 func retryCount(maxRetries int) int {
 	if maxRetries <= 0 {

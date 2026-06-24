@@ -246,6 +246,32 @@ func TestApplyRunOverrides_ProviderUsesFirstConfiguredModel(t *testing.T) {
 	}
 }
 
+func TestApplyRunOverrides_ProviderUsesAPIKeyHelper(t *testing.T) {
+	globalCfg := &config.GlobalConfig{
+		Providers: map[string]config.ProviderConfig{
+			config.ProviderOpenCodeGo: {
+				APIKey:       "stored-key",
+				APIKeyHelper: "printf 'helper-key'",
+				Models:       []string{"kimi-k2.6"},
+			},
+		},
+	}
+	resolvedCfg := &config.ResolvedConfig{
+		Provider: config.ProviderAnthropic,
+		APIKey:   "anthropic-key",
+		Model:    "claude-3",
+	}
+
+	err := applyRunOverrides(globalCfg, resolvedCfg, config.ProviderOpenCodeGo, "")
+	if err != nil {
+		t.Fatalf("applyRunOverrides() error = %v", err)
+	}
+
+	if resolvedCfg.APIKey != "helper-key" {
+		t.Fatalf("APIKey = %q, want helper-key", resolvedCfg.APIKey)
+	}
+}
+
 func TestBuildRunPrompt(t *testing.T) {
 	tests := []struct {
 		name  string
