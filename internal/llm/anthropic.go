@@ -164,6 +164,74 @@ func toAnthropicTools(registry *tools.Registry) []anthropic.ToolUnionParam {
 	return result
 }
 
+func applyAnthropicBlockCacheControl(
+	system []anthropic.TextBlockParam,
+	anthropicTools []anthropic.ToolUnionParam,
+	messages []anthropic.MessageParam,
+	stableMessageCount int,
+) ([]anthropic.TextBlockParam, []anthropic.ToolUnionParam, []anthropic.MessageParam) {
+	turnSystem := append([]anthropic.TextBlockParam(nil), system...)
+	turnTools := append([]anthropic.ToolUnionParam(nil), anthropicTools...)
+	turnMessages := append([]anthropic.MessageParam(nil), messages...)
+	clearAnthropicCacheControl(turnSystem, turnTools, turnMessages)
+
+	cacheControl := anthropic.NewCacheControlEphemeralParam()
+	if len(turnSystem) > 0 {
+		turnSystem[len(turnSystem)-1].CacheControl = cacheControl
+	}
+	if len(turnTools) > 0 {
+		if toolCacheControl := turnTools[len(turnTools)-1].GetCacheControl(); toolCacheControl != nil {
+			*toolCacheControl = cacheControl
+		}
+	}
+
+	stableIdx := stableMessageCount - 1
+	if stableIdx >= 0 && stableIdx < len(turnMessages) {
+		turnMessages = addAnthropicMessageBlockCacheControl(turnMessages, stableIdx)
+	}
+	lastIdx := len(turnMessages) - 1
+	if lastIdx != stableIdx {
+		turnMessages = addAnthropicMessageBlockCacheControl(turnMessages, lastIdx)
+	}
+	return turnSystem, turnTools, turnMessages
+}
+
+func clearAnthropicCacheControl(
+	system []anthropic.TextBlockParam,
+	anthropicTools []anthropic.ToolUnionParam,
+	messages []anthropic.MessageParam,
+) {
+	for i := range system {
+		system[i].CacheControl = anthropic.CacheControlEphemeralParam{}
+	}
+	for i := range anthropicTools {
+		if cacheControl := anthropicTools[i].GetCacheControl(); cacheControl != nil {
+			*cacheControl = anthropic.CacheControlEphemeralParam{}
+		}
+	}
+	for msgIdx := range messages {
+		messages[msgIdx].Content = append([]anthropic.ContentBlockParamUnion(nil), messages[msgIdx].Content...)
+		for blockIdx := range messages[msgIdx].Content {
+			if cacheControl := messages[msgIdx].Content[blockIdx].GetCacheControl(); cacheControl != nil {
+				*cacheControl = anthropic.CacheControlEphemeralParam{}
+			}
+		}
+	}
+}
+
+func addAnthropicMessageBlockCacheControl(messages []anthropic.MessageParam, idx int) []anthropic.MessageParam {
+	messages[idx].Content = append([]anthropic.ContentBlockParamUnion(nil), messages[idx].Content...)
+	for blockIdx := len(messages[idx].Content) - 1; blockIdx >= 0; blockIdx-- {
+		cacheControl := messages[idx].Content[blockIdx].GetCacheControl()
+		if cacheControl == nil {
+			continue
+		}
+		*cacheControl = anthropic.NewCacheControlEphemeralParam()
+		return messages
+	}
+	return messages
+}
+
 func (c *AnthropicClient) collectTurnWithRetry(
 	ctx context.Context,
 	params anthropic.MessageNewParams,
@@ -449,26 +517,26 @@ func (c *AnthropicClient) StreamChat(
 				return
 			}
 			msgParams = reducedMessages
+			turnSystem := systemBlocks
+			turnTools := anthropicTools
+			turnMessages := msgParams
+			if !oneShot {
+				turnSystem, turnTools, turnMessages = applyAnthropicBlockCacheControl(systemBlocks, anthropicTools, msgParams, turnStartLen)
+			}
 
 			thinking, outCfg, maxTok := anthropicThinkingParams(c.thinkingEffort)
 			params := anthropic.MessageNewParams{
 				Model:        c.model,
 				MaxTokens:    maxTok,
-				Messages:     msgParams,
+				Messages:     turnMessages,
 				Thinking:     thinking,
 				OutputConfig: outCfg,
 			}
-			if !oneShot {
-				params.CacheControl = anthropic.NewCacheControlEphemeralParam()
-				if len(systemBlocks) > 0 {
-					systemBlocks[len(systemBlocks)-1].CacheControl = anthropic.NewCacheControlEphemeralParam()
-				}
+			if len(turnSystem) > 0 {
+				params.System = turnSystem
 			}
-			if len(systemBlocks) > 0 {
-				params.System = systemBlocks
-			}
-			if len(anthropicTools) > 0 {
-				params.Tools = anthropicTools
+			if len(turnTools) > 0 {
+				params.Tools = turnTools
 			}
 
 			assistantBlocks, toolUses, usage, err := c.collectTurnWithRetry(ctx, params, eventCh, requestOpts...)

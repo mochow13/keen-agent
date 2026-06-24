@@ -786,7 +786,7 @@ func TestAnthropicClient_NoThinkingEffort_DisablesThinking(t *testing.T) {
 	}
 }
 
-func TestAnthropicClient_AnthropicProviderEnablesAutomaticPromptCaching(t *testing.T) {
+func TestAnthropicClient_AnthropicProviderUsesBlockLevelPromptCaching(t *testing.T) {
 	var capturedParams anthropic.MessageNewParams
 
 	c := &AnthropicClient{
@@ -808,15 +808,19 @@ func TestAnthropicClient_AnthropicProviderEnablesAutomaticPromptCaching(t *testi
 	for range eventCh {
 	}
 
-	if string(capturedParams.CacheControl.Type) != "ephemeral" {
-		t.Fatalf("expected automatic prompt cache control, got %q", capturedParams.CacheControl.Type)
+	if capturedParams.CacheControl.Type != "" {
+		t.Fatalf("expected no top-level cache control, got %q", capturedParams.CacheControl.Type)
 	}
-	if capturedParams.CacheControl.TTL != "" {
-		t.Fatalf("expected default cache TTL, got %q", capturedParams.CacheControl.TTL)
+	body, err := json.Marshal(capturedParams)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	if count := strings.Count(string(body), `"cache_control":{"type":"ephemeral"}`); count != 1 {
+		t.Fatalf("expected 1 block-level cache_control marker, got %d in %s", count, string(body))
 	}
 }
 
-func TestAnthropicClient_AutomaticPromptCachingEnabledForCompatibleProviders(t *testing.T) {
+func TestAnthropicClient_BlockLevelPromptCachingEnabledForCompatibleProviders(t *testing.T) {
 	var capturedParams anthropic.MessageNewParams
 
 	c := &AnthropicClient{
@@ -838,8 +842,111 @@ func TestAnthropicClient_AutomaticPromptCachingEnabledForCompatibleProviders(t *
 	for range eventCh {
 	}
 
-	if string(capturedParams.CacheControl.Type) != "ephemeral" {
-		t.Fatalf("expected ephemeral cache control for compatible provider, got %q", capturedParams.CacheControl.Type)
+	if capturedParams.CacheControl.Type != "" {
+		t.Fatalf("expected no top-level cache control, got %q", capturedParams.CacheControl.Type)
+	}
+	body, err := json.Marshal(capturedParams)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	if count := strings.Count(string(body), `"cache_control":{"type":"ephemeral"}`); count != 1 {
+		t.Fatalf("expected 1 block-level cache_control marker, got %d in %s", count, string(body))
+	}
+}
+
+func TestAnthropicClient_UsesBlockLevelCacheControl(t *testing.T) {
+	var capturedParams anthropic.MessageNewParams
+
+	c := &AnthropicClient{
+		provider: Provider(config.ProviderAnthropic),
+		model:    "claude-sonnet-4-6",
+	}
+	c.streamImpl = func(ctx context.Context, params anthropic.MessageNewParams, opts ...option.RequestOption) anthropicStream {
+		capturedParams = params
+		return &mockAnthropicStream{events: []anthropic.MessageStreamEventUnion{
+			makeTextDeltaEvent(0, "ok"),
+			makeContentBlockStopEvent(0),
+		}}
+	}
+
+	registry := tools.NewRegistry()
+	if err := registry.Register(&successTool{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	eventCh, err := c.StreamChat(context.Background(), []Message{
+		{Role: RoleSystem, Content: "system prompt"},
+		{Role: RoleUser, Content: "hi"},
+	}, registry)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for range eventCh {
+	}
+
+	if capturedParams.CacheControl.Type != "" {
+		t.Fatalf("expected no top-level cache control, got %q", capturedParams.CacheControl.Type)
+	}
+	body, err := json.Marshal(capturedParams)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	bodyText := string(body)
+	if strings.Contains(bodyText, `"type":"cachePoint"`) || strings.Contains(bodyText, `"cachePoint"`) {
+		t.Fatalf("expected no cachePoint blocks in Anthropic proxy request, got %s", bodyText)
+	}
+	if count := strings.Count(bodyText, `"cache_control":{"type":"ephemeral"}`); count != 3 {
+		t.Fatalf("expected 3 block-level cache_control markers, got %d in %s", count, bodyText)
+	}
+}
+
+func TestAnthropicClient_StripsStaleCacheControl(t *testing.T) {
+	var capturedParams anthropic.MessageNewParams
+
+	c := &AnthropicClient{
+		provider: Provider(config.ProviderAnthropic),
+		model:    "claude-sonnet-4-6",
+		pendingState: []anthropic.MessageParam{
+			anthropic.NewAssistantMessage(anthropic.NewTextBlock("old assistant")),
+			anthropic.NewUserMessage(anthropic.NewTextBlock("old user")),
+		},
+	}
+	c.pendingState[0].Content[0].OfText.CacheControl = anthropic.NewCacheControlEphemeralParam()
+	c.pendingState[1].Content[0].OfText.CacheControl = anthropic.NewCacheControlEphemeralParam()
+	c.streamImpl = func(ctx context.Context, params anthropic.MessageNewParams, opts ...option.RequestOption) anthropicStream {
+		capturedParams = params
+		return &mockAnthropicStream{events: []anthropic.MessageStreamEventUnion{
+			makeTextDeltaEvent(0, "ok"),
+			makeContentBlockStopEvent(0),
+		}}
+	}
+
+	registry := tools.NewRegistry()
+	if err := registry.Register(&successTool{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	eventCh, err := c.StreamChat(context.Background(), []Message{
+		{Role: RoleSystem, Content: "system prompt"},
+		{Role: RoleUser, Content: "latest"},
+	}, registry)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for range eventCh {
+	}
+
+	body, err := json.Marshal(capturedParams)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	bodyText := string(body)
+	if count := strings.Count(bodyText, `"cache_control":{"type":"ephemeral"}`); count != 3 {
+		t.Fatalf("expected current cache_control markers only, got %d in %s", count, bodyText)
+	}
+	if strings.Contains(bodyText, `"text":"old assistant","cache_control"`) ||
+		strings.Contains(bodyText, `"text":"old user","cache_control"`) {
+		t.Fatalf("expected stale pending markers to be stripped, got %s", bodyText)
 	}
 }
 
