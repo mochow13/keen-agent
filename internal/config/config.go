@@ -47,6 +47,7 @@ type ProviderConfig struct {
 type ResolvedConfig struct {
 	Provider       string
 	APIKey         string
+	APIKeyHelper   string
 	Model          string
 	ThinkingEffort string
 	BaseURL        string

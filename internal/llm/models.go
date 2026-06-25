@@ -21,6 +21,7 @@ const (
 type ClientConfig struct {
 	Provider            Provider
 	APIKey              string
+	APIKeyHelper        string
 	Model               string
 	ThinkingEffort      string
 	BaseURL             string
@@ -44,6 +45,7 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 		return NewAnthropicClient(&ClientConfig{
 			Provider:            Provider(cfg.Provider),
 			APIKey:              cfg.APIKey,
+			APIKeyHelper:        cfg.APIKeyHelper,
 			Model:               cfg.Model,
 			ThinkingEffort:      cfg.ThinkingEffort,
 			BaseURL:             cfg.BaseURL,

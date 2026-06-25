@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
@@ -71,8 +72,11 @@ type AnthropicClient struct {
 }
 
 func NewAnthropicClient(cfg *ClientConfig) (*AnthropicClient, error) {
-	opts := []option.RequestOption{
-		option.WithAPIKey(cfg.APIKey),
+	var opts []option.RequestOption
+	opts = append(opts, option.WithAPIKey(cfg.APIKey))
+	if cfg.APIKeyHelper != "" {
+		resolver := config.NewAPIKeyResolver(string(cfg.Provider), cfg.APIKeyHelper)
+		opts = append(opts, option.WithMiddleware(apiKeyRefreshMiddleware(resolver)))
 	}
 	if baseURL := anthropicBaseURL(cfg.Provider, cfg.BaseURL); baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
@@ -573,6 +577,36 @@ func (c *AnthropicClient) StreamChat(
 	}()
 
 	return eventCh, nil
+}
+
+func apiKeyRefreshMiddleware(resolver *config.APIKeyResolver) option.Middleware {
+	return func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+		key, err := resolver.Get()
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-Api-Key", key)
+
+		res, err := next(req)
+		if err != nil || res.StatusCode != http.StatusUnauthorized {
+			return res, err
+		}
+
+		res.Body.Close()
+		key, err = resolver.Refresh()
+		if err != nil {
+			return nil, err
+		}
+		clone := req.Clone(req.Context())
+		if req.GetBody != nil {
+			clone.Body, err = req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+		}
+		clone.Header.Set("X-Api-Key", key)
+		return next(clone)
+	}
 }
 
 func (c *AnthropicClient) requestOptions(opts StreamOptions) []option.RequestOption {

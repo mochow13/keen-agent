@@ -195,6 +195,7 @@ func loadRootRuntime() (*providers.Registry, *config.Loader, *config.GlobalConfi
 		Provider:       globalCfg.ActiveProvider,
 		Model:          activeModel,
 		APIKey:         apiKey,
+		APIKeyHelper:   providerCfg.APIKeyHelper,
 		ThinkingEffort: globalCfg.ThinkingEffort,
 		BaseURL:        providerCfg.BaseURL,
 		AuthMode:       config.AuthModeForProvider(globalCfg.ActiveProvider),
