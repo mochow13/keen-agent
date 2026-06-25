@@ -31,6 +31,7 @@ const (
 	StepThinking
 	StepBaseURL
 	StepAPIKey
+	StepAPIKeyHelper
 	StepOAuth
 )
 
@@ -40,6 +41,11 @@ type modelSelectionCompleteMsg struct{}
 type modelSelectionCancelMsg struct{}
 type modelSelectionOAuthCompleteMsg struct {
 	err error
+}
+type modelSelectionAPIKeyHelperResultMsg struct {
+	apiKey      string
+	err         error
+	providerCfg config.ProviderConfig
 }
 
 type Model struct {
@@ -95,6 +101,8 @@ func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		return m.handlePasteMsg(msg)
 	case modelSelectionOAuthCompleteMsg:
 		return m.handleOAuthComplete(msg)
+	case modelSelectionAPIKeyHelperResultMsg:
+		return m.handleAPIKeyHelperResult(msg)
 	}
 	return m, nil
 }
@@ -204,6 +212,12 @@ func (m *Model) handleKeyMsg(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 			if len(msg.Text) > 0 {
 				m.APIKeyInput += msg.Text
 			}
+		}
+
+	case StepAPIKeyHelper:
+		switch msg.String() {
+		case "esc":
+			return m, func() tea.Msg { return modelSelectionCancelMsg{} }
 		}
 
 	case StepOAuth:
@@ -328,11 +342,35 @@ func (m *Model) complete() (*Model, tea.Cmd) {
 		providerCfg.Headers = existing.Headers
 		providerCfg.APIKeyHelper = existing.APIKeyHelper
 	}
+
+	if providerCfg.APIKeyHelper != "" {
+		m.Step = StepAPIKeyHelper
+		return m, func() tea.Msg {
+			apiKey, err := config.ResolveProviderAPIKey(m.SelectedProvider, providerCfg)
+			return modelSelectionAPIKeyHelperResultMsg{
+				apiKey:      apiKey,
+				err:         err,
+				providerCfg: providerCfg,
+			}
+		}
+	}
+
 	resolvedAPIKey, err := config.ResolveProviderAPIKey(m.SelectedProvider, providerCfg)
 	if err != nil {
 		m.ErrorMessage = err.Error()
 		return m, nil
 	}
+
+	return m.finishComplete(resolvedAPIKey, providerCfg)
+}
+
+func (m *Model) finishComplete(resolvedAPIKey string, providerCfg config.ProviderConfig) (*Model, tea.Cmd) {
+	storedEffort := m.SelectedThinking
+	modelMeta, ok := m.registry.GetModel(m.SelectedProvider, m.SelectedModel)
+	if !ok || !modelMeta.SupportsThinkingEffort() {
+		storedEffort = ""
+	}
+
 	m.globalCfg.SetProviderConfig(m.SelectedProvider, providerCfg)
 
 	if err := m.loader.Save(m.globalCfg); err != nil {
@@ -343,6 +381,7 @@ func (m *Model) complete() (*Model, tea.Cmd) {
 	m.resolvedCfg.Provider = m.SelectedProvider
 	m.resolvedCfg.Model = m.SelectedModel
 	m.resolvedCfg.APIKey = resolvedAPIKey
+	m.resolvedCfg.APIKeyHelper = providerCfg.APIKeyHelper
 	m.resolvedCfg.ThinkingEffort = storedEffort
 	m.resolvedCfg.BaseURL = providerCfg.BaseURL
 	m.resolvedCfg.AuthMode = config.AuthModeForProvider(m.SelectedProvider)
@@ -354,6 +393,18 @@ func (m *Model) complete() (*Model, tea.Cmd) {
 	}
 
 	return m, func() tea.Msg { return modelSelectionCompleteMsg{} }
+}
+
+func (m *Model) handleAPIKeyHelperResult(msg modelSelectionAPIKeyHelperResultMsg) (*Model, tea.Cmd) {
+	if m.Step != StepAPIKeyHelper {
+		return m, nil
+	}
+	if msg.err != nil {
+		m.ErrorMessage = msg.err.Error()
+		m.Step = StepAPIKey
+		return m, nil
+	}
+	return m.finishComplete(msg.apiKey, msg.providerCfg)
 }
 
 func (m *Model) ViewString() string {
@@ -368,6 +419,8 @@ func (m *Model) ViewString() string {
 		return m.renderBaseURLInput()
 	case StepAPIKey:
 		return m.renderAPIKeyInput()
+	case StepAPIKeyHelper:
+		return m.renderAPIKeyHelperStatus()
 	case StepOAuth:
 		return m.renderOAuthStatus()
 	}
@@ -449,6 +502,16 @@ func (m *Model) renderAPIKeyInput() string {
 	if m.ErrorMessage != "" {
 		view.WriteString("\n" + repltheme.ErrorStyle.Render(m.ErrorMessage))
 	}
+	return view.String()
+}
+
+func (m *Model) renderAPIKeyHelperStatus() string {
+	var view strings.Builder
+	view.WriteString(repltheme.UserPromptStyle.Render(fmt.Sprintf("Fetching credentials for %s", m.getProviderName(m.SelectedProvider))))
+	view.WriteString("\n\n")
+	view.WriteString(repltheme.NormalStyle.Render("Fetching credentials..."))
+	view.WriteString("\n\n")
+	view.WriteString(repltheme.HintStyle.Render("[Please wait, Esc to cancel]"))
 	return view.String()
 }
 

@@ -200,8 +200,22 @@ func TestModelSelection_UsesAPIKeyHelperForResolvedKey(t *testing.T) {
 		t.Fatalf("expected StepAPIKey, got %v", m.Step)
 	}
 	m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !cmdCalled(cmd) {
+	if cmd == nil {
+		t.Fatal("expected api key helper command")
+	}
+	if m.Step != StepAPIKeyHelper {
+		t.Fatalf("expected StepAPIKeyHelper, got %v", m.Step)
+	}
+	if !strings.Contains(m.renderAPIKeyHelperStatus(), "Fetching credentials...") {
+		t.Fatalf("expected fetching credentials status, got %q", m.renderAPIKeyHelperStatus())
+	}
+
+	m, cmd = m.Update(cmd())
+	if cmd == nil {
 		t.Fatal("expected completion command")
+	}
+	if !cmdCalled(cmd) {
+		t.Fatal("expected completion message")
 	}
 	if resolved.APIKey != "helper-key" {
 		t.Fatalf("expected resolved helper key, got %q", resolved.APIKey)
@@ -218,6 +232,59 @@ func TestModelSelection_UsesAPIKeyHelperForResolvedKey(t *testing.T) {
 	}
 	if saved.APIKeyHelper != "printf helper-key" {
 		t.Fatalf("expected api key helper preserved, got %q", saved.APIKeyHelper)
+	}
+}
+
+func TestModelSelection_APIKeyHelperFailureReturnsToInput(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	registry := &providers.Registry{
+		Providers: []providers.Provider{
+			{
+				ID:   config.ProviderAnthropic,
+				Name: "Anthropic",
+				Models: []providers.Model{
+					{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6"},
+				},
+			},
+		},
+	}
+	global := config.DefaultGlobalConfig()
+	global.SetProviderConfig(config.ProviderAnthropic, config.ProviderConfig{
+		APIKeyHelper: "exit 1",
+		Models:       []string{"claude-sonnet-4-6"},
+	})
+	resolved := &config.ResolvedConfig{}
+
+	m := New(registry, global, config.NewLoader(), resolved, func(provider, model, apiKey string) error {
+		t.Fatal("completion should not be called on helper failure")
+		return nil
+	})
+
+	var cmd tea.Cmd
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.Step != StepAPIKey {
+		t.Fatalf("expected StepAPIKey, got %v", m.Step)
+	}
+	m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected api key helper command")
+	}
+	if m.Step != StepAPIKeyHelper {
+		t.Fatalf("expected StepAPIKeyHelper, got %v", m.Step)
+	}
+
+	m, cmd = m.Update(cmd())
+	if cmd != nil {
+		t.Fatal("expected no command after helper failure")
+	}
+	if m.Step != StepAPIKey {
+		t.Fatalf("expected StepAPIKey after helper failure, got %v", m.Step)
+	}
+	if m.ErrorMessage == "" {
+		t.Fatal("expected error message after helper failure")
 	}
 }
 
