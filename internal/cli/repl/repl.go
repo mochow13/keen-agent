@@ -75,6 +75,7 @@ type replModel struct {
 	showSpinner               bool
 	loadingText               string
 	loadingStartedAt          time.Time
+	lastTurnElapsedMsg        string
 	userScrolled              bool
 	streamCancel              context.CancelFunc
 	turnMemory                *turnMemoryAccumulator
@@ -735,6 +736,10 @@ func (m replModel) View() tea.View {
 		} else if m.copyNotification != "" {
 			view.WriteString("\n")
 			view.WriteString("  " + repltheme.AccentStyle.Render(m.copyNotification))
+			view.WriteString("\n")
+		} else if m.lastTurnElapsedMsg != "" {
+			view.WriteString("\n")
+			view.WriteString(repltheme.TurnElapsedStyle.Render(m.lastTurnElapsedMsg))
 			view.WriteString("\n")
 		}
 

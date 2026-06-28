@@ -56,6 +56,29 @@ func newTestModel() replModel {
 	}
 }
 
+func TestFormatTurnElapsed(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Duration
+		want string
+	}{
+		{name: "zero", in: 0, want: "0s"},
+		{name: "seconds only", in: 6 * time.Second, want: "6s"},
+		{name: "under minute with ms", in: 9*time.Second + 900*time.Millisecond, want: "9s"},
+		{name: "minutes and seconds", in: time.Minute + 23*time.Second, want: "1m 23s"},
+		{name: "exact minute", in: 2 * time.Minute, want: "2m"},
+		{name: "negative", in: -time.Second, want: "0s"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatTurnElapsed(tt.in); got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
 func scrollViewportAwayFromBottom(t *testing.T, m *replModel) int {
 	t.Helper()
 

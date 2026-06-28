@@ -133,6 +133,7 @@ var (
 	LoadingTextShimmerStyle     = lipgloss.NewStyle().Foreground(LoadingShimmerColor).Bold(true)
 	LoadingTextShimmerMid       = lipgloss.NewStyle().Foreground(LoadingShimmerMidColor)
 	LoadingTimerStyle           = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
+	TurnElapsedStyle            = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
 	CompactionSuccessStyle      = lipgloss.NewStyle().Foreground(SecondaryColor)
 	CompactionErrorStyle        = lipgloss.NewStyle().Foreground(ErrorColor)
 	CompactionCancelledStyle    = lipgloss.NewStyle().Foreground(TextDimColor)

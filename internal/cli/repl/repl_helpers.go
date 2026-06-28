@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"time"
@@ -121,7 +121,7 @@ var loadingSpinners = []spinner.Spinner{
 }
 
 func nextLoadingText() string {
-	return loadingTexts[rand.Intn(len(loadingTexts))]
+	return loadingTexts[rand.IntN(len(loadingTexts))]
 }
 
 func renderLoadingText(text string, elapsed time.Duration) string {
@@ -173,10 +173,11 @@ func renderLoadingText(text string, elapsed time.Duration) string {
 }
 
 func nextLoadingSpinner() spinner.Spinner {
-	return loadingSpinners[rand.Intn(len(loadingSpinners))]
+	return loadingSpinners[rand.IntN(len(loadingSpinners))]
 }
 
 func (m *replModel) startLoading(text string) {
+	m.lastTurnElapsedMsg = ""
 	m.showSpinner = true
 	m.spinner.Spinner = nextLoadingSpinner()
 	m.loadingText = text
@@ -184,6 +185,12 @@ func (m *replModel) startLoading(text string) {
 }
 
 func (m *replModel) stopLoading() {
+	if !m.loadingStartedAt.IsZero() {
+		elapsed := time.Since(m.loadingStartedAt)
+		m.lastTurnElapsedMsg = " ✔ " + pickTurnElapsedVerb() + " " + formatTurnElapsed(elapsed)
+	} else {
+		m.lastTurnElapsedMsg = ""
+	}
 	m.showSpinner = false
 	m.loadingStartedAt = time.Time{}
 }
@@ -333,7 +340,7 @@ func (m *replModel) handleMCPConnectDone(msg mcpConnectDoneMsg) {
 		_ = m.appState.SetSkillStatus(mcpskills.SkillName(msg.Server), skills.StatusDisabled)
 		changed = true
 	} else {
-		m.output.AddStyledLine("  ✓ MCP server connected: "+msg.Server, repltheme.HighlightStyle)
+		m.output.AddStyledLine("  ✔ MCP server connected: "+msg.Server, repltheme.HighlightStyle)
 		description := ""
 		if m.ctx != nil && m.ctx.mcp != nil {
 			description = m.ctx.mcp.Status(msg.Server).Description
@@ -367,6 +374,38 @@ func formatLoadingElapsed(d time.Duration) string {
 	minutes := totalSeconds / 60
 	seconds := totalSeconds % 60
 	return fmt.Sprintf("%d:%02d", minutes, seconds)
+}
+
+var turnElapsedVerbs = []string{
+	"Crunched for",
+	"Processed in",
+	"Completed in",
+	"Finished in",
+	"Resolved in",
+	"Handled in",
+	"Took",
+	"Ran for",
+}
+
+func pickTurnElapsedVerb() string {
+	return turnElapsedVerbs[rand.IntN(len(turnElapsedVerbs))]
+}
+
+func formatTurnElapsed(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	totalSeconds := int(d.Seconds())
+	minutes := totalSeconds / 60
+	seconds := totalSeconds % 60
+	switch {
+	case minutes > 0 && seconds > 0:
+		return fmt.Sprintf("%dm %ds", minutes, seconds)
+	case minutes > 0:
+		return fmt.Sprintf("%dm", minutes)
+	default:
+		return fmt.Sprintf("%ds", seconds)
+	}
 }
 
 func (m *replModel) currentMode() llm.AgentMode {
@@ -629,11 +668,18 @@ func (m *replModel) copyNotificationHeight() int {
 	return 2
 }
 
+func (m *replModel) elapsedTimeHeight() int {
+	if !m.showSpinner && m.copyNotification == "" && m.lastTurnElapsedMsg != "" {
+		return 2
+	}
+	return 0
+}
+
 func (m *replModel) adjustTextareaHeight() {
 	if m.height <= 0 {
 		return
 	}
-	m.viewport.SetHeight(m.height - m.textarea.Height() - 4 - m.spinnerHeight() - m.copyNotificationHeight() - m.suggestion.Height() - m.queuedHeight())
+	m.viewport.SetHeight(m.height - m.textarea.Height() - 4 - m.spinnerHeight() - m.copyNotificationHeight() - m.elapsedTimeHeight() - m.suggestion.Height() - m.queuedHeight())
 }
 
 func (m replModel) isAtTopOfInput() bool {
@@ -842,7 +888,7 @@ func (m *replModel) applyWindowSize(msg tea.WindowSizeMsg) {
 		m.output.SetWidth(msg.Width)
 	}
 	m.viewport.SetWidth(msg.Width)
-	m.viewport.SetHeight(msg.Height - m.textarea.Height() - 4 - m.spinnerHeight() - m.copyNotificationHeight() - m.suggestion.Height() - m.queuedHeight())
+	m.viewport.SetHeight(msg.Height - m.textarea.Height() - 4 - m.spinnerHeight() - m.copyNotificationHeight() - m.elapsedTimeHeight() - m.suggestion.Height() - m.queuedHeight())
 
 	if !m.initialScreenDone && msg.Width > 0 {
 		for _, line := range buildInitialScreen(m.ctx, m.lastSession, m.width) {
