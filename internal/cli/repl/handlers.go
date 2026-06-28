@@ -384,10 +384,8 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 			var textCmd tea.Cmd
 			m.textarea, textCmd = m.textarea.Update(keyMsg)
 			input := m.textarea.Value()
-			if strings.HasPrefix(input, "/") {
+			if !m.refreshFileSuggestions(input) && strings.HasPrefix(input, "/") {
 				m.suggestion.RefreshWithSkills(input, m.skillSuggestions())
-			} else {
-				m.refreshFileSuggestions(input)
 			}
 			m.adjustTextareaHeight()
 			return *m, tea.Batch(cmd, textCmd)
@@ -501,10 +499,8 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(keyMsg)
 	input := m.textarea.Value()
-	if strings.HasPrefix(input, "/") {
+	if !m.refreshFileSuggestions(input) && strings.HasPrefix(input, "/") {
 		m.suggestion.RefreshWithSkills(input, m.skillSuggestions())
-	} else {
-		m.refreshFileSuggestions(input)
 	}
 	m.adjustTextareaHeight()
 	return *m, cmd
@@ -519,10 +515,10 @@ func (m *replModel) skillSuggestions() []replwidgets.SuggestionItem {
 	return items
 }
 
-func (m *replModel) refreshFileSuggestions(input string) {
+func (m *replModel) refreshFileSuggestions(input string) bool {
 	if m.fileSearcher == nil {
 		m.suggestion.Hide()
-		return
+		return false
 	}
 	linesBefore := strings.Split(input, "\n")
 	cursorByte := 0
@@ -536,9 +532,10 @@ func (m *replModel) refreshFileSuggestions(input string) {
 	if tok, _, found := extractAtToken(input, cursorByte); found {
 		paths := m.fileSearcher.Search(tok, 10)
 		m.suggestion.RefreshFiles(paths)
-	} else {
-		m.suggestion.Hide()
+		return true
 	}
+	m.suggestion.Hide()
+	return false
 }
 
 func (m *replModel) interruptStream(message string) {

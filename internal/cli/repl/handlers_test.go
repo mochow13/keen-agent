@@ -3,6 +3,9 @@ package repl
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
 	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
+	replfilesearch "github.com/mochow13/keen-agent/internal/cli/repl/filesearch"
 	reploutput "github.com/mochow13/keen-agent/internal/cli/repl/output"
 	replwidgets "github.com/mochow13/keen-agent/internal/cli/repl/widgets"
 	"github.com/mochow13/keen-agent/internal/config"
@@ -938,5 +942,77 @@ func TestHandleBtwStreamMsg_InactiveHandlerSwallowsMessages(t *testing.T) {
 
 	if !handled {
 		t.Fatal("expected stale btw chunk to be swallowed")
+	}
+}
+
+func newTestModelWithFileSearcher(t *testing.T) (replModel, string) {
+	t.Helper()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "foo.txt"), []byte("foo"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bar.go"), []byte("bar"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	cmd := exec.Command("git", "init")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+
+	m := newTestModel()
+	m.fileSearcher = replfilesearch.NewFileSearcher(dir, nil)
+	return m, dir
+}
+
+func TestHandleKeyMsg_SlashCommandStillShowsFileSuggestions(t *testing.T) {
+	m, _ := newTestModelWithFileSearcher(t)
+	m.textarea.SetValue("/cmd @fo")
+	m.textarea.SetCursorColumn(len("/cmd @fo"))
+
+	newM, _ := m.handleKeyMsg(tea.KeyPressMsg{Code: 'o', Text: "o"})
+
+	if newM.textarea.Value() != "/cmd @foo" {
+		t.Fatalf("expected textarea value '/cmd @foo', got %q", newM.textarea.Value())
+	}
+	if !newM.suggestion.Visible() {
+		t.Fatal("expected file suggestions to be visible for slash command with @ token")
+	}
+	if !newM.suggestion.IsFileMode() {
+		t.Fatal("expected suggestions to be in file mode")
+	}
+	if !strings.Contains(newM.suggestion.View(80), "foo.txt") {
+		t.Fatalf("expected foo.txt in suggestions, got %q", newM.suggestion.View(80))
+	}
+}
+
+func TestHandleKeyMsg_SlashCommandWithoutAtShowsCommandSuggestions(t *testing.T) {
+	m, _ := newTestModelWithFileSearcher(t)
+	m.textarea.SetValue("/cl")
+	m.textarea.SetCursorColumn(len("/cl"))
+
+	newM, _ := m.handleKeyMsg(tea.KeyPressMsg{Code: 'e', Text: "e"})
+
+	if newM.textarea.Value() != "/cle" {
+		t.Fatalf("expected textarea value '/cle', got %q", newM.textarea.Value())
+	}
+	if !newM.suggestion.Visible() {
+		t.Fatal("expected command suggestions to be visible")
+	}
+	if newM.suggestion.IsFileMode() {
+		t.Fatal("expected suggestions to be in command mode")
+	}
+	if !strings.Contains(newM.suggestion.View(80), "/clear") {
+		t.Fatalf("expected /clear in suggestions, got %q", newM.suggestion.View(80))
 	}
 }
