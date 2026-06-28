@@ -49,7 +49,7 @@ State is split into:
 Shared state lives directly under `~/.keen-agent/`:
 
 ```text
-~/.keen-agent/models.json  # model/provider defaults + API-provider credentials
+~/.keen-agent/configs.json  # model/provider defaults + API-provider credentials
 ~/.keen-agent/auth.json    # OAuth credentials for Codex-style providers and MCP OAuth
 ```
 
@@ -66,7 +66,7 @@ collisions.
 | keen-code | keen-agent |
 |-----------|------------|
 | `~/.keen/` (config, sessions, global skills) | `~/.keen-agent/` |
-| `~/.keen/configs.json` (active provider/model) | `~/.keen-agent/models.json` |
+| `~/.keen/configs.json` (active provider/model) | `~/.keen-agent/configs.json` |
 | `~/.keen/skills/` (global skills) | User-selected `skills_dir` plus optional `~/.keen-agent/skills/` shared skills |
 | `~/.keen/sessions/` (or equivalent) | `~/.keen-agent/<agent-name>/sessions/` |
 | `~/.keen/logs/` (or equivalent) | `~/.keen-agent/<agent-name>/logs/` |
@@ -110,17 +110,16 @@ appearance:
       light: "#EEF3FA"
       dark: "#243040"
 
-model:                                # optional; omit to use shared model default
-  provider: anthropic                  # provider/model from ~/.keen-agent/models.json
+model:                                # optional; omit to use existing active model and provider in the config
+  provider: anthropic                  # provider/model from ~/.keen-agent/configs.json
   model_id: claude-sonnet-4-20250514
 
 system_prompt: |
   You are a PostgreSQL DBA. Help the user optimize queries,
   analyze execution plans, and manage database health.
 
-system_prompt_file: ./prompts/additional-context.md  # optional, appended
-
-project_instructions: AGENT_RULES.md  # file in cwd auto-appended to system prompt
+system_prompt_files:
+  - ./prompts/additional-context.md  # can contain additional context or the original system prompt itself
 
 # Modes: plan (read-only tools only) | build (all tools)
 default_mode: build
@@ -167,9 +166,6 @@ builtin_tools:
     - write_file
     - edit_file
     - bash
-  # bash permission policy (applies in addition to the isDangerous heuristic)
-  bash:
-    permission: requires_approval
 
 # User-defined native functions: small, explicit function-call extensions.
 # For large/discoverable tool sets, use MCP via mcp_config_dir instead.
@@ -183,7 +179,6 @@ functions:
     permission: auto_approve  # or: requires_approval
     timeout: 30s
     max_retries: 2
-    max_output_size: 128KB
 
   - name: analyze_customer_segments
     description: "Analyze a large customer segmentation request"
@@ -273,13 +268,12 @@ Format:
 
 The main-agent system prompt is assembled in order:
 
-1. **Agent persona** — `system_prompt` field + `system_prompt_file` contents
+1. **Agent persona** — `system_prompt` field + `system_prompt_files` contents (array, appended in order)
 2. **Tool documentation** — auto-generated from callable definitions (built-in tools + user functions + MCP tools)
 3. **Subagent catalog** — list of available subagents with names and descriptions when `subagents_dir` is set
-4. **Project instructions** — contents of `project_instructions` file from cwd (if exists)
 5. **Active skill** — skill body when activated via `/skill` or `[Activate skill: ...]`
 6. **Mode instructions** — active mode marker plus built-in behavioral constraints
-7. **Mode prompt overlay** — optional `modes.<active-mode>.system_prompt` or `system_prompt_file`
+7. **Mode prompt overlay** — optional `modes.<active-mode>.system_prompt` or `system_prompt_files` (array)
 
 Mode-specific prompt overlays are first-class config because `plan` and `build`
 are behavioral modes, not just tool filters. This matches the current keen-agent
@@ -289,7 +283,7 @@ filters tools in plan mode.
 
 Prompt overlay rules:
 - `modes.plan` and `modes.build` may each define `system_prompt` and/or
-  `system_prompt_file`; file contents are appended after inline text.
+  `system_prompt_files`; file contents are appended after inline text in the order listed.
 - Overlays are appended after the built-in mode constraints, so harness authors can
   tune tone and workflow without weakening hard safety/tool constraints.
 - The effective active mode is `--mode` if provided, otherwise `default_mode`.
@@ -417,7 +411,6 @@ Rules:
 - stdout → returned to LLM as function result
 - stderr → included in error reporting
 - Non-zero exit → error fed back to LLM for retry (up to `max_retries`)
-- Output truncated at `max_output_size` (default: 128KB)
 
 ### Permission
 
@@ -456,7 +449,6 @@ type functionTool struct {
     permission      Permission     // auto_approve | requires_approval
     timeout         time.Duration
     maxRetries      int
-    maxOutput       int            // bytes
 
     runner          CommandRunner  // injected: real sh -c executor, or fake in tests
     approver        PermissionRequester
@@ -503,7 +495,7 @@ func (t *functionTool) Execute(ctx context.Context, input any) (any, error) {
     // 4. Marshal validated input and write it to process stdin.
     // 5. Run via CommandRunner: sh -c command, with env, cwd, stdin, ctx+timeout.
     // 6. On non-zero exit, retry up to maxRetries (fresh ctx/timeout each try).
-    // 7. Truncate combined output to maxOutput; return stdout (+stderr on err).
+    // 7. Return stdout (+stderr on err).
 }
 ```
 
@@ -547,23 +539,20 @@ payload = json.load(sys.stdin)
 print(json.dumps(analyze(payload["request"])))
 ```
 
-The practical limits are controlled by agent/function policy, not the OS env limit:
+The practical limits are controlled by provider constraints, not the OS env limit:
 
-- `max_input_size` (optional; default TBD, e.g. `1MB`) rejects oversized function-call
-  inputs before spawning the process.
 - Provider function/tool-call limits still apply: the LLM must be able to produce
   the JSON arguments in its function call.
 - If payloads are too large for the model context, the user-defined function should
   accept file paths, IDs, or references instead of embedding the full object.
 
-### Note on the bash dual-gate
+### Note on function execution isolation
 
 Functions run via `sh -c` through `CommandRunner` and **do not** pass through
-the `bash` built-in. The bash `isDangerous` + explicit-policy gate therefore
-does **not** apply to functions; their only gate is the per-function
-`permission` field. Since function input is delivered over stdin, authors should
-read JSON from stdin instead of interpolating model-provided values into shell
-command strings.
+the `bash` built-in. The bash `isDangerous` heuristic therefore does **not**
+apply to functions; their only gate is the per-function `permission` field.
+Since function input is delivered over stdin, authors should read JSON from
+stdin instead of interpolating model-provided values into shell command strings.
 
 ---
 
@@ -603,7 +592,7 @@ Available by default:
 | web_fetch | true | yes | auto_approve |
 | glob | true | yes | auto_approve |
 | grep | true | yes | auto_approve |
-| bash | false | yes | `isDangerous` heuristic **+** explicit permission policy (both apply) |
+| bash | false | yes | `isDangerous` heuristic |
 | call_mcp_tool | true | no | auto_approve for dispatch; MCP server/tool permissions apply where relevant |
 | delegate_task | true | no | auto_approve |
 
@@ -623,31 +612,9 @@ Filesystem guard applies identically to keen-code for filesystem tools.
 
 ### Bash permission model
 
-bash uses **two independent gates, both of which stay**:
-
-1. **`isDangerous` heuristic (model-reported, inherited from keen-code).** The model
-   flags a command as dangerous; flagged commands always prompt for approval. This is
-   the existing keen-code behavior and is preserved as-is.
-2. **Explicit permission policy (config-driven, new).** keen-agent adds a configurable
-   bash permission policy so harness authors aren't reliant on the model's
-   self-assessment alone:
-
-```yaml
-builtin_tools:
-  bash:
-    # auto_approve | requires_approval | deny
-    permission: requires_approval
-```
-
-Resolution: a command is approved automatically **only if** the `isDangerous`
-heuristic does not flag it **and** the explicit policy resolves to `auto_approve`.
-If either gate requires approval, the user is prompted; if the policy is `deny`, the
-command is refused without prompting. The stricter gate always wins.
-
-> Rationale: the `isDangerous` heuristic is convenient but model-dependent and weaker
-> for non-coding harnesses. The explicit policy gives the agent author a hard,
-> deterministic boundary. Keeping both means convenience by default with a firm
-> opt-in control.
+bash uses the **`isDangerous` heuristic (model-reported, inherited from keen-code).**
+The model flags a command as dangerous; flagged commands always prompt for approval.
+This is the existing keen-code behavior and is preserved as-is.
 
 ---
 
@@ -671,11 +638,13 @@ modes:
     system_prompt: |
       In plan mode, be skeptical about hidden implementation risk.
       Prefer numbered plans with assumptions and verification steps.
-    system_prompt_file: ./prompts/plan-mode.md
+    system_prompt_files:
+      - ./prompts/plan-mode.md
   build:
     system_prompt: |
       In build mode, make the smallest safe change and verify it.
-    system_prompt_file: ./prompts/build-mode.md
+    system_prompt_files:
+      - ./prompts/build-mode.md
 ```
 
 Rules:
@@ -683,7 +652,7 @@ Rules:
 - `default_mode` defaults to `build` when omitted.
 - `--mode plan|build` overrides `default_mode` for that process/session.
 - TUI mode switches change the active prompt overlay on the next LLM turn.
-- `modes.<mode>.system_prompt_file` is resolved relative to `agent.yaml`.
+- `modes.<mode>.system_prompt_files` entries are resolved relative to `agent.yaml`.
 - Unknown mode config keys are validation errors.
 
 ### Implementation reference from current keen-agent
@@ -721,7 +690,8 @@ btw:
   system_prompt: |
     You answer quick side questions separate from the main task.
     Be concise and do not use tools.
-  system_prompt_file: ./prompts/btw.md
+  system_prompt_files:
+    - ./prompts/btw.md
 ```
 
 Rules:
@@ -747,7 +717,8 @@ adversary:
     You are an adversarial critic. Find problems in the main agent's output,
     code changes, assumptions, plans, and suggested verification. Lead with the
     most important issue. Cite file:line when possible.
-  system_prompt_file: ./prompts/adversary.md
+  system_prompt_files:
+    - ./prompts/adversary.md
 ```
 
 Rules:
@@ -765,7 +736,7 @@ Rules:
 - `btw.context_messages` must be positive when set.
 - Helper `model` blocks use the same provider/model validation and resolution rules
   as the main `model` block.
-- Helper `system_prompt_file` paths must exist and are resolved relative to
+- Helper `system_prompt_files` entries must exist and are resolved relative to
   `agent.yaml`.
 - `adversary.tools` entries must exist in the registered tool catalog and satisfy
   read-only constraints.
@@ -879,7 +850,7 @@ keen-agent separates user-authored resources from runtime state:
 | MCP server config | user-authored | `mcp_config_dir`, default `~/.keen-agent/mcp/configs.json` |
 | Skills | user-authored | `skills_dir`, project-local skills, optional shared `~/.keen-agent/skills/` |
 | Subagents | user-authored | `subagents_dir`, optional shared `~/.keen-agent/agents/` |
-| Provider/model config + API credentials | shared keen-agent state | `~/.keen-agent/models.json` |
+| Provider/model config + API credentials | shared keen-agent state | `~/.keen-agent/configs.json` |
 | OAuth token cache for model providers and MCP | shared keen-agent state | `~/.keen-agent/auth.json` |
 | Sessions | agent-scoped keen-agent state | `~/.keen-agent/<agent-name>/sessions/` |
 | Logs | agent-scoped keen-agent state | `~/.keen-agent/<agent-name>/logs/` |
@@ -962,18 +933,18 @@ is allowed; missing roles inherit defaults.
 
 ```yaml
 model:                     # optional — omit the whole block to use the shared active model
-  provider: anthropic      # provider/model configured in ~/.keen-agent/models.json
+  provider: anthropic      # provider/model configured in ~/.keen-agent/configs.json
   model_id: claude-sonnet-4-20250514   # anthropic | openai | google | ...
 ```
 
 - **`model` is optional.** If omitted (or either field is empty), keen-agent uses the
-  **active provider and model** recorded in `~/.keen-agent/models.json`.
-- When present, `model.provider` / `model.model_id` override the shared `models.json` defaults.
-- CLI flags (`--provider` / `--model`) override both the config block and `models.json`.
-- Resolution order: **CLI flags → `agent.yaml` `model` block → `~/.keen-agent/models.json` active entry.**
+  **active provider and model** recorded in `~/.keen-agent/configs.json`.
+- When present, `model.provider` / `model.model_id` override the shared `configs.json` defaults.
+- CLI flags (`--provider` / `--model`) override both the config block and `configs.json`.
+- Resolution order: **CLI flags → `agent.yaml` `model` block → `~/.keen-agent/configs.json` active entry.**
 - Provider determines which API client is used; `model_id` is passed directly to the provider.
 - Credential lookup is shared across agents:
-  - API-key providers read credentials from `~/.keen-agent/models.json`.
+  - API-key providers read credentials from `~/.keen-agent/configs.json`.
   - OAuth-backed model providers such as Codex read/write tokens in `~/.keen-agent/auth.json`.
   - MCP servers that authenticate with OAuth also read/write their credentials in `~/.keen-agent/auth.json`.
 
@@ -1002,7 +973,7 @@ keen-agent validate --agent ./agent.yaml
 
 Notes:
 - `--agent` is required.
-- Config `model.provider` / `model.model_id` are **optional**; when absent, keen-agent uses the active provider/model from `~/.keen-agent/models.json`. CLI flags override both.
+- Config `model.provider` / `model.model_id` are **optional**; when absent, keen-agent uses the active provider/model from `~/.keen-agent/configs.json`. CLI flags override both.
 - Headless mode keeps the existing `run` style and output `--format` behavior.
 
 ---
@@ -1011,23 +982,21 @@ Notes:
 
 Checks:
 - YAML schema validity
-- Required fields present (name, system_prompt or system_prompt_file)
+- Required fields present (name, system_prompt or system_prompt_files)
 - Function definitions have name + description + command
 - Each function defines `input_schema_file`; schema files exist, use `.json`, and contain valid supported JSON Schema objects
 - MCP config file exists (if mcp_config_dir specified; if omitted, default ~/.keen-agent/mcp/configs.json must exist)
-- system_prompt_file exists (if specified)
-- project_instructions file exists (if specified)
+- system_prompt_files entries exist (if specified)
 - skills_dir exists (if specified)
 - subagents_dir exists (if specified); each `.md` file has valid YAML frontmatter with required `name` and `description` fields
-- `default_mode` is `plan` or `build`; `modes` only contains `plan`/`build`, and each `system_prompt_file` exists if specified
+- `default_mode` is `plan` or `build`; `modes` only contains `plan`/`build`, and each `system_prompt_files` entry exists if specified
 - `btw` config is valid when enabled (`context_messages` positive if set, prompt file exists if specified, model resolves if specified)
 - `adversary` config is valid when enabled (prompt file exists if specified, model resolves if specified, tools exist and are read-only)
 - No duplicate callable names across built-in tools, functions, and MCP tools
 - No duplicate subagent names across discovered subagent profiles
 - `builtin_tools.exclude` does not include non-excludable core tools such as `call_mcp_tool` or `delegate_task`
-- `builtin_tools.bash` policy values are valid (`auto_approve` | `requires_approval` | `deny`) and rule `match` patterns are valid globs
-- If `model` is omitted, `~/.keen-agent/models.json` exists and has an active provider/model entry to fall back to (otherwise warn)
-- If a resolved model provider requires credentials, they are present in `~/.keen-agent/models.json` for API-key providers or `~/.keen-agent/auth.json` for OAuth providers
+- If `model` is omitted, `~/.keen-agent/configs.json` exists and has an active provider/model entry to fall back to (otherwise warn)
+- If a resolved model provider requires credentials, they are present in `~/.keen-agent/configs.json` for API-key providers or `~/.keen-agent/auth.json` for OAuth providers
 - MCP OAuth credentials, when needed, are stored in `~/.keen-agent/auth.json`
 
 ---
@@ -1052,12 +1021,12 @@ Checks:
    - `InputSchema()` from loaded `input_schema_file`
    - `Execute()` with JSON-over-stdin input delivery and schema validation
    - `CommandRunner` + `PermissionRequester` interfaces (testable without real shell/TUI)
-   - bounded execution: timeout, retries, output truncation
+   - bounded execution: timeout, retries
    - `registerFunctionTools` with mode filtering + name-collision detection
 
 ### Phase 3 — Built-in Tools + MCP + Subagents
 
-10. Extract/copy built-in tools (read_file, write_file, edit_file, web_fetch, glob, grep, bash, call_mcp_tool, delegate_task); add the explicit bash permission policy alongside the existing `isDangerous` heuristic
+10. Extract/copy built-in tools (read_file, write_file, edit_file, web_fetch, glob, grep, bash, call_mcp_tool, delegate_task)
 11. Extract/copy MCP client
 12. Extract/copy subagent discovery, profile parser, and runner from keen-code
 13. Wire tool registration (built-in via registry + functions via `registerFunctionTools` + MCP + subagents, with opt-out for excludable built-ins only; `call_mcp_tool` auto-included only when `mcp_config_dir` is set; `delegate_task` auto-included only when `subagents_dir` is set)
@@ -1086,9 +1055,9 @@ Checks:
 |------|-----------|
 | Extracting from keen-code creates drift | **Accepted by design** — keen-agent is a generic harness and owns its copied code; no shared module |
 | keen-agent and keen-code conflict on disk/env | Separate `~/.keen-agent/` namespace and `KEEN_AGENT_*` env prefix |
-| Multiple keen-agent builds leak conversation state into each other | Store sessions, logs, and input history under `~/.keen-agent/<agent-name>/`; keep model/provider defaults and auth shared in `~/.keen-agent/models.json` and `~/.keen-agent/auth.json` to avoid repeated setup |
+| Multiple keen-agent builds leak conversation state into each other | Store sessions, logs, and input history under `~/.keen-agent/<agent-name>/`; keep model/provider defaults and auth shared in `~/.keen-agent/configs.json` and `~/.keen-agent/auth.json` to avoid repeated setup |
 | Shell injection via function commands | Deliver model-provided inputs only as JSON over stdin; keep configured command strings static |
-| Tool output blows up context | Enforce max_output_size with truncation |
+| Tool output blows up context | Truncate oversized tool output at a sensible default |
 | Users misconfigure functions or tool sources silently | `keen-agent validate` catches issues before run |
 | MCP server failures hard to debug | Surface MCP errors clearly in TUI |
 | Subagent tasks run too long or hang | Respect `timeout_seconds` per profile and overall context timeout; subagent output is bounded |
