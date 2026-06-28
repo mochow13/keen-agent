@@ -499,6 +499,73 @@ func TestBashTool_Execute_WithBooleanIsDangerous(t *testing.T) {
 	}
 }
 
+func TestBashTool_Execute_ClassifiedDangerous_NoLLMFlag(t *testing.T) {
+	tempDir := t.TempDir()
+	guard := filesystem.NewGuard(tempDir, nil)
+	mockPR := &mockBashPermissionRequester{allow: true}
+	tool := NewBashTool(guard, mockPR)
+
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"command": "rm file.txt",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockPR.called {
+		t.Error("permission requester should have been called for classified dangerous command")
+	}
+
+	if !mockPR.isDangerous {
+		t.Error("isDangerous should have been passed as true")
+	}
+}
+
+func TestBashTool_Execute_ClassifiedDangerous_Denied(t *testing.T) {
+	tempDir := t.TempDir()
+	guard := filesystem.NewGuard(tempDir, nil)
+	mockPR := &mockBashPermissionRequester{allow: false}
+	tool := NewBashTool(guard, mockPR)
+
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"command": "rm file.txt",
+	})
+	if err == nil {
+		t.Error("expected error when classified dangerous command permission is denied")
+	}
+
+	if !strings.Contains(err.Error(), "dangerous command execution rejected") {
+		t.Errorf("expected dangerous command rejection error, got %q", err.Error())
+	}
+}
+
+func TestBashTool_Execute_ClassifiedSafe(t *testing.T) {
+	tempDir := t.TempDir()
+	guard := filesystem.NewGuard(tempDir, nil)
+	mockPR := &mockBashPermissionRequester{allow: true}
+	tool := NewBashTool(guard, mockPR)
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"command": "echo hello",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mockPR.called {
+		t.Error("permission requester should not have been called for safe command")
+	}
+
+	resultMap, ok := result.(map[string]any)
+	if !ok {
+		t.Fatal("result should be a map")
+	}
+	stdout := resultMap["stdout"].(string)
+	if !strings.Contains(stdout, "hello") {
+		t.Errorf("expected stdout to contain 'hello', got %q", stdout)
+	}
+}
+
 func TestBashTool_Execute_ResultStructure(t *testing.T) {
 	tempDir := t.TempDir()
 	guard := filesystem.NewGuard(tempDir, nil)

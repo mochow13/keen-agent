@@ -149,7 +149,7 @@ func (t *BashTool) Execute(ctx context.Context, input any) (any, error) {
 		}
 	}
 
-	if isDangerous {
+	if isDangerous || IsDangerousCommand(command) {
 		if t.permissionRequester == nil {
 			return nil, fmt.Errorf("permission denied: user approval required for dangerous command but not available")
 		}
