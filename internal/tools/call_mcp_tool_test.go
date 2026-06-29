@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -223,4 +224,60 @@ func TestCallMCPTool_NotFound(t *testing.T) {
 	if !strings.Contains(err.Error(), "~/.keen-agent/skills/mcp:context7/SKILL.md") {
 		t.Fatalf("Execute() error = %v, want skill file path", err)
 	}
+}
+
+func TestCallMCPTool_LargeResultSpillsToArtifact(t *testing.T) {
+	largeContent := strings.Repeat("x", maxInlineMCPResultSize+1)
+	runtime := &mockMCPRuntime{
+		callToolFn: func(_ context.Context, _, _ string, _ map[string]any) (*keenmcp.ToolResult, error) {
+			return &keenmcp.ToolResult{
+				Content: []mcpsdk.Content{
+					&mcpsdk.TextContent{Text: largeContent},
+				},
+			}, nil
+		},
+	}
+	callTool := NewCallMCPTool(runtime, &mockPermissionRequester{allow: true})
+
+	result, err := callTool.Execute(context.Background(), map[string]any{
+		"server": "context7",
+		"tool":   "get-library-docs",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("result type = %T, want map[string]any", result)
+	}
+
+	if m["truncated"] != true {
+		t.Errorf("truncated = %v, want true", m["truncated"])
+	}
+
+	artifactPath, ok := m["artifact_path"].(string)
+	if !ok || artifactPath == "" {
+		t.Fatalf("artifact_path missing or empty")
+	}
+
+	artifactSize, ok := m["artifact_size_bytes"].(int)
+	if !ok || artifactSize != len(largeContent) {
+		t.Errorf("artifact_size_bytes = %v, want %d", m["artifact_size_bytes"], len(largeContent))
+	}
+
+	preview, ok := m["content"].(string)
+	if !ok || !strings.Contains(preview, "...") {
+		t.Errorf("content preview missing omission marker")
+	}
+
+	data, err := os.ReadFile(artifactPath)
+	if err != nil {
+		t.Fatalf("failed to read artifact %q: %v", artifactPath, err)
+	}
+	if string(data) != largeContent {
+		t.Errorf("artifact content length = %d, want %d", len(data), len(largeContent))
+	}
+
+	_ = os.Remove(artifactPath)
 }

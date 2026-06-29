@@ -4,10 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
+	"github.com/mochow13/keen-agent/internal/filesystem"
 	keenmcp "github.com/mochow13/keen-agent/internal/mcp"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+const (
+	maxInlineMCPResultSize   = 64 * 1024
+	mcpResultPreviewHeadSize = 4 * 1024
+	mcpResultPreviewTailSize = 2 * 1024
+	mcpArtifactFileMode      = 0600
 )
 
 type CallMCPTool struct {
@@ -42,7 +51,10 @@ IMPORTANT:
   transform names (e.g. swap "-" for "_"). If a call fails with "tool not
   found", re-read the skill file and use a name from that table.
 - Arguments must match the tool's input schema exactly.
-- Set checkCache to false or omit it (reserved for future use).`
+- Set checkCache to false or omit it (reserved for future use).
+- If the result is very large, the full output is saved to a file and the response includes
+  truncated: true, artifact_path, and a preview in content. Use read_file with offset/limit or
+  grep with path set to artifact_path to inspect the saved result incrementally.`
 }
 
 func (t *CallMCPTool) InputSchema() map[string]any {
@@ -133,11 +145,27 @@ func (t *CallMCPTool) Execute(ctx context.Context, input any) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{
-		"server":  server,
-		"tool":    tool,
-		"content": formatMCPContent(result.Content),
-	}, nil
+	content := formatMCPContent(result.Content)
+	output := map[string]any{
+		"server": server,
+		"tool":   tool,
+	}
+
+	if len(content) <= maxInlineMCPResultSize {
+		output["content"] = content
+		return output, nil
+	}
+
+	summary, err := summarizeMCPResult(content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write MCP result artifact: %w", err)
+	}
+
+	output["content"] = summary.preview
+	output["truncated"] = true
+	output["artifact_path"] = summary.path
+	output["artifact_size_bytes"] = summary.size
+	return output, nil
 }
 
 func requiredString(params map[string]any, name string) (string, error) {
@@ -198,6 +226,66 @@ func formatMCPContent(content []mcpsdk.Content) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+type mcpResultSummary struct {
+	preview string
+	path    string
+	size    int
+}
+
+func summarizeMCPResult(content string) (mcpResultSummary, error) {
+	data := []byte(content)
+	path, err := writeMCPArtifact(data)
+	if err != nil {
+		return mcpResultSummary{}, err
+	}
+
+	headSize := min(mcpResultPreviewHeadSize, len(data))
+	tailSize := min(mcpResultPreviewTailSize, len(data)-headSize)
+	tailStart := len(data) - tailSize
+	omitted := len(data) - headSize - tailSize
+
+	preview := fmt.Sprintf(
+		"%s\n\n... (%d bytes omitted; full result saved to artifact_path) ...\n\n%s",
+		string(data[:headSize]),
+		omitted,
+		string(data[tailStart:]),
+	)
+
+	return mcpResultSummary{
+		preview: preview,
+		path:    path,
+		size:    len(data),
+	}, nil
+}
+
+func writeMCPArtifact(data []byte) (string, error) {
+	dir, err := filesystem.KeenMCPArtifactsDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve MCP artifacts directory: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", fmt.Errorf("failed to create MCP artifacts directory %q: %w", dir, err)
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		return "", fmt.Errorf("failed to secure MCP artifacts directory %q: %w", dir, err)
+	}
+
+	file, err := os.CreateTemp(dir, "keen-mcp-*"+".txt")
+	if err != nil {
+		return "", fmt.Errorf("failed to create MCP artifact file: %w", err)
+	}
+	path := file.Name()
+	defer file.Close()
+
+	if err := file.Chmod(mcpArtifactFileMode); err != nil {
+		return "", fmt.Errorf("failed to secure MCP artifact file %q: %w", path, err)
+	}
+	if _, err := file.Write(data); err != nil {
+		return "", fmt.Errorf("failed to write MCP artifact file %q: %w", path, err)
+	}
+	return path, nil
 }
 
 func (t *CallMCPTool) validateRequiredArguments(ctx context.Context, server, tool string, arguments map[string]any) error {

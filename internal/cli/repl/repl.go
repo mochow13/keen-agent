@@ -36,6 +36,7 @@ const (
 	defaultWidth            = 120
 	inputMinHeight          = 1
 	inputMaxHeight          = 15
+	inputMaxContentHeight   = 10000
 	copyNotificationTimeout = 2 * time.Second
 	copyNotificationMessage = "Copied to clipboard"
 )
@@ -127,6 +128,7 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 	ta.DynamicHeight = true
 	ta.MinHeight = inputMinHeight
 	ta.MaxHeight = inputMaxHeight
+	ta.MaxContentHeight = inputMaxContentHeight
 	ta.SetHeight(inputMinHeight)
 	ta.ShowLineNumbers = false
 	ta.SetPromptFunc(3, func(info textarea.PromptInfo) string {
@@ -747,19 +749,28 @@ func (m replModel) View() tea.View {
 			view.WriteString(queuedView)
 		}
 
-		shellMode := strings.HasPrefix(m.textarea.Value(), "!")
+		inputValue := m.textarea.Value()
+		shellMode := strings.HasPrefix(inputValue, "!")
+		btwMode := inputValue == replcommands.Btw || strings.HasPrefix(inputValue, replcommands.Btw+" ")
+		adversaryMode := inputValue == replcommands.Adversary || strings.HasPrefix(inputValue, replcommands.Adversary+" ")
+
 		styles := m.textarea.Styles()
-		if shellMode {
+		switch {
+		case shellMode:
 			styles.Focused.Prompt = repltheme.ShellPromptStyle
-		} else if m.currentMode() == llm.ModePlan {
+		case btwMode:
+			styles.Focused.Prompt = repltheme.BtwPromptStyle
+		case adversaryMode:
+			styles.Focused.Prompt = repltheme.AdversaryPromptStyle
+		case m.currentMode() == llm.ModePlan:
 			styles.Focused.Prompt = repltheme.PromptPlanStyle
-		} else {
+		default:
 			styles.Focused.Prompt = repltheme.PromptStyle
 		}
 		m.textarea.SetStyles(styles)
 
 		textareaView := m.inputSelection.render(m.textarea.View(), m.textarea.Width()+inputPromptWidth, m.textarea.Height(), m.textarea.ScrollYOffset(), inputPromptWidth)
-		view.WriteString(renderInputArea(textareaView, m.width, m.textarea.Focused(), shellMode, m.currentMode()))
+		view.WriteString(renderInputArea(textareaView, m.width, m.textarea.Focused(), shellMode, btwMode, adversaryMode, m.currentMode()))
 		view.WriteString("\n")
 		if m.suggestion.Visible() {
 			view.WriteString(m.suggestion.View(m.width))

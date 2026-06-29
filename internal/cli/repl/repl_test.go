@@ -34,6 +34,7 @@ func newTestModel() replModel {
 	ta.DynamicHeight = true
 	ta.MinHeight = inputMinHeight
 	ta.MaxHeight = inputMaxHeight
+	ta.MaxContentHeight = inputMaxContentHeight
 	ta.SetHeight(inputMinHeight)
 	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 	return replModel{
@@ -325,8 +326,8 @@ func TestInitialModel_PlanModeSetsPromptStyle(t *testing.T) {
 }
 
 func TestRenderInputArea_UsesViewportWidthRules(t *testing.T) {
-	focusedWide := renderInputArea("▶ hello", 80, true, false, llm.ModeBuild)
-	blurredWide := renderInputArea("▶ hello", 80, false, false, llm.ModeBuild)
+	focusedWide := renderInputArea("▶ hello", 80, true, false, false, false, llm.ModeBuild)
+	blurredWide := renderInputArea("▶ hello", 80, false, false, false, false, llm.ModeBuild)
 	if focusedWide == blurredWide {
 		t.Fatal("expected focused and blurred input areas to render differently")
 	}
@@ -343,7 +344,7 @@ func TestRenderInputArea_UsesViewportWidthRules(t *testing.T) {
 		t.Fatalf("expected wide input rules to match viewport width, got width %d", wideRuleWidth)
 	}
 
-	narrow := renderInputArea("▶ hi", 24, true, false, llm.ModeBuild)
+	narrow := renderInputArea("▶ hi", 24, true, false, false, false, llm.ModeBuild)
 	narrowLines := strings.Split(strings.TrimRight(narrow, "\n"), "\n")
 	if len(narrowLines) != 3 {
 		t.Fatalf("expected 3 narrow input-area lines, got %v", narrowLines)
@@ -639,7 +640,7 @@ func TestReplayLoadedSession_RebuildsOutputAndConversation(t *testing.T) {
 }
 
 func TestRenderInputArea_UsesSecondaryStyleForPlanMode(t *testing.T) {
-	area := renderInputArea("▶ hello", 80, true, false, llm.ModePlan)
+	area := renderInputArea("▶ hello", 80, true, false, false, false, llm.ModePlan)
 	lines := strings.Split(strings.TrimRight(area, "\n"), "\n")
 	if len(lines) < 1 {
 		t.Fatalf("expected at least 1 line, got %v", lines)
@@ -654,13 +655,43 @@ func TestRenderInputArea_UsesSecondaryStyleForPlanMode(t *testing.T) {
 }
 
 func TestRenderInputArea_UsesPrimaryStyleForBuildMode(t *testing.T) {
-	area := renderInputArea("▶ hello", 80, true, false, llm.ModeBuild)
+	area := renderInputArea("▶ hello", 80, true, false, false, false, llm.ModeBuild)
 	lines := strings.Split(strings.TrimRight(area, "\n"), "\n")
 	if len(lines) < 1 {
 		t.Fatalf("expected at least 1 line, got %v", lines)
 	}
 	if !strings.Contains(lines[0], repltheme.ModeBuildChipStyle.Render("build")) {
 		t.Fatalf("expected build mode chip in top rule, got %q", lines[0])
+	}
+}
+
+func TestRenderInputArea_UsesAccentStyleForBtw(t *testing.T) {
+	area := renderInputArea("▶ hello", 80, true, false, true, false, llm.ModeBuild)
+	lines := strings.Split(strings.TrimRight(area, "\n"), "\n")
+	if len(lines) < 1 {
+		t.Fatalf("expected at least 1 line, got %v", lines)
+	}
+	if !strings.Contains(lines[0], repltheme.BtwChipStyle.Render("btw")) {
+		t.Fatalf("expected btw chip in top rule, got %q", lines[0])
+	}
+	accentSeq := "\x1b[38;2;255;179;0m"
+	if !strings.Contains(lines[0], accentSeq) {
+		t.Fatalf("expected btw rule to use accent color, got %q", lines[0])
+	}
+}
+
+func TestRenderInputArea_UsesSecondaryStyleForAdversary(t *testing.T) {
+	area := renderInputArea("▶ hello", 80, true, false, false, true, llm.ModeBuild)
+	lines := strings.Split(strings.TrimRight(area, "\n"), "\n")
+	if len(lines) < 1 {
+		t.Fatalf("expected at least 1 line, got %v", lines)
+	}
+	if !strings.Contains(lines[0], repltheme.AdversaryChipStyle.Render("adversary")) {
+		t.Fatalf("expected adversary chip in top rule, got %q", lines[0])
+	}
+	secondarySeq := "\x1b[38;2;77;182;172m"
+	if !strings.Contains(lines[0], secondarySeq) {
+		t.Fatalf("expected adversary rule to use secondary color, got %q", lines[0])
 	}
 }
 

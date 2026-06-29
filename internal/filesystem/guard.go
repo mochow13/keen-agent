@@ -57,7 +57,7 @@ func (g *Guard) CheckPath(path string, operation string) Permission {
 		return PermissionDenied
 	}
 
-	if operation == "read" && (g.IsInSkillDir(resolved) || g.IsInKeenBashDir(resolved)) {
+	if operation == "read" && (g.IsInSkillDir(resolved) || g.IsInKeenBashDir(resolved) || g.IsInMCPArtifactsDir(resolved)) {
 		return PermissionGranted
 	}
 
@@ -86,7 +86,7 @@ func (g *Guard) IsBlocked(path string) bool {
 		return true
 	}
 
-	if g.IsInSkillDir(resolved) || g.IsInKeenBashDir(resolved) {
+	if g.IsInSkillDir(resolved) || g.IsInKeenBashDir(resolved) || g.IsInMCPArtifactsDir(resolved) {
 		return false
 	}
 
@@ -146,6 +146,39 @@ func KeenBashOutputDir() (string, error) {
 		return "", fmt.Errorf("home directory is empty")
 	}
 	return filepath.Join(home, ".keen-agent", "bash"), nil
+}
+
+func KeenMCPArtifactsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if home == "" {
+		return "", fmt.Errorf("home directory is empty")
+	}
+	return filepath.Join(home, ".keen-agent", "mcp-artifacts"), nil
+}
+
+func (g *Guard) IsInMCPArtifactsDir(path string) bool {
+	cleaned := filepath.Clean(path)
+	artifactsDir, err := KeenMCPArtifactsDir()
+	if err != nil {
+		return false
+	}
+	artifactsDir = filepath.Clean(artifactsDir)
+	if cleaned == artifactsDir {
+		return true
+	}
+	prefix := artifactsDir + string(filepath.Separator)
+	if !strings.HasPrefix(cleaned+string(filepath.Separator), prefix) {
+		return false
+	}
+
+	info, err := os.Lstat(cleaned)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return false
+	}
+	return true
 }
 
 func (g *Guard) IsInWorkingDir(path string) bool {

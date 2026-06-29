@@ -149,9 +149,12 @@ func newOAuthHandler(server string, cfg ServerConfig, opts managerOptions, token
 		scopes := strings.Join(cfg.Auth.Scopes, " ")
 		handlerCfg.DynamicClientRegistrationConfig = &mcpauth.DynamicClientRegistrationConfig{
 			Metadata: &oauthex.ClientRegistrationMetadata{
-				ClientName:   opts.oauthClientName,
-				RedirectURIs: []string{opts.oauthRedirectURL},
-				Scope:        scopes,
+				ClientName:              opts.oauthClientName,
+				RedirectURIs:            []string{opts.oauthRedirectURL},
+				GrantTypes:              []string{"authorization_code"},
+				ResponseTypes:           []string{"code"},
+				TokenEndpointAuthMethod: "client_secret_post",
+				Scope:                   scopes,
 			},
 		}
 	}

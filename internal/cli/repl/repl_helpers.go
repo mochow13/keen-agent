@@ -581,7 +581,7 @@ func renderRulesWithChip(width int, ruleStyle lipgloss.Style, chipText string, c
 	return
 }
 
-func renderInputArea(content string, width int, focused bool, shellMode bool, mode llm.AgentMode) string {
+func renderInputArea(content string, width int, focused bool, shellMode bool, btwMode bool, adversaryMode bool, mode llm.AgentMode) string {
 	ruleWidth := defaultWidth
 	if width > 0 {
 		ruleWidth = width
@@ -595,12 +595,23 @@ func renderInputArea(content string, width int, focused bool, shellMode bool, mo
 		ruleStyle = repltheme.InputRuleBlurredStyle
 	} else if shellMode {
 		ruleStyle = repltheme.AccentStyle
+	} else if btwMode {
+		ruleStyle = repltheme.BtwBorderStyle
+	} else if adversaryMode {
+		ruleStyle = repltheme.AdversaryBorderStyle
 	} else if mode == llm.ModePlan {
 		ruleStyle = repltheme.InputRulePlanStyle
 	}
 
-	if shellMode && focused {
+	switch {
+	case shellMode && focused:
 		topRule, bottomRule := renderRulesWithChip(ruleWidth, ruleStyle, "shell", repltheme.ShellChipStyle)
+		return topRule + "\n" + content + "\n" + bottomRule
+	case btwMode && focused:
+		topRule, bottomRule := renderRulesWithChip(ruleWidth, ruleStyle, "btw", repltheme.BtwChipStyle)
+		return topRule + "\n" + content + "\n" + bottomRule
+	case adversaryMode && focused:
+		topRule, bottomRule := renderRulesWithChip(ruleWidth, ruleStyle, "adversary", repltheme.AdversaryChipStyle)
 		return topRule + "\n" + content + "\n" + bottomRule
 	}
 

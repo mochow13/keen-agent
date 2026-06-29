@@ -43,8 +43,8 @@ State is split into:
    provider setup and OAuth login.
 2. **Agent-scoped runtime state** — isolated by agent name for sessions, logs, and
    input history.
-3. **User-authored resources** — explicit paths such as `mcp_config_dir` and
-   `skills_dir`.
+3. **User-authored resources** — explicit paths such as `mcp_config_dirs` and
+   `skills_dirs`.
 
 Shared state lives directly under `~/.keen-agent/`:
 
@@ -67,7 +67,7 @@ collisions.
 |-----------|------------|
 | `~/.keen/` (config, sessions, global skills) | `~/.keen-agent/` |
 | `~/.keen/configs.json` (active provider/model) | `~/.keen-agent/configs.json` |
-| `~/.keen/skills/` (global skills) | User-selected `skills_dir` plus optional `~/.keen-agent/skills/` shared skills |
+| `~/.keen/skills/` (global skills) | User-selected `skills_dirs` plus optional `~/.keen-agent/skills/` shared skills |
 | `~/.keen/sessions/` (or equivalent) | `~/.keen-agent/<agent-name>/sessions/` |
 | `~/.keen/logs/` (or equivalent) | `~/.keen-agent/<agent-name>/logs/` |
 | auth/token storage | `~/.keen-agent/auth.json` |
@@ -110,8 +110,8 @@ appearance:
       light: "#EEF3FA"
       dark: "#243040"
 
-model:                                # optional; omit to use existing active model and provider in the config
-  provider: anthropic                  # provider/model from ~/.keen-agent/configs.json
+model:                                # optional; omit to select a model at runtime via /model
+  provider: anthropic                  # provider/model configured in ~/.keen-agent/configs.json
   model_id: claude-sonnet-4-20250514
 
 system_prompt: |
@@ -149,18 +149,14 @@ adversary:
   model:                              # optional; omitted means inherit main model
     provider: anthropic
     model_id: claude-sonnet-4-20250514
-  tools:
-    - read_file
-    - glob
-    - grep
   system_prompt: |
     You are an adversarial critic. Find bugs, risks, security issues,
     faulty assumptions, and missing edge cases. Cite file:line when possible.
 
 # Built-in tools (read_file, write_file, edit_file, web_fetch, glob, grep, bash)
 # All enabled by default. Opt out here.
-# call_mcp_tool is auto-included only when mcp_config_dir is set.
-# delegate_task is auto-included only when subagents_dir is set.
+# call_mcp_tool is auto-included only when mcp_config_dirs is set.
+# delegate_task is auto-included only when subagents_dirs is set.
 builtin_tools:
   exclude:
     - write_file
@@ -168,7 +164,7 @@ builtin_tools:
     - bash
 
 # User-defined native functions: small, explicit function-call extensions.
-# For large/discoverable tool sets, use MCP via mcp_config_dir instead.
+# For large/discoverable tool sets, use MCP via mcp_config_dirs instead.
 functions:
   - name: run_query
     description: "Execute a read-only SQL query against the database"
@@ -197,25 +193,30 @@ functions:
     timeout: 120s
     max_retries: 0
 
-# Subagents directory (agent-local). Each subagent is a Markdown file with YAML
+# Subagents directories. Each directory contains Markdown files with YAML
 # frontmatter (name, description) followed by the subagent's system prompt.
 # Subagents are read-only assistants the main agent can delegate bounded tasks
 # to via the `delegate_task` built-in tool.
-subagents_dir: ./subagents
+subagents_dirs:
+  - ./subagents
 
-# MCP server configuration file path (JSON). If omitted, defaults to
-# ~/.keen-agent/mcp/configs.json
-mcp_config_dir: ./mcp-config.json
+# MCP server configuration file paths (JSON). Optional; if omitted,
+# no MCP tools are loaded.
+mcp_config_dirs:
+  - ./mcp-config.json
 
 # Skills directories (agent-local)
-skills_dir: ./skills
+skills_dirs:
+  - ./skills
 ```
+
+**Backward compatibility:** `subagents_dirs`, `mcp_config_dirs`, and `skills_dirs` each accept a single string or an array of strings. A single string is treated as a one-element array.
 
 ---
 
 ## MCP Configuration File
 
-`mcp_config_dir` points to a JSON file containing MCP server definitions. If omitted, keen-agent defaults to `~/.keen-agent/mcp/configs.json`.
+`mcp_config_dirs` is a list of JSON files containing MCP server definitions. If omitted, MCP support is disabled for this agent. Files are processed in order; later files can add servers or override earlier ones by name.
 
 Format:
 
@@ -243,9 +244,9 @@ Format:
 | Permission system | keen-code `internal/filesystem` | Same guard: cwd=granted, outside=pending, system=denied |
 | TUI / REPL | keen-code `internal/cli/repl` | Customizable name, ASCII art, colors |
 | Built-in tools | keen-code `internal/tools` | read_file, write_file, edit_file, web_fetch, glob, grep, bash, call_mcp_tool, delegate_task |
-| Skill loader | keen-code skill mechanism | Agent-local (`skills_dir`) + optional shared `~/.keen-agent/skills/` |
-| MCP client | keen-code MCP integration | Same server config format; call_mcp_tool auto-included when mcp_config_dir is set |
-| Subagent system | keen-code `internal/subagents` | Discovery, runner, and `delegate_task` tool; auto-included when subagents_dir is set |
+| Skill loader | keen-code skill mechanism | Agent-local (`skills_dirs`) + optional shared `~/.keen-agent/skills/` |
+| MCP client | keen-code MCP integration | Same server config format; call_mcp_tool auto-included when mcp_config_dirs is set |
+| Subagent system | keen-code `internal/subagents` | Discovery, runner, and `delegate_task` tool; auto-included when subagents_dirs is set |
 | Session persistence | keen-code session storage | Same format under `~/.keen-agent/<agent-name>/sessions/`; `/resume` command in TUI |
 
 ### New components (keen-agent specific)
@@ -257,9 +258,9 @@ Format:
 | Native function executor | Run user-defined function commands with schema-validated JSON input over stdin |
 | System prompt composer | Assemble prompt from config + tools + project instructions + skills + mode/helper prompt overlays |
 | Mode manager | plan/build mode with read_only filtering and config-driven prompt tuning |
-| Helper agents | Optional `btw` side-question helper and `adversary` critic with dedicated prompts/models/tool allowlists |
+| Helper agents | Optional `btw` side-question helper and `adversary` critic with dedicated prompts/models |
 | Appearance engine | Apply custom name, ASCII art, color palette to TUI |
-| Subagent loader | Discover and parse subagent profiles from `subagents_dir` |
+| Subagent loader | Discover and parse subagent profiles from `subagents_dirs` |
 | Subagent runner | Execute delegated tasks with a restricted tool registry (read_file, glob, grep only) |
 
 ---
@@ -270,7 +271,8 @@ The main-agent system prompt is assembled in order:
 
 1. **Agent persona** — `system_prompt` field + `system_prompt_files` contents (array, appended in order)
 2. **Tool documentation** — auto-generated from callable definitions (built-in tools + user functions + MCP tools)
-3. **Subagent catalog** — list of available subagents with names and descriptions when `subagents_dir` is set
+3. **Subagent catalog** — list of available subagents with names and descriptions when `subagents_dirs` is set
+4. **Skills catalog** — list of installed skills with descriptions and activation commands when `skills_dirs` is set
 5. **Active skill** — skill body when activated via `/skill` or `[Activate skill: ...]`
 6. **Mode instructions** — active mode marker plus built-in behavioral constraints
 7. **Mode prompt overlay** — optional `modes.<active-mode>.system_prompt` or `system_prompt_files` (array)
@@ -310,7 +312,7 @@ or integration framework; large tool families should be exposed through MCP.
 | Dynamic discovery, shared clients, auth flows, lifecycle management | MCP |
 | Local tools that already form an integration package | stdio MCP server |
 
-MCP is already supported through `mcp_config_dir` and is the right path when users
+MCP is already supported through `mcp_config_dirs` and is the right path when users
 need MCP-like behavior. A local tool bundle can be wrapped as a stdio MCP server
 and used by keen-agent without adding another discovery mechanism to `functions`.
 
@@ -565,13 +567,13 @@ configuration keeps sources separate:
 |--------|--------------------|---------|
 | Built-in tools | `builtin_tools` | Keen-native capabilities such as file reads, grep, edits, bash, web fetch |
 | User functions | `functions` | Small native function-call extensions implemented as local commands |
-| MCP tools | `mcp_config_dir` | Scalable external/local integrations with discovery and protocol support |
-| Subagents | `subagents_dir` | Focused read-only assistants for delegated investigation and analysis |
+| MCP tools | `mcp_config_dirs` | Scalable external/local integrations with discovery and protocol support |
+| Subagents | `subagents_dirs` | Focused read-only assistants for delegated investigation and analysis |
 
 `functions` intentionally remain explicit: no discovery, no multi-function
 catalogs, and no MCP-lite protocol. If users need many tools, varied schemas,
 OAuth, shared integration clients, or dynamic discovery, they should expose those
-capabilities as MCP servers and point `mcp_config_dir` at the MCP config file.
+capabilities as MCP servers and point `mcp_config_dirs` at the MCP config files.
 
 Subagents are lightweight, read-only assistants defined as Markdown files. They
 complement the main agent by handling scoped, separable investigation work.
@@ -598,15 +600,14 @@ Available by default:
 
 All excludable built-ins can be disabled through `builtin_tools.exclude`.
 `call_mcp_tool` is a core runtime tool and cannot be excluded; it is **auto-included
-whenever `mcp_config_dir` is set**, and omitted entirely when `mcp_config_dir` is
-absent. Users control MCP access by pointing the config file to the desired MCP
+whenever `mcp_config_dirs` is set**, and omitted entirely when `mcp_config_dirs` is
+absent. Users control MCP access by pointing the config files to the desired MCP
 server definitions.
 
 `delegate_task` follows the same pattern: it is **auto-included whenever
-`subagents_dir` is set**, and omitted entirely when `subagents_dir` is absent.
+`subagents_dirs` is set**, and omitted entirely when `subagents_dirs` is absent.
 Users control subagent availability by pointing the config to the desired
 subagent definitions.
-server definitions.
 
 Filesystem guard applies identically to keen-code for filesystem tools.
 
@@ -676,7 +677,7 @@ instead of remaining coding-agent assumptions:
 | Helper | Current behavior | Generic config need |
 |--------|------------------|---------------------|
 | `btw` | One-shot side question using recent conversation context and no tools. Prompt comes from `BuildBtwPrompt`. | Optional helper with configurable prompt, context window, and model inheritance/override. |
-| `adversary` | Separate critic model reviews the conversation, uses read-only tools, and has its own prompt from `BuildAdversaryPrompt`. | Optional critic with configurable prompt, model, tool allowlist, and output stance. |
+| `adversary` | Separate critic model reviews the conversation and has its own prompt from `BuildAdversaryPrompt`. | Optional critic with configurable prompt, model, and output stance. |
 
 ### `btw` config
 
@@ -709,10 +710,6 @@ adversary:
   model:                              # optional; omitted means inherit main model
     provider: anthropic
     model_id: claude-sonnet-4-20250514
-  tools:
-    - read_file
-    - glob
-    - grep
   system_prompt: |
     You are an adversarial critic. Find problems in the main agent's output,
     code changes, assumptions, plans, and suggested verification. Lead with the
@@ -724,8 +721,6 @@ adversary:
 Rules:
 - If omitted, `adversary.enabled` defaults to `false` for generic agents.
 - If enabled and `model` is omitted, it inherits the main resolved model/provider.
-- Tool access is allowlisted and must be read-only unless a future config explicitly
-  permits otherwise; the default allowlist is `read_file`, `glob`, and `grep`.
 - The adversary gets conversation history transformed so main-agent assistant
   messages are clearly attributed as main-agent output.
 - The adversary runs one-shot and does not modify the main conversation unless the
@@ -738,8 +733,6 @@ Rules:
   as the main `model` block.
 - Helper `system_prompt_files` entries must exist and are resolved relative to
   `agent.yaml`.
-- `adversary.tools` entries must exist in the registered tool catalog and satisfy
-  read-only constraints.
 
 ---
 
@@ -747,11 +740,11 @@ Rules:
 
 ### Discovery order
 
-1. **Agent-local**: `skills_dir` from config (relative to config file location)
+1. **Agent-local**: `skills_dirs` from config (relative to config file location), processed in order
 2. **Project-local**: `.agents/skills/` or `.keen-agent/skills/` in cwd
 3. **Global**: `~/.keen-agent/skills/`
 
-Agent-local skills take precedence on name collision.
+Earlier directories take precedence on name collision; later directories can extend the catalog with new skills.
 
 ### Format
 
@@ -768,11 +761,11 @@ the main agent's primary task.
 
 ### Discovery order
 
-1. **Agent-local**: `subagents_dir` from config (relative to config file location)
+1. **Agent-local**: `subagents_dirs` from config (relative to config file location), processed in order
 2. **Project-local**: `.agents/agents/` or `.keen-agent/agents/` in cwd
 3. **Global**: `~/.keen-agent/agents/`
 
-Agent-local subagents take precedence on name collision.
+Earlier directories take precedence on name collision; later directories can extend the catalog with new subagents.
 
 ### Format
 
@@ -826,7 +819,7 @@ Optional fields:
 - They do not receive the full parent conversation history.
 - They do not support skills or MCP tools.
 - They do not spawn additional subagents.
-- The `delegate_task` built-in tool is **auto-included** when `subagents_dir` is set.
+- The `delegate_task` built-in tool is **auto-included** when `subagents_dirs` is set.
 - The main agent's model and provider are inherited by subagents unless overridden.
 
 ### When to use subagents
@@ -847,9 +840,9 @@ keen-agent separates user-authored resources from runtime state:
 | Kind | Ownership | Path |
 |------|-----------|------|
 | Agent config | user-authored | `--agent ./agent.yaml` |
-| MCP server config | user-authored | `mcp_config_dir`, default `~/.keen-agent/mcp/configs.json` |
-| Skills | user-authored | `skills_dir`, project-local skills, optional shared `~/.keen-agent/skills/` |
-| Subagents | user-authored | `subagents_dir`, optional shared `~/.keen-agent/agents/` |
+| MCP server config | user-authored | `mcp_config_dirs` (optional) |
+| Skills | user-authored | `skills_dirs`, project-local skills, optional shared `~/.keen-agent/skills/` |
+| Subagents | user-authored | `subagents_dirs`, optional shared `~/.keen-agent/agents/` |
 | Provider/model config + API credentials | shared keen-agent state | `~/.keen-agent/configs.json` |
 | OAuth token cache for model providers and MCP | shared keen-agent state | `~/.keen-agent/auth.json` |
 | Sessions | agent-scoped keen-agent state | `~/.keen-agent/<agent-name>/sessions/` |
@@ -859,7 +852,7 @@ keen-agent separates user-authored resources from runtime state:
 This keeps each user-built agent's sessions, logs, and input history independent,
 while model/provider defaults and authentication are shared to avoid repeated setup.
 Shared resources remain explicit: users can point multiple agents at the same
-`mcp_config_dir`, `skills_dir`, or `subagents_dir` if they want reuse.
+`mcp_config_dirs`, `skills_dirs`, or `subagents_dirs` entries if they want reuse.
 
 ## Session Persistence
 
@@ -932,16 +925,15 @@ is allowed; missing roles inherit defaults.
 ## Model Configuration
 
 ```yaml
-model:                     # optional — omit the whole block to use the shared active model
+model:                     # optional — omit the whole block to select a model at runtime via /model
   provider: anthropic      # provider/model configured in ~/.keen-agent/configs.json
   model_id: claude-sonnet-4-20250514   # anthropic | openai | google | ...
 ```
 
-- **`model` is optional.** If omitted (or either field is empty), keen-agent uses the
-  **active provider and model** recorded in `~/.keen-agent/configs.json`.
-- When present, `model.provider` / `model.model_id` override the shared `configs.json` defaults.
-- CLI flags (`--provider` / `--model`) override both the config block and `configs.json`.
-- Resolution order: **CLI flags → `agent.yaml` `model` block → `~/.keen-agent/configs.json` active entry.**
+- **`model` is optional.** If omitted, the agent starts without a selected model; the user selects one at runtime with the `/model` command.
+- When present, `model.provider` / `model.model_id` are validated against `~/.keen-agent/configs.json`; missing provider/model/credentials produce a warning but do not block startup.
+- CLI flags (`--provider` / `--model`) override both the config block and any runtime selection.
+- Resolution order: **CLI flags → `agent.yaml` `model` block → runtime `/model` selection.**
 - Provider determines which API client is used; `model_id` is passed directly to the provider.
 - Credential lookup is shared across agents:
   - API-key providers read credentials from `~/.keen-agent/configs.json`.
@@ -973,30 +965,31 @@ keen-agent validate --agent ./agent.yaml
 
 Notes:
 - `--agent` is required.
-- Config `model.provider` / `model.model_id` are **optional**; when absent, keen-agent uses the active provider/model from `~/.keen-agent/configs.json`. CLI flags override both.
+- Config `model.provider` / `model.model_id` are **optional**; when absent, the user selects a model at runtime with `/model`. CLI flags override both the config block and the runtime selection.
 - Headless mode keeps the existing `run` style and output `--format` behavior.
 
 ---
 
 ## Validation (`keen-agent validate`)
 
-Checks:
-- YAML schema validity
+Checks: YAML schema validity
 - Required fields present (name, system_prompt or system_prompt_files)
 - Function definitions have name + description + command
 - Each function defines `input_schema_file`; schema files exist, use `.json`, and contain valid supported JSON Schema objects
-- MCP config file exists (if mcp_config_dir specified; if omitted, default ~/.keen-agent/mcp/configs.json must exist)
+- MCP config files exist (only if mcp_config_dirs is specified)
 - system_prompt_files entries exist (if specified)
-- skills_dir exists (if specified)
-- subagents_dir exists (if specified); each `.md` file has valid YAML frontmatter with required `name` and `description` fields
+- skills_dirs entries exist (if specified)
+- subagents_dirs entries exist (if specified); each `.md` file has valid YAML frontmatter with required `name` and `description` fields
 - `default_mode` is `plan` or `build`; `modes` only contains `plan`/`build`, and each `system_prompt_files` entry exists if specified
 - `btw` config is valid when enabled (`context_messages` positive if set, prompt file exists if specified, model resolves if specified)
-- `adversary` config is valid when enabled (prompt file exists if specified, model resolves if specified, tools exist and are read-only)
+- `adversary` config is valid when enabled (prompt file exists if specified, model resolves if specified)
 - No duplicate callable names across built-in tools, functions, and MCP tools
 - No duplicate subagent names across discovered subagent profiles
 - `builtin_tools.exclude` does not include non-excludable core tools such as `call_mcp_tool` or `delegate_task`
-- If `model` is omitted, `~/.keen-agent/configs.json` exists and has an active provider/model entry to fall back to (otherwise warn)
-- If a resolved model provider requires credentials, they are present in `~/.keen-agent/configs.json` for API-key providers or `~/.keen-agent/auth.json` for OAuth providers
+- `model` is optional; when omitted the user can select one at runtime with the `/model` command
+- If `model` is provided, Keen Agent checks `~/.keen-agent/configs.json`
+  - If the file is missing, or the specified provider/model entry is missing, the agent still starts but prints a warning
+  - If the resolved provider requires credentials and they are missing from `~/.keen-agent/configs.json` (API-key providers) or `~/.keen-agent/auth.json` (OAuth providers), the agent still starts but prints a warning
 - MCP OAuth credentials, when needed, are stored in `~/.keen-agent/auth.json`
 
 ---
@@ -1029,7 +1022,7 @@ Checks:
 10. Extract/copy built-in tools (read_file, write_file, edit_file, web_fetch, glob, grep, bash, call_mcp_tool, delegate_task)
 11. Extract/copy MCP client
 12. Extract/copy subagent discovery, profile parser, and runner from keen-code
-13. Wire tool registration (built-in via registry + functions via `registerFunctionTools` + MCP + subagents, with opt-out for excludable built-ins only; `call_mcp_tool` auto-included only when `mcp_config_dir` is set; `delegate_task` auto-included only when `subagents_dir` is set)
+13. Wire tool registration (built-in via registry + functions via `registerFunctionTools` + MCP + subagents, with opt-out for excludable built-ins only; `call_mcp_tool` auto-included only when `mcp_config_dirs` is set; `delegate_task` auto-included only when `subagents_dirs` is set)
 
 ### Phase 4 — TUI + Skills + Subagents
 
@@ -1037,7 +1030,7 @@ Checks:
 15. Implement appearance engine (name, ASCII art, colors)
 16. Extract/copy skill loader with agent-local + global discovery
 17. Extract/copy subagent loader with agent-local + global discovery
-18. Implement configurable `btw` and `adversary` one-shot helper flows with dedicated prompts, optional model overrides, and read-only adversary tool allowlist
+18. Implement configurable `btw` and `adversary` one-shot helper flows with dedicated prompts and optional model overrides
 19. Implement session persistence (same format as keen-code)
 
 ### Phase 5 — Polish + Ship
@@ -1045,7 +1038,7 @@ Checks:
 20. Implement headless mode (`keen-agent run --agent ... --format ...`)
 21. Implement interactive full flow (`keen-agent --agent ...`: config → tools → prompt → loop)
 22. Write README + example agent configs
-23. Test critical paths (config parsing, native-function adapter: schema loading + JSON-stdin delivery + required-field validation + mode filtering and mode prompt overlays, permission gating, headless approval path, subagent delegation + read-only tool restriction, `btw` prompt/context behavior, adversary prompt/model/tool allowlist)
+23. Test critical paths (config parsing, native-function adapter: schema loading + JSON-stdin delivery + required-field validation + mode filtering and mode prompt overlays, permission gating, headless approval path, subagent delegation + read-only tool restriction, `btw` prompt/context behavior, adversary prompt/model)
 
 ---
 

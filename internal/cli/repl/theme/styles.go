@@ -109,6 +109,14 @@ var (
 				Bold(true).
 				Foreground(AccentColor).
 				MarginTop(2)
+	BtwPromptStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(AccentColor).
+			MarginTop(2)
+	AdversaryPromptStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(SecondaryColor).
+				MarginTop(2)
 	InputRuleStyle        = lipgloss.NewStyle().Foreground(PrimaryColor)
 	InputRuleBlurredStyle = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
 	UserInputBlockStyle   = lipgloss.NewStyle().

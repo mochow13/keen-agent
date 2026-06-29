@@ -983,6 +983,8 @@ func (m *replModel) handleClearCommand() replModel {
 		m.permissionRequester.ResetSessionPermissions()
 	}
 	m.history.Reset()
+	m.lastTurnElapsedMsg = ""
+	m.adjustTextareaHeight()
 
 	newOutput := reploutput.NewOutputBuilder(m.width, m.ctx.workingDir)
 	initialLines := buildInitialScreen(m.ctx, nil, m.width)
