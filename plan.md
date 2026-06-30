@@ -95,21 +95,6 @@ keen-agent run --agent ./my-agent.yaml --provider anthropic --model claude-sonne
 ```yaml
 name: "SQL DBA Agent"                 # user-facing agent name shown throughout the UI
 
-appearance:
-  ascii_art: |
-    ╔═══╗
-    ║SQL║
-    ╚═══╝
-  colors:
-    primary: "#4A90D9"              # brand/header/prompt/highlight color
-    secondary: "#2ECC71"            # success/tool/border/action color
-    accent: "#F5A623"               # warning/emphasis color
-    danger: "#E74C3C"               # errors/destructive warnings
-    muted: "#8A8A8A"                # subdued metadata/help text
-    user_input_background:
-      light: "#EEF3FA"
-      dark: "#243040"
-
 model:                                # optional; omit to select a model at runtime via /model
   provider: anthropic                  # provider/model configured in ~/.keen-agent/configs.json
   model_id: claude-sonnet-4-20250514
@@ -242,7 +227,7 @@ Format:
 |-----------|--------|-------|
 | LLM client | keen-code `internal/llm` | Genkit-based, multi-provider |
 | Permission system | keen-code `internal/filesystem` | Same guard: cwd=granted, outside=pending, system=denied |
-| TUI / REPL | keen-code `internal/cli/repl` | Customizable name, ASCII art, colors |
+| TUI / REPL | keen-code `internal/cli/repl` | Customizable name |
 | Built-in tools | keen-code `internal/tools` | read_file, write_file, edit_file, web_fetch, glob, grep, bash, call_mcp_tool, delegate_task |
 | Skill loader | keen-code skill mechanism | Agent-local (`skills_dirs`) + optional shared `~/.keen-agent/skills/` |
 | MCP client | keen-code MCP integration | Same server config format; call_mcp_tool auto-included when mcp_config_dirs is set |
@@ -259,7 +244,6 @@ Format:
 | System prompt composer | Assemble prompt from config + tools + project instructions + skills + mode/helper prompt overlays |
 | Mode manager | plan/build mode with read_only filtering and config-driven prompt tuning |
 | Helper agents | Optional `btw` side-question helper and `adversary` critic with dedicated prompts/models |
-| Appearance engine | Apply custom name, ASCII art, color palette to TUI |
 | Subagent loader | Discover and parse subagent profiles from `subagents_dirs` |
 | Subagent runner | Execute delegated tasks with a restricted tool registry (read_file, glob, grep only) |
 
@@ -869,56 +853,9 @@ The config `name` is the user-facing agent identity. It is shown throughout the 
 instead of `keen-agent`; `keen-agent` is only the CLI binary used to start the
 generic agent core with a selected config file.
 
-### Identity
-
 | Field | Effect |
 |-------|--------|
 | `name` | Shown in header, prompt, help text, session labels, logs, and other user-visible UI surfaces |
-| `appearance.ascii_art` | Displayed on startup |
-
-### Theme colors
-
-keen-agent should expose a small theme palette derived from keen-code's
-`internal/cli/repl/theme/styles.go`. Users should be able to change colors that
-define the agent's visual identity, but should not need to configure every style
-or every repeated usage. The appearance engine maps these palette roles onto all
-specific UI styles.
-
-| Field | Intended usage |
-|-------|----------------|
-| `appearance.colors.primary` | Main identity color: title, prompt, model/mode chips, selected suggestions, primary highlights |
-| `appearance.colors.secondary` | Support/action color: tool start/success, help commands, borders, model selection, context percentage |
-| `appearance.colors.accent` | Warning/emphasis color: shell prompt/chip, update notice, compaction suggestions, non-critical warnings |
-| `appearance.colors.danger` | Error/destructive color: errors, denied actions, critical context, destructive warnings |
-| `appearance.colors.muted` | Subdued color: metadata, timestamps, hints, descriptions, command output summaries |
-| `appearance.colors.user_input_background` | Optional adaptive background for rendered user input blocks |
-
-Use adaptive color values where background-sensitive contrast matters:
-
-```yaml
-appearance:
-  colors:
-    primary: "#4A90D9"
-    secondary: "#2ECC71"
-    accent: "#F5A623"
-    danger: "#E74C3C"
-    muted: "#8A8A8A"
-    user_input_background:
-      light: "#EEF3FA"
-      dark: "#243040"
-```
-
-Non-theme implementation colors remain derived defaults rather than config fields:
-
-| Derived color | Reason |
-|---------------|--------|
-| `text_primary`, `text_secondary`, `text_dim` | General readability; should adapt automatically to terminal light/dark mode |
-| `rule`, `white`, `black` | Structural/contrast helpers, not agent identity |
-| `diff_add`, `diff_remove`, `diff_context`, `diff_hunk` | Semantic diff colors should stay stable and recognizable |
-| loading shimmer variants | Animation detail derived from text/primary colors |
-
-Falls back to the keen-agent default palette if not specified. Partial color config
-is allowed; missing roles inherit defaults.
 
 ---
 
@@ -972,14 +909,66 @@ Notes:
 
 ## Validation (`keen-agent validate`)
 
-Checks: YAML schema validity
-- Required fields present (name, system_prompt or system_prompt_files)
-- Function definitions have name + description + command
+Validation is a single, ordered pass that separates fatal errors from warnings.
+It runs on `keen-agent validate` and is also executed (with non-fatal warnings
+allowed) during normal startup. The validator collects every applicable issue
+before reporting so users see the full picture at once.
+
+### Validation flow
+
+1. **Structural parse (fatal)**
+   - YAML must be well-formed.
+   - Top-level keys must match the `agent.yaml` schema; unknown keys are errors.
+   - Required fields `name` and (`system_prompt` or `system_prompt_files`) must be present.
+
+2. **Scalar shape checks (fatal)**
+   - `default_mode` must be `plan` or `build` when present.
+   - `modes` may only contain `plan` and `build` keys.
+   - `builtin_tools.exclude` entries must match allowed sets.
+   - `model` block, when present, must have `provider` and `model_id`.
+   - Helper `model` blocks (`btw`, `adversary`) must have `provider` and `model_id` when present.
+
+3. **File existence checks (fatal)**
+   - Each `system_prompt_files` entry exists and is readable.
+   - Each `functions[].input_schema_file` exists, uses `.json`, and is readable.
+   - Each `mcp_config_dirs` entry exists and is readable.
+   - Each `skills_dirs` directory exists and is readable.
+   - Each `subagents_dirs` directory exists and is readable.
+   - Each `modes.<mode>.system_prompt_files` entry exists when specified.
+   - Helper `system_prompt_files` entries exist when specified.
+
+4. **Content checks (fatal)**
+   - Function input schema files contain valid JSON and a JSON Schema object at root.
+   - Subagent `.md` files contain valid YAML frontmatter with required `name` and `description`.
+   - Supported JSON Schema keywords in function schemas are honored; unsupported shapes are rejected.
+
+5. **Cross-reference checks (fatal)**
+   - Built-in tool names excluded in `builtin_tools.exclude` must be real, excludable tools.
+   - `builtin_tools.exclude` must not list non-excludable core tools (`call_mcp_tool`, `delegate_task`).
+   - Callable names must be unique across built-in tools, functions, and MCP tools.
+   - Subagent names must be unique across discovered subagent profiles (first directory wins, later duplicates are errors).
+   - Mode prompt overlays reference only valid modes.
+
+6. **Runtime-readiness checks (warning only)**
+   - If `model` is provided, warn when `~/.keen-agent/configs.json` is missing, the provider/model entry is missing, or required credentials are absent.
+   - If `btw` or `adversary` is enabled with a helper `model`, apply the same credential/model warnings.
+   - If `mcp_config_dirs` is specified, warn when referenced MCP servers cannot be reached during validation (do not fail; servers may start later).
+   - If `functions` use `requires_approval`, emit an informational note.
+
+7. **Result**
+   - Any fatal error → validation fails; `keen-agent validate` exits non-zero and the TUI refuses to start.
+   - Only warnings → validation succeeds; warnings are printed once at startup and optionally via `/diagnostics`.
+
+### Validation checklist
+
+- YAML schema validity
+- Required fields present (`name`, `system_prompt` or `system_prompt_files`)
+- Function definitions have `name` + `description` + `command`
 - Each function defines `input_schema_file`; schema files exist, use `.json`, and contain valid supported JSON Schema objects
-- MCP config files exist (only if mcp_config_dirs is specified)
-- system_prompt_files entries exist (if specified)
-- skills_dirs entries exist (if specified)
-- subagents_dirs entries exist (if specified); each `.md` file has valid YAML frontmatter with required `name` and `description` fields
+- MCP config files exist (only if `mcp_config_dirs` is specified)
+- `system_prompt_files` entries exist (if specified)
+- `skills_dirs` entries exist (if specified)
+- `subagents_dirs` entries exist (if specified); each `.md` file has valid YAML frontmatter with required `name` and `description` fields
 - `default_mode` is `plan` or `build`; `modes` only contains `plan`/`build`, and each `system_prompt_files` entry exists if specified
 - `btw` config is valid when enabled (`context_messages` positive if set, prompt file exists if specified, model resolves if specified)
 - `adversary` config is valid when enabled (prompt file exists if specified, model resolves if specified)
@@ -1027,11 +1016,10 @@ Checks: YAML schema validity
 ### Phase 4 — TUI + Skills + Subagents
 
 14. Extract/copy TUI/REPL with customization hooks
-15. Implement appearance engine (name, ASCII art, colors)
-16. Extract/copy skill loader with agent-local + global discovery
-17. Extract/copy subagent loader with agent-local + global discovery
-18. Implement configurable `btw` and `adversary` one-shot helper flows with dedicated prompts and optional model overrides
-19. Implement session persistence (same format as keen-code)
+15. Extract/copy skill loader with agent-local + global discovery
+16. Extract/copy subagent loader with agent-local + global discovery
+17. Implement configurable `btw` and `adversary` one-shot helper flows with dedicated prompts and optional model overrides
+18. Implement session persistence (same format as keen-code)
 
 ### Phase 5 — Polish + Ship
 
