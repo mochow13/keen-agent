@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mochow13/keen-agent/internal/config"
@@ -292,5 +294,99 @@ func TestBuildRunPrompt(t *testing.T) {
 				t.Fatalf("buildRunPrompt() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNewRootCommand_HasAgentFlag(t *testing.T) {
+	cmd := NewRootCommand("0.1.0")
+	if cmd.Flags().Lookup("agent") == nil {
+		t.Fatal("expected root command to have --agent flag")
+	}
+}
+
+func TestNewRunCommand_HasAgentFlag(t *testing.T) {
+	cmd := NewRootCommand("0.1.0")
+	runCmd, _, err := cmd.Find([]string{"run"})
+	if err != nil {
+		t.Fatalf("Find(run) error = %v", err)
+	}
+	if runCmd.Flags().Lookup("agent") == nil {
+		t.Fatal("expected run command to have --agent flag")
+	}
+}
+
+func TestResolveAgentConfigPath_Explicit(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "custom.yaml")
+	if err := os.WriteFile(path, []byte("name: test\nsystem_prompt: hi\n"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	got, err := resolveAgentConfigPath(tmp, path)
+	if err != nil {
+		t.Fatalf("resolveAgentConfigPath() error = %v", err)
+	}
+	if got != path {
+		t.Fatalf("resolveAgentConfigPath() = %q, want %q", got, path)
+	}
+}
+
+func TestResolveAgentConfigPath_ExplicitMissing(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "missing.yaml")
+
+	_, err := resolveAgentConfigPath(tmp, path)
+	if err == nil {
+		t.Fatal("expected error for missing explicit path")
+	}
+}
+
+func TestResolveAgentConfigPath_RequiresExplicitPath(t *testing.T) {
+	tmp := t.TempDir()
+
+	_, err := resolveAgentConfigPath(tmp, "")
+	if err == nil {
+		t.Fatal("expected error when --agent is not provided")
+	}
+}
+
+func TestLoadAgentConfig_LoadsAndValidates(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "agent.yaml")
+	if err := os.WriteFile(path, []byte("name: test\nsystem_prompt: hi\n"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	cfg, err := loadAgentConfig(tmp, path)
+	if err != nil {
+		t.Fatalf("loadAgentConfig() error = %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("loadAgentConfig() returned nil config")
+	}
+	if cfg.Name != "test" {
+		t.Fatalf("cfg.Name = %q, want test", cfg.Name)
+	}
+}
+
+func TestLoadAgentConfig_RequiresExplicitPath(t *testing.T) {
+	tmp := t.TempDir()
+
+	_, err := loadAgentConfig(tmp, "")
+	if err == nil {
+		t.Fatal("expected error when --agent is not provided")
+	}
+}
+
+func TestLoadAgentConfig_RejectsInvalidConfig(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "agent.yaml")
+	if err := os.WriteFile(path, []byte("name: \"\"\n"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	_, err := loadAgentConfig(tmp, path)
+	if err == nil {
+		t.Fatal("expected error for invalid config")
 	}
 }

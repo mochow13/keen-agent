@@ -1,0 +1,8 @@
+name: Test Agent
+ascii_art: |
+  ░▀█▀░█▀▀░█▀▀░▀█▀░░░█▀█░█▀▀░█▀▀░█▀█░▀█▀
+  ░░█░░█▀▀░▀▀█░░█░░░░█▀█░█░█░█▀▀░█░█░░█░
+  ░░▀░░▀▀▀░▀▀▀░░▀░░░░▀░▀░▀▀▀░▀▀▀░▀░▀░░▀░
+system_prompt: |
+  You are a helpful assistant. Keep responses concise.
+default_mode: build

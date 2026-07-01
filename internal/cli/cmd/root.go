@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 	keenauth "github.com/mochow13/keen-agent/internal/auth"
 	"github.com/mochow13/keen-agent/internal/cli/repl"
 	"github.com/mochow13/keen-agent/internal/config"
@@ -24,6 +25,7 @@ var newMCPManager = func(opts ...keenmcp.Option) (keenmcp.Runtime, error) {
 
 func NewRootCommand(version string) *cobra.Command {
 	var resumeSessionID string
+	var agentFile string
 
 	cmd := &cobra.Command{
 		Use:   "keen-agent",
@@ -37,6 +39,11 @@ func NewRootCommand(version string) *cobra.Command {
 			wd, err := os.Getwd()
 			if err != nil {
 				wd = "."
+			}
+
+			agentCfg, err := loadAgentConfig(wd, agentFile)
+			if err != nil {
+				return err
 			}
 
 			var resumeSession *session.LoadedSession
@@ -53,7 +60,7 @@ func NewRootCommand(version string) *cobra.Command {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "MCP unavailable: %v\n", mcpErr)
 			}
 
-			sessionID, err := repl.RunREPL(version, wd, resolvedCfg, loader, globalCfg, registry, needsSetup, mcpManager, resumeSession)
+			sessionID, err := repl.RunREPL(version, wd, resolvedCfg, loader, globalCfg, registry, needsSetup, mcpManager, resumeSession, agentCfg)
 			if err != nil {
 				return err
 			}
@@ -66,6 +73,7 @@ func NewRootCommand(version string) *cobra.Command {
 
 	cmd.Version = version
 	cmd.Flags().StringVar(&resumeSessionID, "resume", "", "resume a specific Keen Agent session by ID")
+	cmd.Flags().StringVar(&agentFile, "agent", "", "path to agent.yaml config (required)")
 	cmd.AddCommand(newRunCommand())
 	return cmd
 }
@@ -94,6 +102,7 @@ func newRunCommand() *cobra.Command {
 	var format string
 	var providerID string
 	var modelID string
+	var agentFile string
 
 	runCmd := &cobra.Command{
 		Use:   "run [flags] <message...>",
@@ -131,6 +140,10 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				wd = "."
 			}
+			agentCfg, err := loadAgentConfig(wd, agentFile)
+			if err != nil {
+				return err
+			}
 			client, err := llm.NewClient(resolvedCfg)
 			if err != nil {
 				return err
@@ -144,6 +157,7 @@ func newRunCommand() *cobra.Command {
 			_, err = repl.RunHeadless(context.Background(), repl.HeadlessRunOptions{
 				WorkingDir: wd,
 				Config:     resolvedCfg,
+				AgentCfg:   agentCfg,
 				Client:     client,
 				SessionID:  sessionID,
 				Prompt:     prompt,
@@ -157,6 +171,7 @@ func newRunCommand() *cobra.Command {
 	runCmd.Flags().StringVar(&format, "format", repl.HeadlessFormatText, "output format: text or json")
 	runCmd.Flags().StringVar(&providerID, "provider", "", "provider to use for this run")
 	runCmd.Flags().StringVar(&modelID, "model", "", "model to use for this run")
+	runCmd.Flags().StringVar(&agentFile, "agent", "", "path to agent.yaml config (required)")
 	return runCmd
 }
 
@@ -249,4 +264,35 @@ func shouldReadStdin(stdin *os.File) bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice == 0
+}
+
+func loadAgentConfig(workingDir, explicitPath string) (*agentconfig.Config, error) {
+	path, err := resolveAgentConfigPath(workingDir, explicitPath)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := agentconfig.Load(path)
+	if err != nil {
+		return nil, err
+	}
+
+	res := agentconfig.Validate(cfg)
+	if !res.OK() {
+		for _, issue := range res.Errors {
+			fmt.Fprintf(os.Stderr, "agent config error: %s: %s\n", issue.Path, issue.Message)
+		}
+		return nil, fmt.Errorf("invalid agent config %q", path)
+	}
+	return cfg, nil
+}
+
+func resolveAgentConfigPath(_ string, explicitPath string) (string, error) {
+	if explicitPath == "" {
+		return "", fmt.Errorf("--agent flag is required")
+	}
+	if _, err := os.Stat(explicitPath); err != nil {
+		return "", fmt.Errorf("agent config not found: %w", err)
+	}
+	return explicitPath, nil
 }

@@ -47,6 +47,7 @@ func (s *StringOrArray) UnmarshalYAML(n *yaml.Node) error {
 
 type Config struct {
 	Name                string                `yaml:"name"`
+	ASCIIArt            string                `yaml:"ascii_art,omitempty"`
 	Model               *ModelRef             `yaml:"model,omitempty"`
 	SystemPrompt        string                `yaml:"system_prompt,omitempty"`
 	SystemPromptFiles   StringOrArray         `yaml:"system_prompt_files,omitempty"`
@@ -272,8 +273,6 @@ func (r *ValidationResult) addWarning(path, msg string) {
 	r.Warnings = append(r.Warnings, ValidationIssue{Path: path, Message: msg})
 }
 
-// Validate performs the full validation pass defined in the plan.
-// It always returns a non-nil result; callers check result.OK().
 func Validate(cfg *Config) *ValidationResult {
 	res := &ValidationResult{}
 	if cfg == nil {

@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
 	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
 	replfilesearch "github.com/mochow13/keen-agent/internal/cli/repl/filesearch"
@@ -45,6 +46,7 @@ type replContext struct {
 	version       string
 	workingDir    string
 	cfg           *config.ResolvedConfig
+	agentCfg      *agentconfig.Config
 	globalCfg     *config.GlobalConfig
 	loader        *config.Loader
 	registry      *providers.Registry
@@ -895,11 +897,13 @@ func RunREPL(
 	needsSetup bool,
 	mcpRuntime keenmcp.Runtime,
 	resumeSession *session.LoadedSession,
+	agentCfg *agentconfig.Config,
 ) (string, error) {
 	ctx := &replContext{
 		version:       version,
 		workingDir:    workingDir,
 		cfg:           cfg,
+		agentCfg:      agentCfg,
 		globalCfg:     globalCfg,
 		loader:        loader,
 		registry:      registry,

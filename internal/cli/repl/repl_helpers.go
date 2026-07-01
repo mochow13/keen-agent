@@ -453,9 +453,12 @@ func buildInitialScreen(ctx *replContext, lastSession *session.Summary, width in
 	var lines []string
 
 	asciiArt := []string{
-		"░█░█░█▀▀░█▀▀░█▀█░░░█▀▀░█▀█░█▀▄░█▀▀",
-		"░█▀▄░█▀▀░█▀▀░█░█░░░█░░░█░█░█░█░█▀▀",
-		"░▀░▀░▀▀▀░▀▀▀░▀░▀░░░▀▀▀░▀▀▀░▀▀░░▀▀▀",
+		"░█░█░█▀▀░█▀▀░█▀█░░░█▀█░█▀▀░█▀▀░█▀█░▀█▀",
+		"░█▀▄░█▀▀░█▀▀░█░█░░░█▀█░█░█░█▀▀░█░█░░█░",
+		"░▀░▀░▀▀▀░▀▀▀░▀░▀░░░▀░▀░▀▀▀░▀▀▀░▀░▀░░▀░",
+	}
+	if ctx.agentCfg != nil && ctx.agentCfg.ASCIIArt != "" {
+		asciiArt = strings.Split(strings.TrimRight(ctx.agentCfg.ASCIIArt, "\n"), "\n")
 	}
 
 	colors := []string{

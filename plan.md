@@ -95,6 +95,12 @@ keen-agent run --agent ./my-agent.yaml --provider anthropic --model claude-sonne
 ```yaml
 name: "SQL DBA Agent"                 # user-facing agent name shown throughout the UI
 
+ascii_art: |
+  ____
+ |  __|___ _ _  ___ ___
+ | | | _| -_| | | .'|  _|
+ |_| |___|___|___|__,|_|
+
 model:                                # optional; omit to select a model at runtime via /model
   provider: anthropic                  # provider/model configured in ~/.keen-agent/configs.json
   model_id: claude-sonnet-4-20250514
@@ -856,6 +862,7 @@ generic agent core with a selected config file.
 | Field | Effect |
 |-------|--------|
 | `name` | Shown in header, prompt, help text, session labels, logs, and other user-visible UI surfaces |
+| `ascii_art` | Optional ASCII banner shown in the TUI header; ignored if empty. No colors or themes yet. |
 
 ---
 
@@ -963,6 +970,7 @@ before reporting so users see the full picture at once.
 
 - YAML schema validity
 - Required fields present (`name`, `system_prompt` or `system_prompt_files`)
+- `ascii_art`, if present, is a string
 - Function definitions have `name` + `description` + `command`
 - Each function defines `input_schema_file`; schema files exist, use `.json`, and contain valid supported JSON Schema objects
 - MCP config files exist (only if `mcp_config_dirs` is specified)
@@ -988,7 +996,7 @@ before reporting so users see the full picture at once.
 ### Phase 1 — Skeleton + Config
 
 1. Initialize Go module (`github.com/<org>/keen-agent`)
-2. Define config structs + YAML parsing, including mode prompt overlays plus `btw` and `adversary` helper config
+2. Define config structs + YAML parsing, including mode prompt overlays, `ascii_art`, plus `btw` and `adversary` helper config
 3. Implement config validation
 4. Implement `keen-agent validate --agent ./agent.yaml` command
 

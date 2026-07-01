@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	repltooling "github.com/mochow13/keen-agent/internal/cli/repl/tooling"
@@ -23,6 +24,7 @@ const (
 type HeadlessRunOptions struct {
 	WorkingDir string
 	Config     *config.ResolvedConfig
+	AgentCfg   *agentconfig.Config
 	Client     llm.LLMClient
 	SessionID  string
 	Prompt     string
