@@ -52,6 +52,7 @@ type replContext struct {
 	registry      *providers.Registry
 	mcp           keenmcp.Runtime
 	resumeSession *session.LoadedSession
+	modelWarning  string
 }
 
 type replModel struct {
@@ -898,6 +899,7 @@ func RunREPL(
 	mcpRuntime keenmcp.Runtime,
 	resumeSession *session.LoadedSession,
 	agentCfg *agentconfig.Config,
+	modelWarning string,
 ) (string, error) {
 	ctx := &replContext{
 		version:       version,
@@ -909,6 +911,7 @@ func RunREPL(
 		registry:      registry,
 		mcp:           mcpRuntime,
 		resumeSession: resumeSession,
+		modelWarning:  modelWarning,
 	}
 
 	var llmClient llm.LLMClient

@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 	"github.com/mochow13/keen-agent/internal/config"
 	keenmcp "github.com/mochow13/keen-agent/internal/mcp"
+	"github.com/mochow13/keen-agent/internal/providers"
 )
 
 func TestNewRootCommand(t *testing.T) {
@@ -388,5 +390,165 @@ func TestLoadAgentConfig_RejectsInvalidConfig(t *testing.T) {
 	_, err := loadAgentConfig(tmp, path)
 	if err == nil {
 		t.Fatal("expected error for invalid config")
+	}
+}
+
+func TestResolveSessionConfig_UsesAgentModelWhenAvailable(t *testing.T) {
+	globalCfg := &config.GlobalConfig{
+		ActiveProvider: config.ProviderAnthropic,
+		ActiveModel:    "claude-active",
+		Providers: map[string]config.ProviderConfig{
+			"google": {
+				APIKey: "google-key",
+				Models: []string{"gemini-test"},
+			},
+			config.ProviderAnthropic: {
+				APIKey: "anthropic-key",
+				Models: []string{"claude-active"},
+			},
+		},
+	}
+	registry := &providers.Registry{
+		Providers: []providers.Provider{
+			{ID: "google", Models: []providers.Model{{ID: "gemini-test"}}},
+		},
+	}
+	agentCfg := &agentconfig.Config{
+		Model: &agentconfig.ModelRef{Provider: "google", ModelID: "gemini-test"},
+	}
+
+	resolved, needsSetup, warning, err := resolveSessionConfig(globalCfg, registry, agentCfg)
+	if err != nil {
+		t.Fatalf("resolveSessionConfig() error = %v", err)
+	}
+	if resolved.Provider != "google" {
+		t.Fatalf("Provider = %q, want google", resolved.Provider)
+	}
+	if resolved.Model != "gemini-test" {
+		t.Fatalf("Model = %q, want gemini-test", resolved.Model)
+	}
+	if resolved.APIKey != "google-key" {
+		t.Fatalf("APIKey = %q, want google-key", resolved.APIKey)
+	}
+	if needsSetup {
+		t.Fatal("needsSetup = true, want false")
+	}
+	if warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+	if globalCfg.ActiveProvider != config.ProviderAnthropic {
+		t.Fatalf("globalCfg.ActiveProvider was modified to %q", globalCfg.ActiveProvider)
+	}
+}
+
+func TestResolveSessionConfig_WarnsWhenAgentModelMissing(t *testing.T) {
+	globalCfg := &config.GlobalConfig{
+		ActiveProvider: config.ProviderAnthropic,
+		ActiveModel:    "claude-active",
+		Providers: map[string]config.ProviderConfig{
+			config.ProviderAnthropic: {
+				APIKey: "anthropic-key",
+				Models: []string{"claude-active"},
+			},
+		},
+	}
+	registry := &providers.Registry{
+		Providers: []providers.Provider{
+			{ID: config.ProviderAnthropic, Models: []providers.Model{{ID: "claude-active"}}},
+		},
+	}
+	agentCfg := &agentconfig.Config{
+		Model: &agentconfig.ModelRef{Provider: "google", ModelID: "missing-model"},
+	}
+
+	resolved, _, warning, err := resolveSessionConfig(globalCfg, registry, agentCfg)
+	if err != nil {
+		t.Fatalf("resolveSessionConfig() error = %v", err)
+	}
+	if resolved.Provider != config.ProviderAnthropic || resolved.Model != "claude-active" {
+		t.Fatalf("fallback model = %s/%s, want anthropic/claude-active", resolved.Provider, resolved.Model)
+	}
+	if warning == "" {
+		t.Fatal("expected warning for missing agent model")
+	}
+}
+
+func TestResolveSessionConfig_WarnsWhenAgentModelIncomplete(t *testing.T) {
+	globalCfg := &config.GlobalConfig{
+		ActiveProvider: config.ProviderAnthropic,
+		ActiveModel:    "claude-active",
+		Providers: map[string]config.ProviderConfig{
+			config.ProviderAnthropic: {
+				APIKey: "anthropic-key",
+				Models: []string{"claude-active"},
+			},
+		},
+	}
+	registry := &providers.Registry{
+		Providers: []providers.Provider{
+			{ID: config.ProviderAnthropic, Models: []providers.Model{{ID: "claude-active"}}},
+		},
+	}
+	agentCfg := &agentconfig.Config{
+		Model: &agentconfig.ModelRef{Provider: "google"},
+	}
+
+	resolved, _, warning, err := resolveSessionConfig(globalCfg, registry, agentCfg)
+	if err != nil {
+		t.Fatalf("resolveSessionConfig() error = %v", err)
+	}
+	if resolved.Provider != config.ProviderAnthropic || resolved.Model != "claude-active" {
+		t.Fatalf("fallback model = %s/%s, want anthropic/claude-active", resolved.Provider, resolved.Model)
+	}
+	if warning == "" {
+		t.Fatal("expected warning for incomplete model block")
+	}
+}
+
+func TestResolveSessionConfig_FallsBackToActiveModel(t *testing.T) {
+	globalCfg := &config.GlobalConfig{
+		ActiveProvider: config.ProviderAnthropic,
+		ActiveModel:    "claude-active",
+		Providers: map[string]config.ProviderConfig{
+			config.ProviderAnthropic: {
+				APIKey: "anthropic-key",
+				Models: []string{"claude-active"},
+			},
+		},
+	}
+	registry := &providers.Registry{
+		Providers: []providers.Provider{
+			{ID: config.ProviderAnthropic, Models: []providers.Model{{ID: "claude-active"}}},
+		},
+	}
+
+	resolved, _, warning, err := resolveSessionConfig(globalCfg, registry, nil)
+	if err != nil {
+		t.Fatalf("resolveSessionConfig() error = %v", err)
+	}
+	if resolved.Provider != config.ProviderAnthropic || resolved.Model != "claude-active" {
+		t.Fatalf("model = %s/%s, want anthropic/claude-active", resolved.Provider, resolved.Model)
+	}
+	if warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestResolveSessionConfig_NoModelAvailable(t *testing.T) {
+	globalCfg := &config.GlobalConfig{Providers: map[string]config.ProviderConfig{}}
+	registry := &providers.Registry{}
+
+	resolved, needsSetup, warning, err := resolveSessionConfig(globalCfg, registry, nil)
+	if err != nil {
+		t.Fatalf("resolveSessionConfig() error = %v", err)
+	}
+	if resolved.Provider != "" || resolved.Model != "" {
+		t.Fatalf("expected empty resolved config, got %s/%s", resolved.Provider, resolved.Model)
+	}
+	if !needsSetup {
+		t.Fatal("needsSetup = false, want true")
+	}
+	if warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
 	}
 }

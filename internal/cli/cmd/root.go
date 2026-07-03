@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/mochow13/keen-agent/internal/agentconfig"
@@ -32,7 +33,7 @@ func NewRootCommand(version string) *cobra.Command {
 		Short: "Keen Agent - A generic agent harness",
 		Long:  `Keen Agent is a terminal-based agent harness that runs configured agents with tools, skills, and subagents.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, loader, globalCfg, resolvedCfg, needsSetup, err := loadRootRuntime()
+			registry, loader, globalCfg, _, _, err := loadRootRuntime()
 			if err != nil {
 				return err
 			}
@@ -42,6 +43,11 @@ func NewRootCommand(version string) *cobra.Command {
 			}
 
 			agentCfg, err := loadAgentConfig(wd, agentFile)
+			if err != nil {
+				return err
+			}
+
+			resolvedCfg, needsSetup, modelWarning, err := resolveSessionConfig(globalCfg, registry, agentCfg)
 			if err != nil {
 				return err
 			}
@@ -60,7 +66,7 @@ func NewRootCommand(version string) *cobra.Command {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "MCP unavailable: %v\n", mcpErr)
 			}
 
-			sessionID, err := repl.RunREPL(version, wd, resolvedCfg, loader, globalCfg, registry, needsSetup, mcpManager, resumeSession, agentCfg)
+			sessionID, err := repl.RunREPL(version, wd, resolvedCfg, loader, globalCfg, registry, needsSetup, mcpManager, resumeSession, agentCfg, modelWarning)
 			if err != nil {
 				return err
 			}
@@ -109,10 +115,28 @@ func newRunCommand() *cobra.Command {
 		Short: "Run one non-interactive Keen Agent turn",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, _, globalCfg, resolvedCfg, _, err := loadRootRuntime()
+			registry, _, globalCfg, _, _, err := loadRootRuntime()
 			if err != nil {
 				return err
 			}
+
+			wd, err := os.Getwd()
+			if err != nil {
+				wd = "."
+			}
+			agentCfg, err := loadAgentConfig(wd, agentFile)
+			if err != nil {
+				return err
+			}
+
+			resolvedCfg, _, modelWarning, err := resolveSessionConfig(globalCfg, registry, agentCfg)
+			if err != nil {
+				return err
+			}
+			if modelWarning != "" {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", modelWarning)
+			}
+
 			if err := applyRunOverrides(globalCfg, resolvedCfg, providerID, modelID); err != nil {
 				return err
 			}
@@ -136,14 +160,6 @@ func newRunCommand() *cobra.Command {
 				return fmt.Errorf("prompt is required")
 			}
 
-			wd, err := os.Getwd()
-			if err != nil {
-				wd = "."
-			}
-			agentCfg, err := loadAgentConfig(wd, agentFile)
-			if err != nil {
-				return err
-			}
 			client, err := llm.NewClient(resolvedCfg)
 			if err != nil {
 				return err
@@ -186,21 +202,29 @@ func loadRootRuntime() (*providers.Registry, *config.Loader, *config.GlobalConfi
 		return nil, nil, nil, nil, false, fmt.Errorf("failed to load config: %w", err)
 	}
 
+	resolvedCfg, needsSetup, err := resolveFromActiveProvider(globalCfg, registry)
+	if err != nil {
+		return nil, nil, nil, nil, false, err
+	}
+	return registry, loader, globalCfg, resolvedCfg, needsSetup, nil
+}
+
+func resolveFromActiveProvider(globalCfg *config.GlobalConfig, registry *providers.Registry) (*config.ResolvedConfig, bool, error) {
 	if globalCfg.ActiveProvider == "" {
-		return registry, loader, globalCfg, &config.ResolvedConfig{}, true, nil
+		return &config.ResolvedConfig{}, true, nil
 	}
 
 	_, ok := registry.GetProvider(globalCfg.ActiveProvider)
 	if !ok {
-		return nil, nil, nil, nil, false, fmt.Errorf("configured provider %q not found in registry", globalCfg.ActiveProvider)
+		return nil, false, fmt.Errorf("configured provider %q not found in registry", globalCfg.ActiveProvider)
 	}
 	providerCfg, ok := globalCfg.GetProviderConfig(globalCfg.ActiveProvider)
 	if !ok {
-		return nil, nil, nil, nil, false, fmt.Errorf("failed to get provider config for %q", globalCfg.ActiveProvider)
+		return nil, false, fmt.Errorf("failed to get provider config for %q", globalCfg.ActiveProvider)
 	}
 	apiKey, err := config.ResolveProviderAPIKey(globalCfg.ActiveProvider, providerCfg)
 	if err != nil {
-		return nil, nil, nil, nil, false, err
+		return nil, false, err
 	}
 	activeModel := globalCfg.ActiveModel
 	if activeModel == "" && len(providerCfg.Models) > 0 {
@@ -217,7 +241,53 @@ func loadRootRuntime() (*providers.Registry, *config.Loader, *config.GlobalConfi
 		Headers:        providerCfg.Headers,
 	}
 	needsSetup := resolvedCfg.AuthMode == config.AuthModeOAuth && !keenauth.NewOAuthManager(nil).HasCredential(globalCfg.ActiveProvider)
-	return registry, loader, globalCfg, resolvedCfg, needsSetup, nil
+	return resolvedCfg, needsSetup, nil
+}
+
+func resolveSessionConfig(globalCfg *config.GlobalConfig, registry *providers.Registry, agentCfg *agentconfig.Config) (*config.ResolvedConfig, bool, string, error) {
+	var warning string
+
+	if agentCfg != nil && agentCfg.Model.IsComplete() {
+		provider := agentCfg.Model.Provider
+		modelID := agentCfg.Model.ModelID
+		providerCfg, ok := globalCfg.GetProviderConfig(provider)
+		if ok && slices.Contains(providerCfg.Models, modelID) {
+			_, ok := registry.GetProvider(provider)
+			if !ok {
+				return nil, false, "", fmt.Errorf("configured provider %q not found in registry", provider)
+			}
+			apiKey, err := config.ResolveProviderAPIKey(provider, providerCfg)
+			if err != nil {
+				return nil, false, "", err
+			}
+			resolvedCfg := &config.ResolvedConfig{
+				Provider:       provider,
+				Model:          modelID,
+				APIKey:         apiKey,
+				APIKeyHelper:   providerCfg.APIKeyHelper,
+				ThinkingEffort: globalCfg.ThinkingEffort,
+				BaseURL:        providerCfg.BaseURL,
+				AuthMode:       config.AuthModeForProvider(provider),
+				Headers:        providerCfg.Headers,
+			}
+			needsSetup := resolvedCfg.AuthMode == config.AuthModeOAuth && !keenauth.NewOAuthManager(nil).HasCredential(provider)
+			return resolvedCfg, needsSetup, "", nil
+		}
+		warning = fmt.Sprintf("Configured model %s/%s is not available in ~/.keen-agent/configs.json.", provider, modelID)
+	} else if agentCfg != nil && agentCfg.Model.IsSet() {
+		warning = "Agent config model block is incomplete (requires both provider and model_id)."
+	}
+
+	resolvedCfg, needsSetup, err := resolveFromActiveProvider(globalCfg, registry)
+	if err != nil {
+		return nil, false, "", err
+	}
+	if warning != "" && resolvedCfg.Provider != "" && resolvedCfg.Model != "" {
+		warning = fmt.Sprintf("%s\n  Using active model %s/%s instead. Use /model to choose a different model.", warning, resolvedCfg.Provider, resolvedCfg.Model)
+	} else if warning != "" {
+		warning = warning + " No active model is selected. Use /model to choose one."
+	}
+	return resolvedCfg, needsSetup, warning, nil
 }
 
 func applyRunOverrides(globalCfg *config.GlobalConfig, resolvedCfg *config.ResolvedConfig, providerID string, modelID string) error {

@@ -6,3 +6,6 @@ ascii_art: |
 system_prompt: |
   You are a helpful assistant. Keep responses concise.
 default_mode: build
+model:
+    model_id: claude-sonnet-4-6
+    provider: anthropic

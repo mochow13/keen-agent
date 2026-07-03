@@ -487,6 +487,11 @@ func buildInitialScreen(ctx *replContext, lastSession *session.Summary, width in
 	}
 	lines = append(lines, "")
 
+	if ctx.modelWarning != "" {
+		lines = append(lines, "  "+repltheme.ErrorStyle.Render("⚠ "+ctx.modelWarning))
+		lines = append(lines, "")
+	}
+
 	if lastSession != nil && lastSession.LastUserMessage != "" {
 		preview := lastSession.LastUserMessage
 		if len([]rune(preview)) > 20 {
