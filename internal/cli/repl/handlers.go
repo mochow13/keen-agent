@@ -41,19 +41,16 @@ func (m *replModel) handleLLMUsage(usage *llm.TokenUsage) (replModel, tea.Cmd) {
 
 func (m *replModel) handleLLMChunk(chunk string) (replModel, tea.Cmd) {
 	m.streamHandler.HandleChunk(chunk)
-	m.updateViewportContent()
-	m.scrollToBottomIfFollowing()
-	return *m, m.waitForAsyncEvent()
+	return *m, tea.Batch(m.afterStreamUpdate(), m.waitForAsyncEvent())
 }
 
 func (m *replModel) handleLLMReasoningChunk(chunk string) (replModel, tea.Cmd) {
 	m.streamHandler.HandleReasoningChunk(chunk)
-	m.updateViewportContent()
-	m.scrollToBottomIfFollowing()
-	return *m, m.waitForAsyncEvent()
+	return *m, tea.Batch(m.afterStreamUpdate(), m.waitForAsyncEvent())
 }
 
 func (m *replModel) handleLLMDone() (replModel, tea.Cmd) {
+	m.flushStreamRender()
 	if m.isCompacting {
 		return m.handleCompactionDone()
 	}
@@ -82,6 +79,7 @@ func (m *replModel) handleLLMDone() (replModel, tea.Cmd) {
 }
 
 func (m *replModel) handleLLMIncomplete(err error) (replModel, tea.Cmd) {
+	m.flushStreamRender()
 	segments := cloneStreamSegments(m.streamHandler.segments)
 	partialResponse := m.streamHandler.GetResponse()
 	m.stopLoading()
@@ -109,6 +107,7 @@ func (m *replModel) handleLLMIncomplete(err error) (replModel, tea.Cmd) {
 }
 
 func (m *replModel) handleLLMError(err error) (replModel, tea.Cmd) {
+	m.flushStreamRender()
 	if m.isCompacting {
 		return m.handleCompactionError(err)
 	}
@@ -145,6 +144,7 @@ func (m *replModel) handleLLMError(err error) (replModel, tea.Cmd) {
 }
 
 func (m *replModel) handleLLMRetry(err error, attempt int) (replModel, tea.Cmd) {
+	m.flushStreamRender()
 	m.streamHandler.RewindForRetry()
 	m.loadingText = fmt.Sprintf("Retrying (attempt %d)...", attempt)
 	m.streamHandler.SetLoadingText(m.loadingText)
@@ -154,6 +154,7 @@ func (m *replModel) handleLLMRetry(err error, attempt int) (replModel, tea.Cmd) 
 }
 
 func (m *replModel) handleCompactionDone() (replModel, tea.Cmd) {
+	m.flushStreamRender()
 	segments := cloneStreamSegments(m.streamHandler.segments)
 	responseLines, summary := m.streamHandler.HandleDone()
 	m.isCompacting = false
@@ -180,6 +181,7 @@ func (m *replModel) handleCompactionDone() (replModel, tea.Cmd) {
 }
 
 func (m *replModel) handleCompactionError(err error) (replModel, tea.Cmd) {
+	m.flushStreamRender()
 	if m.streamHandler != nil && m.streamHandler.IsActive() {
 		responseLines, _ := m.streamHandler.HandleError(err)
 		for _, line := range responseLines {
@@ -209,6 +211,7 @@ func (m *replModel) handleCompactionError(err error) (replModel, tea.Cmd) {
 }
 
 func (m *replModel) handleToolStart(toolCall *llm.ToolCall) (replModel, tea.Cmd) {
+	m.flushStreamRender()
 	if toolCall.Name == "bash" {
 		command, _ := toolCall.Input["command"].(string)
 		summary, _ := toolCall.Input["summary"].(string)
@@ -222,6 +225,7 @@ func (m *replModel) handleToolStart(toolCall *llm.ToolCall) (replModel, tea.Cmd)
 }
 
 func (m *replModel) handleToolEnd(toolCall *llm.ToolCall) (replModel, tea.Cmd) {
+	m.flushStreamRender()
 	m.recordToolMemory(toolCall)
 	if toolCall.Name == "bash" {
 		m.streamHandler.HandleBashEnd(toolCall)
@@ -326,6 +330,7 @@ func (m *replModel) handleSuggestionKeyMsg(keyMsg tea.KeyPressMsg) (bool, replMo
 }
 
 func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
+	m.flushStreamRender()
 	if m.sessionPicker != nil {
 		return m.handleSessionPickerKeyMsg(msg)
 	}
@@ -539,6 +544,7 @@ func (m *replModel) refreshFileSuggestions(input string) bool {
 }
 
 func (m *replModel) interruptStream(message string) {
+	m.flushStreamRender()
 	if m.streamCancel != nil {
 		m.streamCancel()
 		m.clearStreamCancel()
@@ -665,6 +671,12 @@ func (m replModel) handleLLMStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 		return updated, cmd, true
 	}
 
+	switch msg.(type) {
+	case streamRenderMsg:
+		m.flushStreamRender()
+		return m, nil, true
+	}
+
 	if m.streamHandler == nil || !m.streamHandler.IsActive() {
 		switch msg.(type) {
 		case llmChunkMsg, llmReasoningChunkMsg, llmDoneMsg, llmIncompleteMsg, llmErrorMsg, llmRetryMsg, llmToolStartMsg, llmToolEndMsg, llmUsageMsg:
@@ -731,10 +743,9 @@ func (m replModel) handleBtwStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case btwChunkMsg:
 		m.btwStreamHandler.HandleChunk(string(msg))
-		m.updateViewportContent()
-		m.scrollToBottomIfFollowing()
-		return m, waitForBtwEvent(m.btwStreamHandler.eventCh), true
+		return m, tea.Batch(m.afterStreamUpdate(), waitForBtwEvent(m.btwStreamHandler.eventCh)), true
 	case btwDoneMsg:
+		m.flushStreamRender()
 		responseLines, _ := m.btwStreamHandler.HandleDone()
 		m.btwShowSpinner = false
 		m.btwLines = responseLines
@@ -742,6 +753,7 @@ func (m replModel) handleBtwStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 		m.scrollToBottomIfFollowing()
 		return m, nil, true
 	case btwErrorMsg:
+		m.flushStreamRender()
 		pendingLines, errMsg := m.btwStreamHandler.HandleError(msg.err)
 		m.btwShowSpinner = false
 		lines := pendingLines
@@ -769,10 +781,9 @@ func (m replModel) handleAdversaryStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bo
 	switch msg := msg.(type) {
 	case adversaryChunkMsg:
 		m.adversary.streamHandler.HandleChunk(string(msg))
-		m.updateViewportContent()
-		m.scrollToBottomIfFollowing()
-		return m, waitForAdversaryEvent(m.adversary.streamHandler.eventCh), true
+		return m, tea.Batch(m.afterStreamUpdate(), waitForAdversaryEvent(m.adversary.streamHandler.eventCh)), true
 	case adversaryDoneMsg:
+		m.flushStreamRender()
 		responseLines, _ := m.adversary.streamHandler.HandleDone()
 		m.adversary.showSpinner = false
 		m.adversary.lines = responseLines
@@ -780,6 +791,7 @@ func (m replModel) handleAdversaryStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bo
 		m.scrollToBottomIfFollowing()
 		return m, nil, true
 	case adversaryErrorMsg:
+		m.flushStreamRender()
 		pendingLines, errMsg := m.adversary.streamHandler.HandleError(msg.err)
 		m.adversary.showSpinner = false
 		lines := pendingLines

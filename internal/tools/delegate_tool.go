@@ -29,7 +29,7 @@ func (t *DelegateTool) Name() string {
 }
 
 func (t *DelegateTool) Description() string {
-	return "Delegate a bounded task to a named subagent. Provide clear instructions and relevant paths."
+	return "Delegate a bounded task to a named subagent. If you say you will ask, delegate to, or use a subagent, call this tool instead of merely describing delegation. Provide clear instructions and relevant paths."
 }
 
 func (t *DelegateTool) InputSchema() map[string]any {

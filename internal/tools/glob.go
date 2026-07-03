@@ -31,6 +31,8 @@ func (t *GlobTool) Name() string {
 func (t *GlobTool) Description() string {
 	return `Search for files matching a glob pattern after filesystem policy + user permission checks.
 
+Use this through the tool API whenever you say you will find, list, locate, discover, inspect paths, or check which files exist. Do not merely describe file discovery in assistant text.
+
 Use this to discover files when you don't know the exact path. This tool is fast and
 should be your first step when exploring a codebase.
 

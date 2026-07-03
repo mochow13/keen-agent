@@ -122,6 +122,19 @@ func TestBuild_BuildIncludesBuildInstructions(t *testing.T) {
 	}
 }
 
+func TestBuild_IncludesToolFollowThroughInstructions(t *testing.T) {
+	result := Build(t.TempDir(), "", "", ModeBuild)
+	for _, expected := range []string{
+		"Tool use is an action, not narration",
+		"your next step should be the corresponding tool call",
+		"Never claim that you read a file",
+	} {
+		if !strings.Contains(result, expected) {
+			t.Fatalf("expected %q in prompt, got %q", expected, result)
+		}
+	}
+}
+
 func TestBuild_ModeInstructionsAreAtEnd(t *testing.T) {
 	dir := t.TempDir()
 	catalog := skills.Catalog([]skills.Skill{{Name: "demo", Description: "Demo skill", Location: "/tmp/demo/SKILL.md"}}, skills.Config{})

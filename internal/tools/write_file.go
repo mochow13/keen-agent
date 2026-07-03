@@ -30,6 +30,8 @@ func (t *WriteFileTool) Name() string {
 func (t *WriteFileTool) Description() string {
 	return `Write content to a file. Creates parent directories if needed. Overwrites existing files.
 
+Use this through the tool API whenever you say you will create, write, replace, or overwrite a file. Do not merely describe file writing in assistant text.
+
 - Use this for creating new files or completely replacing file contents
 - Do not use this for targeted modifications to existing files — use edit_file instead,
 which is safer and preserves surrounding content

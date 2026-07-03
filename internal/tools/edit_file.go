@@ -31,6 +31,8 @@ func (t *EditFileTool) Name() string {
 func (t *EditFileTool) Description() string {
 	return `Edit a file by replacing occurrences of a string. The file must already exist.
 
+Use this through the tool API whenever you say you will edit, patch, modify, replace text in, or update a file. Do not merely describe file editing in assistant text.
+
 Use this for targeted modifications to existing files. Prefer this over write_file
 when you only need to change part of a file.
 

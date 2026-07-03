@@ -868,6 +868,32 @@ func (m *replModel) scrollToBottomIfFollowing() {
 	}
 }
 
+func (m *replModel) afterStreamUpdate() tea.Cmd {
+	if m.streamRenderInterval <= 0 {
+		m.updateViewportContent()
+		m.scrollToBottomIfFollowing()
+		return nil
+	}
+
+	if m.streamRenderPending {
+		return nil
+	}
+
+	m.streamRenderPending = true
+	return tea.Tick(m.streamRenderInterval, func(time.Time) tea.Msg {
+		return streamRenderMsg{}
+	})
+}
+
+func (m *replModel) flushStreamRender() {
+	if !m.streamRenderPending {
+		return
+	}
+	m.streamRenderPending = false
+	m.updateViewportContent()
+	m.scrollToBottomIfFollowing()
+}
+
 func waitForBtwEvent(llmCh <-chan llm.StreamEvent) tea.Cmd {
 	if llmCh == nil {
 		return nil

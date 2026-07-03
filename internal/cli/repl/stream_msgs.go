@@ -76,6 +76,8 @@ type btwErrorMsg struct {
 	err error
 }
 
+type streamRenderMsg struct{}
+
 type adversaryChunkMsg string
 type adversaryDoneMsg struct{}
 type adversaryErrorMsg struct {

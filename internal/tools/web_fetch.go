@@ -29,6 +29,8 @@ func (t *WebFetchTool) Name() string {
 func (t *WebFetchTool) Description() string {
 	return `Fetch content from a URL and return it as text.
 
+Use this through the tool API whenever you say you will fetch, open, read, check, or inspect a URL or public web content. Do not merely describe fetching web content in assistant text.
+
 HTML pages are automatically converted to Markdown for readability. Other content
 types (JSON, plain text, XML) are returned as-is.
 

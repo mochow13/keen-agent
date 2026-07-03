@@ -35,7 +35,9 @@ func (t *BashTool) Name() string {
 }
 
 func (t *BashTool) Description() string {
-	return `Execute bash commands in the terminal. This is a fallback tool — prefer
+	return `Execute bash commands in the terminal. Use this through the tool API whenever you say you will run, execute, test, build, install, or invoke a shell command. Do not merely describe command execution in assistant text.
+
+This is a fallback tool — prefer
 dedicated tools when they exist:
 - read_file for reading files
 - write_file for creating files

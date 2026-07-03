@@ -465,6 +465,26 @@ func TestHandleLLMStreamMsg_RoutesChunk(t *testing.T) {
 	}
 }
 
+func TestHandleLLMStreamMsg_StreamRenderFlushesWithoutMainStream(t *testing.T) {
+	m := newTestModel()
+	m.streamRenderPending = true
+	m.btwShowSpinner = true
+	m.btwQuestion = "why?"
+	m.btwLines = []string{"thinking"}
+
+	newM, cmd, handled := m.handleLLMStreamMsg(streamRenderMsg{})
+
+	if !handled {
+		t.Fatal("expected stream render msg to be handled")
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd for stream render msg")
+	}
+	if newM.streamRenderPending {
+		t.Fatal("expected pending stream render to be flushed")
+	}
+}
+
 func TestUpdateNormalMode_PermissionReadyRendersImmediately(t *testing.T) {
 	m := newTestModel()
 	eventCh := make(chan llm.StreamEvent)

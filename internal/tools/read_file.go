@@ -36,6 +36,8 @@ func (t *ReadFileTool) Name() string {
 func (t *ReadFileTool) Description() string {
 	return `Read a UTF-8 text file after filesystem policy + user permission checks.
 
+Use this through the tool API whenever you say you will read, inspect, open, view, or check a file. Do not merely describe reading a file in assistant text.
+
 - Use this when you know the exact file path and need its contents
 - Do not use this when you are unsure of the filename — use glob to find it first
 - Do not use this to search for content across files — use grep instead

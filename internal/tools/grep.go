@@ -48,6 +48,8 @@ func (t *GrepTool) Name() string {
 func (t *GrepTool) Description() string {
 	return `Search for text patterns in files recursively after filesystem policy + user permission checks.
 
+Use this through the tool API whenever you say you will search, grep, look for references, find definitions, inspect usages, or check where something appears. Do not merely describe searching in assistant text.
+
 Use this to find specific text, function definitions, imports, or references across files.
 Do not use this when you already know the file — use read_file instead.
 
