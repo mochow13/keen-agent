@@ -1,7 +1,7 @@
 # keen-agent — Implementation Plan
 
-A generic, config-driven AI agent runner. Users provide system prompts, native
-functions, MCP configuration, skills, and subagents — keen-agent handles the agent loop,
+A generic, config-driven AI agent runner. Users provide system prompts, MCP
+configuration, skills, and subagents — keen-agent handles the agent loop,
 TUI, permissions, and LLM interaction.
 
 ---
@@ -154,36 +154,6 @@ builtin_tools:
     - edit_file
     - bash
 
-# User-defined native functions: small, explicit function-call extensions.
-# For large/discoverable tool sets, use MCP via mcp_config_dirs instead.
-functions:
-  - name: run_query
-    description: "Execute a read-only SQL query against the database"
-    command: |
-      python3 ./functions/run_query.py
-    input_schema_file: ./schemas/run_query.input.json
-    read_only: true
-    permission: auto_approve  # or: requires_approval
-    timeout: 30s
-    max_retries: 2
-
-  - name: analyze_customer_segments
-    description: "Analyze a large customer segmentation request"
-    command: python3 ./functions/analyze_segments.py
-    input_schema_file: ./schemas/analyze_customer_segments.input.json
-    read_only: true
-    permission: auto_approve
-    timeout: 60s
-
-  - name: deploy
-    description: "Deploy the current migration to staging"
-    command: ./scripts/deploy.sh
-    input_schema_file: ./schemas/deploy.input.json
-    read_only: false
-    permission: requires_approval
-    timeout: 120s
-    max_retries: 0
-
 # Subagents directories. Each directory contains Markdown files with YAML
 # frontmatter (name, description) followed by the subagent's system prompt.
 # Subagents are read-only assistants the main agent can delegate bounded tasks
@@ -246,7 +216,6 @@ Format:
 |-----------|---------------|
 | Config parser | Load + validate `agent.yaml` |
 | Config validator | `keen-agent validate --agent ./agent.yaml` |
-| Native function executor | Run user-defined function commands with schema-validated JSON input over stdin |
 | System prompt composer | Assemble prompt from config + tools + project instructions + skills + mode/helper prompt overlays |
 | Mode manager | plan/build mode with read_only filtering and config-driven prompt tuning |
 | Helper agents | Optional `btw` side-question helper and `adversary` critic with dedicated prompts/models |
@@ -260,7 +229,7 @@ Format:
 The main-agent system prompt is assembled in order:
 
 1. **Agent persona** — `system_prompt` field + `system_prompt_files` contents (array, appended in order)
-2. **Tool documentation** — auto-generated from callable definitions (built-in tools + user functions + MCP tools)
+2. **Tool documentation** — auto-generated from callable definitions (built-in tools + MCP tools)
 3. **Subagent catalog** — list of available subagents with names and descriptions when `subagents_dirs` is set
 4. **Skills catalog** — list of installed skills with descriptions and activation commands when `skills_dirs` is set
 5. **Active skill** — skill body when activated via `/skill` or `[Activate skill: ...]`
@@ -284,270 +253,6 @@ Prompt overlay rules:
 
 ---
 
-## Native Function Execution Model
-
-`functions` are user-defined native function calls: small, explicit extensions to
-an agent's callable surface. They are intended for simple local functions or
-scripts that complement the built-in tools. They are **not** a discovery protocol
-or integration framework; large tool families should be exposed through MCP.
-
-### When to use functions vs MCP
-
-| Use case | Prefer |
-|----------|--------|
-| A small number of explicit local commands | `functions` |
-| One-off business logic around local files or internal scripts | `functions` |
-| Enhancing built-in/native tools with a few custom capabilities | `functions` |
-| Many tools with varied schemas | MCP |
-| Dynamic discovery, shared clients, auth flows, lifecycle management | MCP |
-| Local tools that already form an integration package | stdio MCP server |
-
-MCP is already supported through `mcp_config_dirs` and is the right path when users
-need MCP-like behavior. A local tool bundle can be wrapped as a stdio MCP server
-and used by keen-agent without adding another discovery mechanism to `functions`.
-
-### Input schema
-
-Functions expose a JSON Schema object to the LLM. Function authors define that
-contract with `input_schema_file`, a path to a JSON file containing the function's
-input schema. The path is resolved relative to the `agent.yaml` directory unless
-absolute.
-
-Example schema reference:
-
-```yaml
-functions:
-  - name: score_leads
-    description: "Score a batch of leads"
-    command: python3 ./functions/score_leads.py
-    input_schema_file: ./schemas/score_leads.input.json
-```
-
-Example schema file (`./schemas/score_leads.input.json`):
-
-```json
-{
-  "type": "object",
-  "required": ["leads"],
-  "properties": {
-    "leads": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "company", "events"],
-        "properties": {
-          "id": { "type": "string" },
-          "company": { "type": "string" },
-          "events": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "type": { "type": "string" },
-                "timestamp": { "type": "string" }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-The loaded schema is passed directly to the LLM as the function input contract.
-The LLM calls `score_leads` with a JSON object matching the schema; keen-agent
-validates that object before executing the command.
-
-### Argument passing
-
-Function inputs are always passed as **JSON over stdin**:
-
-```text
-LLM function-call input JSON → validate against input_schema_file → command stdin
-```
-
-For the `score_leads` example, keen-agent runs `python3 ./functions/score_leads.py`
-and writes the complete function-call input to stdin as JSON. This avoids OS
-environment-size limits and is the correct path for large objects, arrays, or
-nested structures.
-
-Python function example:
-
-```python
-#!/usr/bin/env python3
-import json
-import sys
-
-payload = json.load(sys.stdin)
-leads = payload["leads"]
-
-result = {"count": len(leads), "scores": []}
-print(json.dumps(result))
-```
-
-Rules:
-- `input_schema_file` must point to a `.json` file containing a JSON Schema object
-  with root `type: object`.
-- The LLM sees that schema as the function input contract and emits a JSON object
-  that matches it.
-- keen-agent validates the emitted JSON before spawning the command.
-- Function process inherits the parent process environment (for secrets like
-  `$DB_HOST`).
-- Command runs in the agent's working directory.
-
-### Execution
-
-- Command is executed via `sh -c "<command>"` (supports multi-line, pipes, etc.)
-- The validated JSON input is written to process stdin.
-- stdout → returned to LLM as function result
-- stderr → included in error reporting
-- Non-zero exit → error fed back to LLM for retry (up to `max_retries`)
-
-### Permission
-
-Two levels:
-- `auto_approve` — function executes without user confirmation
-- `requires_approval` — TUI prompts user before execution (same UX as keen-code's dangerous bash commands)
-
-### Mode filtering
-
-- `read_only: true` → available in both plan and build modes
-- `read_only: false` (default) → available only in build mode
-
----
-
-## Native Function → `Tool` Adapter
-
-This is the core mechanism that turns a YAML `functions` entry into a runtime
-tool the LLM can call. The LLM APIs still use the generic term "tool", but the
-user-facing config calls these entries `functions` to distinguish them from
-built-in tools and MCP tools. Each function entry is wrapped in a single adapter
-type, `functionTool`, that implements the existing `tools.Tool` interface
-(`Name/Description/InputSchema/Execute`). One adapter instance per YAML entry;
-the same type handles every user function — no per-function code generation.
-
-### Type
-
-```go
-// functionTool adapts one YAML functions entry to the tools.Tool interface.
-type functionTool struct {
-    name            string
-    description     string
-    command         string         // raw shell command template (fixed by author)
-    inputSchema     map[string]any // loaded JSON Schema object exposed to the LLM
-    inputSchemaFile string         // source path, for validation/debug output
-    readOnly        bool
-    permission      Permission     // auto_approve | requires_approval
-    timeout         time.Duration
-    maxRetries      int
-
-    runner          CommandRunner  // injected: real sh -c executor, or fake in tests
-    approver        PermissionRequester
-}
-```
-
-`CommandRunner` and `PermissionRequester` are interfaces so the adapter is unit
--testable without spawning real shells or a TUI.
-
-### `Name()` / `Description()`
-
-Return the configured `name` and `description` verbatim. `name` is validated at
-config-load time (non-empty, unique across built-in tools + functions + MCP tool
-names, matches `^[a-z0-9_]+$`).
-
-### `InputSchema()` — loaded from config
-
-The adapter returns the loaded JSON Schema object. Config loading reads and
-validates the `input_schema_file` JSON file first. This is the contract the LLM
-sees:
-
-```go
-func (t *functionTool) InputSchema() map[string]any {
-    return cloneSchema(t.inputSchema)
-}
-```
-
-- `input_schema_file` is required for every function.
-- `input_schema_file` must point to a `.json` file containing a JSON Schema
-  object at the root (`type: object`).
-- Supported schema keywords include `type`, `description`, `properties`,
-  `required`, `items`, `enum`, `default`, `minimum`, `maximum`, `minItems`,
-  `maxItems`, and `additionalProperties`.
-- Unsupported schema shapes are rejected at config-load, so runtime schema
-  loading cannot fail.
-
-### `Execute()` — JSON stdin + bounded run
-
-```go
-func (t *functionTool) Execute(ctx context.Context, input any) (any, error) {
-    // 1. Decode input into map[string]any (LLM-supplied JSON object).
-    // 2. Validate input against t.inputSchema.
-    // 3. Permission gate: if requires_approval, call approver; abort on deny.
-    // 4. Marshal validated input and write it to process stdin.
-    // 5. Run via CommandRunner: sh -c command, with env, cwd, stdin, ctx+timeout.
-    // 6. On non-zero exit, retry up to maxRetries (fresh ctx/timeout each try).
-    // 7. Return stdout (+stderr on err).
-}
-```
-
-Key rules already specified above are enforced here:
-- JSON stdin handles large and nested inputs without environment-variable size
-  limits.
-- A missing required field or schema mismatch returns a tool error to the LLM
-  (not a crash).
-- `requires_approval` functions bypass execution entirely on user denial.
-
-### Construction / registration
-
-```go
-func newFunctionTool(def config.FunctionDef, deps Deps) (*functionTool, error)
-func registerFunctionTools(reg *tools.Registry, defs []config.FunctionDef, mode AgentMode, deps Deps) error
-```
-
-`registerFunctionTools` applies **mode filtering** before registration: in plan
-mode, functions with `read_only: false` are skipped (never registered, so the LLM
-never sees them). Name collisions with built-in tools or MCP tools are a
-registration error surfaced at startup, not silently shadowed.
-
-### Large input behavior
-
-Large function inputs are not placed in environment variables. keen-agent streams
-the validated JSON payload to the child process stdin. This means a Python
-function-style command can receive arbitrarily nested objects without command-line
-quoting problems or env-size limits:
-
-```python
-# functions/analyze_segments.py
-import json
-import sys
-
-
-def analyze(request: dict) -> dict:
-    return {"segment_count": len(request["metrics"])}
-
-
-payload = json.load(sys.stdin)
-print(json.dumps(analyze(payload["request"])))
-```
-
-The practical limits are controlled by provider constraints, not the OS env limit:
-
-- Provider function/tool-call limits still apply: the LLM must be able to produce
-  the JSON arguments in its function call.
-- If payloads are too large for the model context, the user-defined function should
-  accept file paths, IDs, or references instead of embedding the full object.
-
-### Note on function execution isolation
-
-Functions run via `sh -c` through `CommandRunner` and **do not** pass through
-the `bash` built-in. The bash `isDangerous` heuristic therefore does **not**
-apply to functions; their only gate is the per-function `permission` field.
-Since function input is delivered over stdin, authors should read JSON from
-stdin instead of interpolating model-provided values into shell command strings.
-
----
-
 ## Tool Sources
 
 At runtime, keen-agent presents one unified callable surface to the LLM, but the
@@ -556,14 +261,8 @@ configuration keeps sources separate:
 | Source | User-facing config | Purpose |
 |--------|--------------------|---------|
 | Built-in tools | `builtin_tools` | Keen-native capabilities such as file reads, grep, edits, bash, web fetch |
-| User functions | `functions` | Small native function-call extensions implemented as local commands |
 | MCP tools | `mcp_config_dirs` | Scalable external/local integrations with discovery and protocol support |
 | Subagents | `subagents_dirs` | Focused read-only assistants for delegated investigation and analysis |
-
-`functions` intentionally remain explicit: no discovery, no multi-function
-catalogs, and no MCP-lite protocol. If users need many tools, varied schemas,
-OAuth, shared integration clients, or dynamic discovery, they should expose those
-capabilities as MCP servers and point `mcp_config_dirs` at the MCP config files.
 
 Subagents are lightweight, read-only assistants defined as Markdown files. They
 complement the main agent by handling scoped, separable investigation work.
@@ -654,7 +353,7 @@ Current keen-agent already has the shape to generalize:
 |-------------------------|--------------------------------------|
 | `llm.ModeBuild` / `llm.ModePlan` in `internal/llm/systemprompt.go` | `default_mode` + CLI/TUI active mode |
 | `buildModePrompt` / `planModePrompt` constants in `internal/llm/systemprompt.go` | Built-in constraints plus `modes.<mode>.system_prompt` overlays |
-| `AppState.StreamChat` removing `write_file` and `edit_file` in plan mode | Runtime read_only filtering for built-ins, functions, MCP tools where applicable |
+| `AppState.StreamChat` removing `write_file` and `edit_file` in plan mode | Runtime read_only filtering for built-ins and MCP tools where applicable |
 | `/mode plan|build` and Shift+Tab in the TUI | Generic mode switch UI backed by config-defined prompt overlays |
 
 ---
@@ -937,7 +636,6 @@ before reporting so users see the full picture at once.
 
 3. **File existence checks (fatal)**
    - Each `system_prompt_files` entry exists and is readable.
-   - Each `functions[].input_schema_file` exists, uses `.json`, and is readable.
    - Each `mcp_config_dirs` entry exists and is readable.
    - Each `skills_dirs` directory exists and is readable.
    - Each `subagents_dirs` directory exists and is readable.
@@ -945,14 +643,12 @@ before reporting so users see the full picture at once.
    - Helper `system_prompt_files` entries exist when specified.
 
 4. **Content checks (fatal)**
-   - Function input schema files contain valid JSON and a JSON Schema object at root.
    - Subagent `.md` files contain valid YAML frontmatter with required `name` and `description`.
-   - Supported JSON Schema keywords in function schemas are honored; unsupported shapes are rejected.
 
 5. **Cross-reference checks (fatal)**
    - Built-in tool names excluded in `builtin_tools.exclude` must be real, excludable tools.
    - `builtin_tools.exclude` must not list non-excludable core tools (`call_mcp_tool`, `delegate_task`).
-   - Callable names must be unique across built-in tools, functions, and MCP tools.
+   - Callable names must be unique across built-in tools and MCP tools.
    - Subagent names must be unique across discovered subagent profiles (first directory wins, later duplicates are errors).
    - Mode prompt overlays reference only valid modes.
 
@@ -960,7 +656,6 @@ before reporting so users see the full picture at once.
    - If `model` is provided, warn when `~/.keen-agent/configs.json` is missing, the provider/model entry is missing, or required credentials are absent.
    - If `btw` or `adversary` is enabled with a helper `model`, apply the same credential/model warnings.
    - If `mcp_config_dirs` is specified, warn when referenced MCP servers cannot be reached during validation (do not fail; servers may start later).
-   - If `functions` use `requires_approval`, emit an informational note.
 
 7. **Result**
    - Any fatal error → validation fails; `keen-agent validate` exits non-zero and the TUI refuses to start.
@@ -971,8 +666,6 @@ before reporting so users see the full picture at once.
 - YAML schema validity
 - Required fields present (`name`, `system_prompt` or `system_prompt_files`)
 - `ascii_art`, if present, is a string
-- Function definitions have `name` + `description` + `command`
-- Each function defines `input_schema_file`; schema files exist, use `.json`, and contain valid supported JSON Schema objects
 - MCP config files exist (only if `mcp_config_dirs` is specified)
 - `system_prompt_files` entries exist (if specified)
 - `skills_dirs` entries exist (if specified)
@@ -980,7 +673,7 @@ before reporting so users see the full picture at once.
 - `default_mode` is `plan` or `build`; `modes` only contains `plan`/`build`, and each `system_prompt_files` entry exists if specified
 - `btw` config is valid when enabled (`context_messages` positive if set, prompt file exists if specified, model resolves if specified)
 - `adversary` config is valid when enabled (prompt file exists if specified, model resolves if specified)
-- No duplicate callable names across built-in tools, functions, and MCP tools
+- No duplicate callable names across built-in tools and MCP tools
 - No duplicate subagent names across discovered subagent profiles
 - `builtin_tools.exclude` does not include non-excludable core tools such as `call_mcp_tool` or `delegate_task`
 - `model` is optional; when omitted the user can select one at runtime with the `/model` command
@@ -1006,20 +699,13 @@ before reporting so users see the full picture at once.
 6. Extract/copy permission system from keen-code
 7. Implement system prompt composer with persona/project/tool/skill sections, built-in mode constraints, and config-driven mode/helper prompt overlays
 8. Implement mode manager (plan/build + read_only filtering + prompt overlay selection)
-9. Implement native function → `Tool` adapter:
-   - `functionTool` type implementing `tools.Tool`
-   - `InputSchema()` from loaded `input_schema_file`
-   - `Execute()` with JSON-over-stdin input delivery and schema validation
-   - `CommandRunner` + `PermissionRequester` interfaces (testable without real shell/TUI)
-   - bounded execution: timeout, retries
-   - `registerFunctionTools` with mode filtering + name-collision detection
 
 ### Phase 3 — Built-in Tools + MCP + Subagents
 
 10. Extract/copy built-in tools (read_file, write_file, edit_file, web_fetch, glob, grep, bash, call_mcp_tool, delegate_task)
 11. Extract/copy MCP client
 12. Extract/copy subagent discovery, profile parser, and runner from keen-code
-13. Wire tool registration (built-in via registry + functions via `registerFunctionTools` + MCP + subagents, with opt-out for excludable built-ins only; `call_mcp_tool` auto-included only when `mcp_config_dirs` is set; `delegate_task` auto-included only when `subagents_dirs` is set)
+13. Wire tool registration (built-in via registry + MCP + subagents, with opt-out for excludable built-ins only; `call_mcp_tool` auto-included only when `mcp_config_dirs` is set; `delegate_task` auto-included only when `subagents_dirs` is set)
 
 ### Phase 4 — TUI + Skills + Subagents
 
@@ -1034,7 +720,7 @@ before reporting so users see the full picture at once.
 20. Implement headless mode (`keen-agent run --agent ... --format ...`)
 21. Implement interactive full flow (`keen-agent --agent ...`: config → tools → prompt → loop)
 22. Write README + example agent configs
-23. Test critical paths (config parsing, native-function adapter: schema loading + JSON-stdin delivery + required-field validation + mode filtering and mode prompt overlays, permission gating, headless approval path, subagent delegation + read-only tool restriction, `btw` prompt/context behavior, adversary prompt/model)
+23. Test critical paths (config parsing, mode filtering and mode prompt overlays, permission gating, headless approval path, subagent delegation + read-only tool restriction, `btw` prompt/context behavior, adversary prompt/model)
 
 ---
 
@@ -1045,9 +731,8 @@ before reporting so users see the full picture at once.
 | Extracting from keen-code creates drift | **Accepted by design** — keen-agent is a generic harness and owns its copied code; no shared module |
 | keen-agent and keen-code conflict on disk/env | Separate `~/.keen-agent/` namespace and `KEEN_AGENT_*` env prefix |
 | Multiple keen-agent builds leak conversation state into each other | Store sessions, logs, and input history under `~/.keen-agent/<agent-name>/`; keep model/provider defaults and auth shared in `~/.keen-agent/configs.json` and `~/.keen-agent/auth.json` to avoid repeated setup |
-| Shell injection via function commands | Deliver model-provided inputs only as JSON over stdin; keep configured command strings static |
 | Tool output blows up context | Truncate oversized tool output at a sensible default |
-| Users misconfigure functions or tool sources silently | `keen-agent validate` catches issues before run |
+| Users misconfigure tool sources silently | `keen-agent validate` catches issues before run |
 | MCP server failures hard to debug | Surface MCP errors clearly in TUI |
 | Subagent tasks run too long or hang | Respect `timeout_seconds` per profile and overall context timeout; subagent output is bounded |
 
