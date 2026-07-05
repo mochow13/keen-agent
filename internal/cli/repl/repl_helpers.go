@@ -822,10 +822,33 @@ func (m *replModel) flushAdversaryToOutput() {
 }
 
 func (m *replModel) buildAdversaryClient() error {
-	resolved, err := config.ResolveAdversary(m.ctx.globalCfg)
-	if err != nil {
-		return err
+	var resolved *config.ResolvedConfig
+
+	if m.ctx.agentCfg != nil && m.ctx.agentCfg.Adversary.Model != nil {
+		provider := m.ctx.agentCfg.Adversary.Model.Provider
+		modelID := m.ctx.agentCfg.Adversary.Model.ModelID
+		providerCfg, _ := m.ctx.globalCfg.GetProviderConfig(provider)
+		apiKey, err := config.ResolveProviderAPIKey(provider, providerCfg)
+		if err == nil {
+			resolved = &config.ResolvedConfig{
+				Provider: provider,
+				Model:    modelID,
+				APIKey:   apiKey,
+				BaseURL:  providerCfg.BaseURL,
+				AuthMode: config.AuthModeForProvider(provider),
+				Headers:  providerCfg.Headers,
+			}
+		}
 	}
+
+	if resolved == nil {
+		var err error
+		resolved, err = config.ResolveAdversary(m.ctx.globalCfg)
+		if err != nil {
+			return err
+		}
+	}
+
 	client, err := llm.NewClient(resolved)
 	if err != nil {
 		return err

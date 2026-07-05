@@ -861,8 +861,11 @@ func (m *replModel) handleAdversaryCommand(input string) (replModel, tea.Cmd) {
 		return m.startAdversaryModelSelection(), nil
 	}
 
-	if m.ctx.globalCfg.AdversaryProvider == "" || m.ctx.globalCfg.AdversaryModel == "" {
-		m.output.AddStyledLine("  Run `/adversary model` to configure an adversary model", repltheme.HighlightStyle)
+	hasAgentAdversary := m.ctx.agentCfg != nil && m.ctx.agentCfg.Adversary.Model != nil && m.ctx.agentCfg.Adversary.Model.IsComplete()
+	hasGlobalAdversary := m.ctx.globalCfg.AdversaryProvider != "" && m.ctx.globalCfg.AdversaryModel != ""
+
+	if !hasAgentAdversary && !hasGlobalAdversary {
+		m.output.AddStyledLine("  Adversary not configured. Add `adversary.model` to your agent config, or run `/adversary model` to select one.", repltheme.HighlightStyle)
 		m.output.AddEmptyLine()
 		m.updateViewportContent()
 		m.viewport.GotoBottom()

@@ -218,7 +218,7 @@ Format:
 | Config validator | `keen-agent validate --agent ./agent.yaml` |
 | System prompt composer | Assemble prompt from config + tools + project instructions + skills + mode/helper prompt overlays |
 | Mode manager | plan/build mode with read_only filtering and config-driven prompt tuning |
-| Helper agents | Optional `btw` side-question helper and `adversary` critic with dedicated prompts/models |
+| Helper agents | Optional `btw` side-question helper (uses main model) and `adversary` critic with dedicated prompts/models |
 | Subagent loader | Discover and parse subagent profiles from `subagents_dirs` |
 | Subagent runner | Execute delegated tasks with a restricted tool registry (read_file, glob, grep only) |
 
@@ -365,7 +365,7 @@ instead of remaining coding-agent assumptions:
 
 | Helper | Current behavior | Generic config need |
 |--------|------------------|---------------------|
-| `btw` | One-shot side question using recent conversation context and no tools. Prompt comes from `BuildBtwPrompt`. | Optional helper with configurable prompt, context window, and model inheritance/override. |
+| `btw` | One-shot side question using recent conversation context and no tools. Prompt comes from `BuildBtwPrompt`. Uses the main session model. | Optional helper with configurable prompt and context window. |
 | `adversary` | Separate critic model reviews the conversation and has its own prompt from `BuildAdversaryPrompt`. | Optional critic with configurable prompt, model, and output stance. |
 
 ### `btw` config
@@ -632,7 +632,7 @@ before reporting so users see the full picture at once.
    - `modes` may only contain `plan` and `build` keys.
    - `builtin_tools.exclude` entries must match allowed sets.
    - `model` block, when present, must have `provider` and `model_id`.
-   - Helper `model` blocks (`btw`, `adversary`) must have `provider` and `model_id` when present.
+   - Helper `model` block (`adversary`) must have `provider` and `model_id` when present.
 
 3. **File existence checks (fatal)**
    - Each `system_prompt_files` entry exists and is readable.
@@ -654,7 +654,7 @@ before reporting so users see the full picture at once.
 
 6. **Runtime-readiness checks (warning only)**
    - If `model` is provided, warn when `~/.keen-agent/configs.json` is missing, the provider/model entry is missing, or required credentials are absent.
-   - If `btw` or `adversary` is enabled with a helper `model`, apply the same credential/model warnings.
+   - If `adversary` is enabled with a helper `model`, apply the same credential/model warnings.
    - If `mcp_config_dirs` is specified, warn when referenced MCP servers cannot be reached during validation (do not fail; servers may start later).
 
 7. **Result**
@@ -671,7 +671,7 @@ before reporting so users see the full picture at once.
 - `skills_dirs` entries exist (if specified)
 - `subagents_dirs` entries exist (if specified); each `.md` file has valid YAML frontmatter with required `name` and `description` fields
 - `default_mode` is `plan` or `build`; `modes` only contains `plan`/`build`, and each `system_prompt_files` entry exists if specified
-- `btw` config is valid when enabled (`context_messages` positive if set, prompt file exists if specified, model resolves if specified)
+- `btw` config is valid when enabled (`context_messages` positive if set, prompt file exists if specified)
 - `adversary` config is valid when enabled (prompt file exists if specified, model resolves if specified)
 - No duplicate callable names across built-in tools and MCP tools
 - No duplicate subagent names across discovered subagent profiles
@@ -712,7 +712,7 @@ before reporting so users see the full picture at once.
 14. Extract/copy TUI/REPL with customization hooks
 15. Extract/copy skill loader with agent-local + global discovery
 16. Extract/copy subagent loader with agent-local + global discovery
-17. Implement configurable `btw` and `adversary` one-shot helper flows with dedicated prompts and optional model overrides
+17. Implement configurable `btw` and `adversary` one-shot helper flows with dedicated prompts (adversary supports optional model override; btw uses main model)
 18. Implement session persistence (same format as keen-code)
 
 ### Phase 5 — Polish + Ship

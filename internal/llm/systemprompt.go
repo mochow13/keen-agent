@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 )
 
 type AgentMode string
@@ -14,7 +16,7 @@ const (
 	ModePlan  AgentMode = "plan"
 )
 
-const sharedPrompt = `You are Keen Agent, an expert coding agent running in terminal environment.
+const defaultPersona = `You are Keen Agent, an expert coding agent running in terminal environment.
 
 You help with software engineering tasks: fixing bugs, writing new features,
 refactoring code, explaining code, exploring codebases, writing tests, and more.
@@ -120,12 +122,14 @@ A structured list of files that are still important to continue the task.`
 
 const maxInstructionsSize = 8 * 1024
 
-func Build(workingDir, skillsCatalog, subagentsCatalog string, mode AgentMode) string {
+func Build(workingDir, skillsCatalog, subagentsCatalog string, mode AgentMode, agentCfg *agentconfig.Config) string {
 	var sb strings.Builder
-	sb.WriteString(sharedPrompt)
+
+	persona := resolvePersona(agentCfg)
+	sb.WriteString(persona)
 	sb.WriteString(fmt.Sprintf("\n\nWorking directory: %s", workingDir))
 
-	instructions := projectInstructions(workingDir)
+	instructions := resolveProjectInstructions(workingDir, agentCfg)
 	if instructions != "" {
 		sb.WriteString("\n\n")
 		sb.WriteString(instructions)
@@ -141,10 +145,21 @@ func Build(workingDir, skillsCatalog, subagentsCatalog string, mode AgentMode) s
 		sb.WriteString(subagentsCatalog)
 	}
 
+	modeStr := string(mode)
+	if modeStr == "" {
+		modeStr = agentconfig.ModeBuild
+	}
+
 	if mode == ModePlan {
 		sb.WriteString(planModePrompt)
 	} else {
 		sb.WriteString(buildModePrompt)
+	}
+
+	modeOverlay := resolveModeOverlay(agentCfg, modeStr)
+	if modeOverlay != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(modeOverlay)
 	}
 
 	return sb.String()
@@ -157,7 +172,7 @@ func BuildCompactionPrompt(extraPrompt string) string {
 	return compactionPrompt
 }
 
-const btwPrompt = `You are a helper agent for Keen Agent—an expert coding agent running in a terminal.
+const defaultBtwPrompt = `You are a helper agent for Keen Agent—an expert coding agent running in a terminal.
 
 Your role is to answer a quick side question ("btw") that is separate from the main task.
 You have recent conversation context (up to the last 5 exchanges) between the user and the main agent.
@@ -167,11 +182,12 @@ You have recent conversation context (up to the last 5 exchanges) between the us
 - You have no tool access — answer based on the conversation context and your knowledge.
 - Do not think too much unless the user explicitly asks you to.`
 
-func BuildBtwPrompt(workingDir string) string {
-	return btwPrompt + fmt.Sprintf("\n\nWorking directory: %s", workingDir)
+func BuildBtwPrompt(workingDir string, agentCfg *agentconfig.Config) string {
+	prompt := resolveBtwPrompt(agentCfg)
+	return prompt + fmt.Sprintf("\n\nWorking directory: %s", workingDir)
 }
 
-const adversaryPrompt = `You are an adversarial critic reviewing the main agent's work in this conversation.
+const defaultAdversaryPrompt = `You are an adversarial critic reviewing the main agent's work in this conversation.
 Your job is to find problems — in the main agent's output, code changes, reasoning, plans, and suggestions.
 
 For code changes: find bugs, logic errors, security issues, missing edge cases, and risks the main agent missed.
@@ -183,8 +199,9 @@ and identify alternatives it didn't consider.
 Be brief and direct. Lead with the most important issue. Skip preamble and filler.
 If nothing significant is wrong, say so in one sentence.`
 
-func BuildAdversaryPrompt(workingDir string) string {
-	return adversaryPrompt + fmt.Sprintf("\n\nWorking directory: %s", workingDir)
+func BuildAdversaryPrompt(workingDir string, agentCfg *agentconfig.Config) string {
+	prompt := resolveAdversaryPrompt(agentCfg)
+	return prompt + fmt.Sprintf("\n\nWorking directory: %s", workingDir)
 }
 
 func projectInstructions(workingDir string) string {
@@ -227,4 +244,111 @@ func findUpward(dir string, candidates []string) (string, string) {
 	}
 
 	return "", ""
+}
+
+func resolvePersona(cfg *agentconfig.Config) string {
+	if cfg == nil {
+		return defaultPersona
+	}
+
+	var parts []string
+	if inline := strings.TrimSpace(cfg.SystemPrompt); inline != "" {
+		parts = append(parts, inline)
+	}
+	for _, f := range cfg.ResolvedSystemPromptFiles() {
+		if content := readFileContent(f); content != "" {
+			parts = append(parts, content)
+		}
+	}
+	if len(parts) == 0 {
+		return defaultPersona
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func resolveProjectInstructions(workingDir string, cfg *agentconfig.Config) string {
+	if cfg == nil {
+		return projectInstructions(workingDir)
+	}
+	p := cfg.ResolvedProjectInstructions()
+	if p == "" {
+		return projectInstructions(workingDir)
+	}
+	content := readFileContent(p)
+	if content == "" {
+		return projectInstructions(workingDir)
+	}
+	if len(content) > maxInstructionsSize {
+		content = content[:maxInstructionsSize] + fmt.Sprintf("\n[truncated — full file at %s]", p)
+	}
+	return fmt.Sprintf("# Project Instructions (from %s)\n\n%s", p, content)
+}
+
+func resolveModeOverlay(cfg *agentconfig.Config, mode string) string {
+	if cfg == nil || len(cfg.Modes) == 0 {
+		return ""
+	}
+	mc, ok := cfg.Modes[mode]
+	if !ok {
+		return ""
+	}
+
+	var parts []string
+	if inline := strings.TrimSpace(mc.SystemPrompt); inline != "" {
+		parts = append(parts, inline)
+	}
+	for _, f := range cfg.ResolvedModeSystemPromptFiles(mode) {
+		if content := readFileContent(f); content != "" {
+			parts = append(parts, content)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func resolveBtwPrompt(cfg *agentconfig.Config) string {
+	if cfg == nil || cfg.Btw == nil {
+		return defaultBtwPrompt
+	}
+
+	var parts []string
+	if inline := strings.TrimSpace(cfg.Btw.SystemPrompt); inline != "" {
+		parts = append(parts, inline)
+	}
+	for _, f := range cfg.ResolvedBtwSystemPromptFiles() {
+		if content := readFileContent(f); content != "" {
+			parts = append(parts, content)
+		}
+	}
+	if len(parts) == 0 {
+		return defaultBtwPrompt
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func resolveAdversaryPrompt(cfg *agentconfig.Config) string {
+	if cfg == nil || cfg.Adversary == nil {
+		return defaultAdversaryPrompt
+	}
+
+	var parts []string
+	if inline := strings.TrimSpace(cfg.Adversary.SystemPrompt); inline != "" {
+		parts = append(parts, inline)
+	}
+	for _, f := range cfg.ResolvedAdversarySystemPromptFiles() {
+		if content := readFileContent(f); content != "" {
+			parts = append(parts, content)
+		}
+	}
+	if len(parts) == 0 {
+		return defaultAdversaryPrompt
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func readFileContent(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }

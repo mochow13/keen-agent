@@ -162,7 +162,6 @@ type ModeConfig struct {
 type BtwConfig struct {
 	Enabled           bool          `yaml:"enabled"`
 	ContextMessages   int           `yaml:"context_messages,omitempty"`
-	Model             *ModelRef     `yaml:"model,omitempty"`
 	SystemPrompt      string        `yaml:"system_prompt,omitempty"`
 	SystemPromptFiles StringOrArray `yaml:"system_prompt_files,omitempty"`
 }
@@ -313,9 +312,6 @@ func validateScalarShape(cfg *Config, res *ValidationResult) {
 	if cfg.Btw != nil && cfg.Btw.Enabled {
 		if cfg.Btw.ContextMessages < 0 {
 			res.addError("btw.context_messages", "must be non-negative")
-		}
-		if cfg.Btw.Model != nil && !cfg.Btw.Model.IsComplete() {
-			res.addError("btw.model", "model block requires both provider and model_id")
 		}
 	}
 	if cfg.Adversary != nil && cfg.Adversary.Enabled {

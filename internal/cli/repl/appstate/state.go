@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/llm"
 	"github.com/mochow13/keen-agent/internal/skills"
@@ -25,6 +26,7 @@ type AppState struct {
 	skills          skills.Discovery
 	skillsConfig    skills.Config
 	subagents       subagents.Discovery
+	agentCfg        *agentconfig.Config
 }
 
 func New(client llm.LLMClient, workingDir string) *AppState {
@@ -176,7 +178,7 @@ func (s *AppState) StreamChat(ctx context.Context, cfg *config.ResolvedConfig, o
 	}
 	systemMsg := llm.Message{
 		Role:    llm.RoleSystem,
-		Content: llm.Build(s.workingDir, s.SkillsCatalog(), s.SubagentsCatalog(), s.mode),
+		Content: llm.Build(s.workingDir, s.SkillsCatalog(), s.SubagentsCatalog(), s.mode, s.agentCfg),
 	}
 	messages := append([]llm.Message{systemMsg}, s.GetMessages()...)
 	registry := s.toolRegistry
@@ -225,7 +227,7 @@ func (s *AppState) StreamBtw(ctx context.Context, question string, opts ...llm.S
 	}
 	history := btwContext(s.messages, 10)
 	messages := make([]llm.Message, 0, 2+len(history))
-	messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: llm.BuildBtwPrompt(s.workingDir)})
+	messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: llm.BuildBtwPrompt(s.workingDir, s.agentCfg)})
 	messages = append(messages, history...)
 	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: question})
 	streamOpts := llm.StreamOptions{OneShot: true}
@@ -241,7 +243,7 @@ func (s *AppState) StreamAdversary(ctx context.Context, focus string) (<-chan ll
 	}
 	history := s.GetMessages()
 	messages := make([]llm.Message, 0, 2+len(history))
-	messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: llm.BuildAdversaryPrompt(s.workingDir)})
+	messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: llm.BuildAdversaryPrompt(s.workingDir, s.agentCfg)})
 	for _, msg := range history {
 		if msg.Role == llm.RoleAssistant {
 			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: "[main agent]: " + msg.Content})
@@ -331,6 +333,10 @@ func (s *AppState) Mode() llm.AgentMode {
 
 func (s *AppState) WorkingDir() string {
 	return s.workingDir
+}
+
+func (s *AppState) SetAgentConfig(cfg *agentconfig.Config) {
+	s.agentCfg = cfg
 }
 
 func (s *AppState) SetLastUsage(usage *llm.TokenUsage) {

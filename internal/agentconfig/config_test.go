@@ -63,9 +63,6 @@ modes:
 btw:
   enabled: true
   context_messages: 10
-  model:
-    provider: openai
-    model_id: gpt-5.4-mini
   system_prompt: Be concise.
   system_prompt_files:
     - ./prompts/btw.md
@@ -142,9 +139,6 @@ skills_dirs:
 	}
 	if cfg.Btw.ContextMessages != 10 {
 		t.Errorf("expected btw context_messages 10, got %d", cfg.Btw.ContextMessages)
-	}
-	if cfg.Btw.Model == nil || cfg.Btw.Model.Provider != "openai" {
-		t.Errorf("unexpected btw model: %+v", cfg.Btw.Model)
 	}
 	if cfg.Adversary == nil || !cfg.Adversary.Enabled {
 		t.Fatal("expected adversary enabled")

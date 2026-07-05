@@ -170,6 +170,7 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 	as.Style = lipgloss.NewStyle().Foreground(repltheme.SecondaryColor)
 
 	appState := replappstate.New(llmClient, ctx.workingDir)
+	appState.SetAgentConfig(ctx.agentCfg)
 
 	projectPerms, projectPermsErr := config.LoadProjectPermissions(ctx.workingDir)
 	if projectPermsErr != nil {

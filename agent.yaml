@@ -3,9 +3,42 @@ ascii_art: |
   ░▀█▀░█▀▀░█▀▀░▀█▀░░░█▀█░█▀▀░█▀▀░█▀█░▀█▀
   ░░█░░█▀▀░▀▀█░░█░░░░█▀█░█░█░█▀▀░█░█░░█░
   ░░▀░░▀▀▀░▀▀▀░░▀░░░░▀░▀░▀▀▀░▀▀▀░▀░▀░░▀░
+
+# Persona: inline + file (both composed together)
 system_prompt: |
-  You are a helpful assistant. Keep responses concise.
+  You are TestAgent. Inline persona line for testing.
+system_prompt_files: testdata/prompts/persona.md
+
+# Project instructions override
+project_instructions: AGENTS.md
+
 default_mode: build
+
 model:
-    model_id: claude-sonnet-4-6
-    provider: anthropic
+  model_id: deepseek-v4-flash
+  provider: opencode-go
+
+# Mode overlays: inline + file per mode
+modes:
+  build:
+    system_prompt: |
+      Build mode inline overlay: always verify with tests.
+    system_prompt_files: testdata/prompts/mode-build.md
+  plan:
+    system_prompt: |
+      Plan mode inline overlay: never modify files.
+    system_prompt_files: testdata/prompts/mode-plan.md
+
+# Btw helper: custom prompt from file
+btw:
+  enabled: true
+  context_messages: 5
+  system_prompt_files: testdata/prompts/btw.md
+
+# Adversary: custom prompt from file
+adversary:
+  enabled: true
+  model:
+    model_id: deepseek-v4-flash
+    provider: opencode-go
+  system_prompt_files: testdata/prompts/adversary.md
