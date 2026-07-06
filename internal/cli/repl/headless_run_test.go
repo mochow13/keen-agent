@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mochow13/keen-agent/internal/config"
@@ -153,6 +154,34 @@ func TestRunHeadless_WritesJSON(t *testing.T) {
 	}
 	if decoded.SessionID == "" || decoded.Text != "json response" {
 		t.Fatalf("unexpected json result: %#v", decoded)
+	}
+}
+
+func TestRunHeadless_PlanModeSetsSystemPrompt(t *testing.T) {
+	workingDir := setupHeadlessTestHome(t)
+	client := &recordingHeadlessClient{events: []llm.StreamEvent{
+		{Type: llm.StreamEventTypeChunk, Content: "ok"},
+		{Type: llm.StreamEventTypeDone},
+	}}
+
+	_, err := RunHeadless(context.Background(), HeadlessRunOptions{
+		WorkingDir: workingDir,
+		Config:     headlessTestConfig(),
+		Client:     client,
+		Prompt:     "prompt",
+		Mode:       llm.ModePlan,
+	})
+	if err != nil {
+		t.Fatalf("RunHeadless() error = %v", err)
+	}
+	if len(client.messages) != 1 || len(client.messages[0]) == 0 {
+		t.Fatalf("expected one StreamChat call with messages, got %#v", client.messages)
+	}
+	if client.messages[0][0].Role != llm.RoleSystem {
+		t.Fatalf("expected first message to be system, got %q", client.messages[0][0].Role)
+	}
+	if !strings.Contains(client.messages[0][0].Content, "# Active mode: plan") {
+		t.Fatalf("expected plan mode system prompt, got %q", client.messages[0][0].Content)
 	}
 }
 

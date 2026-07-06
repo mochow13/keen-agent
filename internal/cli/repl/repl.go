@@ -54,6 +54,7 @@ type replContext struct {
 	mcp           keenmcp.Runtime
 	resumeSession *session.LoadedSession
 	modelWarning  string
+	mode          llm.AgentMode
 }
 
 type replModel struct {
@@ -229,6 +230,7 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 		projectPermsErr:      projectPermsErr,
 		streamRenderInterval: streamRenderInterval,
 	}
+	model.setMode(ctx.mode)
 	if ctx.globalCfg != nil && ctx.globalCfg.ShowThinking != nil {
 		model.showThinking = *ctx.globalCfg.ShowThinking
 	}
@@ -906,6 +908,7 @@ func RunREPL(
 	resumeSession *session.LoadedSession,
 	agentCfg *agentconfig.Config,
 	modelWarning string,
+	mode llm.AgentMode,
 ) (string, error) {
 	ctx := &replContext{
 		version:       version,
@@ -918,6 +921,7 @@ func RunREPL(
 		mcp:           mcpRuntime,
 		resumeSession: resumeSession,
 		modelWarning:  modelWarning,
+		mode:          mode,
 	}
 
 	var llmClient llm.LLMClient

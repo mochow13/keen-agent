@@ -30,6 +30,7 @@ type HeadlessRunOptions struct {
 	Prompt     string
 	Format     string
 	Out        io.Writer
+	Mode       llm.AgentMode
 }
 
 type HeadlessRunResult struct {
@@ -65,6 +66,7 @@ func RunHeadless(ctx context.Context, opts HeadlessRunOptions) (*HeadlessRunResu
 
 	appState := replappstate.New(opts.Client, opts.WorkingDir)
 	appState.SetAgentConfig(opts.AgentCfg)
+	appState.SetMode(opts.Mode)
 	permissionRequester := replpermissions.NewAutoApproveRequester()
 	diffEmitter := repltooling.NewDiffEmitter()
 	repltooling.SetupToolRegistry(opts.WorkingDir, appState, permissionRequester, diffEmitter, nil, opts.Config)

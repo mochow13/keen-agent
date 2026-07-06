@@ -744,3 +744,132 @@ before reporting so users see the full picture at once.
 - Agent registry/distribution
 - HTTP tool type (direct API calls without shell)
 - Auto-migration of config format if schema evolves
+
+---
+
+## Remaining Implementation TODO
+
+The following items are derived from the gap between `plan.md` and the current
+implementation. Each item includes what to change, the relevant files, and the
+acceptance criteria. Items are ordered by dependency and impact.
+
+### CLI commands and flags
+
+- [x] **Add `keen-agent validate --agent ./agent.yaml` command.**
+  - Add a new `validate` Cobra subcommand in `internal/cli/cmd/` (or extend `internal/cli/cmd/root.go`).
+  - It must call `agentconfig.LoadAndValidate` on the `--agent` path.
+  - Print validation errors (fatal) and warnings separately.
+  - Exit non-zero on fatal errors; exit zero on warnings only.
+  - Acceptance: `keen-agent validate --agent ./agent.yaml` reports schema errors, missing files, and runtime warnings; `go test -race ./...` passes.
+
+- [x] **Add `--mode plan|build` CLI flag to both interactive and headless invocations.**
+  - Add `--mode` to root command flags in `internal/cli/cmd/root.go`.
+  - Add `--mode` to `keen-agent run` command flags in `internal/cli/repl/headless_run.go`.
+  - If provided, the flag overrides `default_mode` for the process/session.
+  - Validation: reject values other than `plan` or `build`.
+  - Acceptance: `keen-agent --agent ./agent.yaml --mode plan` starts the REPL in plan mode; `keen-agent run --agent ./agent.yaml --mode plan` uses plan-mode tool filtering.
+
+### Config-driven runtime wiring
+
+- [ ] **Wire `agent.yaml` `mcp_config_dirs` into MCP runtime loading.**
+  - Currently `internal/mcp/manager.go` loads from project/global/static paths, not from config.
+  - Parse `mcp_config_dirs` from the loaded `AgentConfig` and pass those JSON paths into the MCP manager.
+  - Maintain the project/global fallback only when `mcp_config_dirs` is omitted or empty.
+  - Acceptance: an agent with `mcp_config_dirs: ["./mcp.json"]` loads only the servers defined there; tests prove config paths are prioritized.
+
+- [ ] **Wire `agent.yaml` `subagents_dirs` into subagent discovery.**
+  - Update `internal/subagents/discover.go` to accept configured directories from `AgentConfig`.
+  - Process them in the order listed, relative to the `agent.yaml` location, before falling back to project/global paths.
+  - Acceptance: an agent with `subagents_dirs: ["./agents"]` discovers subagents from that directory; duplicates across dirs are still rejected.
+
+- [ ] **Wire `agent.yaml` `skills_dirs` into skill discovery.**
+  - Update `internal/skills/discover.go` to use configured directories from `AgentConfig`.
+  - Process them in order, relative to the `agent.yaml` location, before falling back to project/global paths.
+  - Acceptance: an agent with `skills_dirs: ["./skills"]` lists only those skills (plus later fallbacks); the skill catalog reflects config order.
+
+- [ ] **Implement agent-scoped state directories.**
+  - Compute a filesystem-safe agent name slug plus optional disambiguator from the absolute `agent.yaml` path.
+  - Use `~/.keen-agent/<agent-name>/` for sessions, logs, and input history.
+  - Update `internal/session/path.go`, `internal/logging/logging.go`, and `internal/cli/repl/repl.go` history path.
+  - Acceptance: two different agents with the same `name` but different paths get separate session/log/history directories; existing tests still pass.
+
+### Tool registry and mode behavior
+
+- [ ] **Respect `builtin_tools.exclude` in tool registration.**
+  - Modify `internal/cli/repl/tooling/tool_registry.go:SetupToolRegistry` to read `AgentConfig.BuiltinTools.Exclude`.
+  - Skip registering any excludable built-in whose name appears in the exclude list.
+  - Preserve registration of `call_mcp_tool` and `delegate_task` (these are not excludable; see next item).
+  - Acceptance: an agent with `builtin_tools.exclude: [bash]` cannot invoke `bash`; validation still accepts the list.
+
+- [ ] **Auto-include `call_mcp_tool` and `delegate_task` only when their config dirs are set.**
+  - In `internal/cli/repl/tooling/tool_registry.go:SetupToolRegistry`:
+    - Register `call_mcp_tool` only when `len(mcp_config_dirs) > 0`.
+    - Register `delegate_task` only when `len(subagents_dirs) > 0`.
+  - Update config validation to reject attempts to put `call_mcp_tool` or `delegate_task` in `builtin_tools.exclude`.
+  - Acceptance: an agent without `mcp_config_dirs` has no `call_mcp_tool`; an agent without `subagents_dirs` has no `delegate_task`.
+
+- [ ] **Honor `default_mode` at startup and apply full plan-mode tool filtering.**
+  - In `internal/cli/repl/repl.go`, use `AgentConfig.EffectiveDefaultMode()` instead of hard-coding `ModeBuild`.
+  - In `internal/cli/repl/appstate/state.go`, remove all non-read-only tools in plan mode, not just `write_file` and `edit_file`.
+  - A tool is read-only if its metadata marks it as such; currently `bash` and any future non-read-only tools must be removed.
+  - Acceptance: an agent with `default_mode: plan` starts in plan mode and cannot invoke `bash`, `write_file`, or `edit_file`.
+
+### Helper agents (`btw` and `adversary`)
+
+- [ ] **Honor `btw.enabled` and `btw.context_messages`.**
+  - In `internal/cli/repl/command_handlers.go`, skip the `/btw` flow entirely when `AgentConfig.Btw.Enabled` is false.
+  - Replace the hard-coded `10` context messages with `AgentConfig.Btw.ContextMessages`.
+  - Default omitted `btw` config to `enabled: false` for generic agents.
+  - Acceptance: `/btw` is unavailable/disabled when `btw.enabled: false`; changing `context_messages` changes how many messages are included.
+
+- [ ] **Honor `adversary.enabled`.**
+  - In `internal/cli/repl/command_handlers.go`, skip the `/adversary` flow when `AgentConfig.Adversary.Enabled` is false.
+  - Default omitted `adversary` config to `enabled: false` for generic agents.
+  - Acceptance: `/adversary` is unavailable/disabled when `adversary.enabled: false`.
+
+- [ ] **Support optional `model` override for `btw` helper.**
+  - Currently the plan documents an optional `model` block for `btw`, but it may not be wired.
+  - Resolve the helper model using the same rules as the main model when the block is present; inherit the main model when absent.
+  - Acceptance: a `btw` with its own `model` block uses that provider/model.
+
+### Validation improvements
+
+- [ ] **Add runtime-readiness warnings to validation.**
+  - In `internal/agentconfig/config.go` validation, add a warning step (separate from fatal errors):
+    - If `model` is provided, warn when `~/.keen-agent/configs.json` is missing, the provider/model entry is missing, or required credentials are absent.
+    - If `adversary` has its own `model`, apply the same credential/model warnings.
+    - If `mcp_config_dirs` is specified, warn when an MCP server cannot be reached during validation (non-fatal; servers may start later).
+  - Return warnings alongside the parsed config so the CLI and REPL can print them once.
+  - Acceptance: `keen-agent validate` prints credential warnings but exits zero when no fatal errors exist.
+
+- [ ] **Add duplicate-name checks across callables and subagents.**
+  - In validation, detect duplicate names between built-in tools and MCP tools.
+  - Detect duplicate subagent names across discovered subagent profiles from all `subagents_dirs`.
+  - Treat these as fatal errors.
+  - Acceptance: two MCP tools with the same name, or two subagents with the same name, cause validation to fail with a clear message.
+
+### Dead code / cleanup
+
+- [ ] **Remove or wire the unused `Functions` config field.**
+  - `internal/agentconfig/config.go` defines a `Functions` field that is not in `plan.md` and is not used.
+  - Either delete the field and its parsing, or document and wire it if it is intentional.
+  - Acceptance: the codebase compiles and tests pass after removal/rename.
+
+### Documentation and examples
+
+- [ ] **Write README and example agent configurations.**
+  - Create a top-level `README.md` covering installation, `agent.yaml` format, CLI usage, validation, modes, skills, subagents, and MCP.
+  - Create an `examples/` directory with at least:
+    - A minimal agent (`examples/minimal/agent.yaml`).
+    - A plan/build agent with mode overlays (`examples/plan-build/agent.yaml`).
+    - An agent with subagents (`examples/with-subagents/agent.yaml` + example `.md` subagents).
+    - An agent with MCP (`examples/with-mcp/agent.yaml` + `mcp-config.json`).
+  - Acceptance: each example directory has a valid `agent.yaml` that passes `keen-agent validate`.
+
+### Final verification
+
+- [ ] **Run final test and formatting checklist after all changes.**
+  - `go test -race ./...`
+  - `go mod tidy`
+  - `gofmt -w` on all modified Go files
+  - Acceptance: all commands complete without errors.

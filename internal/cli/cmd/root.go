@@ -27,6 +27,7 @@ var newMCPManager = func(opts ...keenmcp.Option) (keenmcp.Runtime, error) {
 func NewRootCommand(version string) *cobra.Command {
 	var resumeSessionID string
 	var agentFile string
+	var modeFlag string
 
 	cmd := &cobra.Command{
 		Use:   "keen-agent",
@@ -43,6 +44,11 @@ func NewRootCommand(version string) *cobra.Command {
 			}
 
 			agentCfg, err := loadAgentConfig(wd, agentFile)
+			if err != nil {
+				return err
+			}
+
+			mode, err := resolveModeOverride(agentCfg, modeFlag)
 			if err != nil {
 				return err
 			}
@@ -66,7 +72,7 @@ func NewRootCommand(version string) *cobra.Command {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "MCP unavailable: %v\n", mcpErr)
 			}
 
-			sessionID, err := repl.RunREPL(version, wd, resolvedCfg, loader, globalCfg, registry, needsSetup, mcpManager, resumeSession, agentCfg, modelWarning)
+			sessionID, err := repl.RunREPL(version, wd, resolvedCfg, loader, globalCfg, registry, needsSetup, mcpManager, resumeSession, agentCfg, modelWarning, mode)
 			if err != nil {
 				return err
 			}
@@ -80,7 +86,9 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd.Version = version
 	cmd.Flags().StringVar(&resumeSessionID, "resume", "", "resume a specific Keen Agent session by ID")
 	cmd.Flags().StringVar(&agentFile, "agent", "", "path to agent.yaml config (required)")
+	cmd.Flags().StringVar(&modeFlag, "mode", "", "active mode: plan or build")
 	cmd.AddCommand(newRunCommand())
+	cmd.AddCommand(newValidateCommand())
 	return cmd
 }
 
@@ -109,6 +117,7 @@ func newRunCommand() *cobra.Command {
 	var providerID string
 	var modelID string
 	var agentFile string
+	var modeFlag string
 
 	runCmd := &cobra.Command{
 		Use:   "run [flags] <message...>",
@@ -125,6 +134,11 @@ func newRunCommand() *cobra.Command {
 				wd = "."
 			}
 			agentCfg, err := loadAgentConfig(wd, agentFile)
+			if err != nil {
+				return err
+			}
+
+			mode, err := resolveModeOverride(agentCfg, modeFlag)
 			if err != nil {
 				return err
 			}
@@ -179,6 +193,7 @@ func newRunCommand() *cobra.Command {
 				Prompt:     prompt,
 				Format:     format,
 				Out:        cmd.OutOrStdout(),
+				Mode:       mode,
 			})
 			return err
 		},
@@ -188,6 +203,7 @@ func newRunCommand() *cobra.Command {
 	runCmd.Flags().StringVar(&providerID, "provider", "", "provider to use for this run")
 	runCmd.Flags().StringVar(&modelID, "model", "", "model to use for this run")
 	runCmd.Flags().StringVar(&agentFile, "agent", "", "path to agent.yaml config (required)")
+	runCmd.Flags().StringVar(&modeFlag, "mode", "", "active mode: plan or build")
 	return runCmd
 }
 
@@ -334,6 +350,67 @@ func shouldReadStdin(stdin *os.File) bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice == 0
+}
+
+func resolveModeOverride(agentCfg *agentconfig.Config, modeFlag string) (llm.AgentMode, error) {
+	if modeFlag != "" && modeFlag != agentconfig.ModePlan && modeFlag != agentconfig.ModeBuild {
+		return "", fmt.Errorf("invalid --mode %q; must be %q or %q", modeFlag, agentconfig.ModePlan, agentconfig.ModeBuild)
+	}
+	mode := agentCfg.EffectiveDefaultMode()
+	if modeFlag != "" {
+		mode = modeFlag
+	}
+	if mode == agentconfig.ModePlan {
+		return llm.ModePlan, nil
+	}
+	return llm.ModeBuild, nil
+}
+
+func newValidateCommand() *cobra.Command {
+	var agentFile string
+
+	validateCmd := &cobra.Command{
+		Use:   "validate --agent ./agent.yaml",
+		Short: "Validate an agent configuration file",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			wd, err := os.Getwd()
+			if err != nil {
+				wd = "."
+			}
+			path, err := resolveAgentConfigPath(wd, agentFile)
+			if err != nil {
+				return err
+			}
+
+			cfg, err := agentconfig.Load(path)
+			if err != nil {
+				return err
+			}
+
+			res := agentconfig.Validate(cfg)
+			if !res.OK() {
+				for _, issue := range res.Errors {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s: %s\n", issue.Path, issue.Message)
+				}
+				return fmt.Errorf("agent config %q is invalid", path)
+			}
+
+			if len(res.Warnings) > 0 {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Warnings:")
+				for _, issue := range res.Warnings {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s\n", issue.Path, issue.Message)
+				}
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "agent config %q is valid\n", path)
+			}
+			return nil
+		},
+	}
+	validateCmd.Flags().StringVar(&agentFile, "agent", "", "path to agent.yaml config (required)")
+	validateCmd.SilenceUsage = true
+	validateCmd.SilenceErrors = true
+	return validateCmd
 }
 
 func loadAgentConfig(workingDir, explicitPath string) (*agentconfig.Config, error) {

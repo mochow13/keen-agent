@@ -304,13 +304,29 @@ func TestBuildInitialScreen_HighlightsModelOnly(t *testing.T) {
 
 func TestInitialModel_DimsBlurredPromptGlyph(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := initialModel(&replContext{version: "test", workingDir: t.TempDir(), cfg: &config.ResolvedConfig{}}, nil, false)
+	m := initialModel(
+		&replContext{version: "test", workingDir: t.TempDir(), cfg: &config.ResolvedConfig{}}, nil, false)
 	styles := m.textarea.Styles()
 
 	got := styles.Blurred.Prompt.Render(" ▶ ")
 	want := repltheme.InputRuleBlurredStyle.Render(" ▶ ")
 	if got != want {
 		t.Fatalf("expected blurred prompt glyph to use blurred input style, got %q want %q", got, want)
+	}
+}
+
+func TestInitialModel_RespectsContextMode(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := initialModel(
+		&replContext{version: "test", workingDir: t.TempDir(), cfg: &config.ResolvedConfig{}, mode: llm.ModePlan},
+		nil,
+		false,
+	)
+	if m.mode != llm.ModePlan {
+		t.Fatalf("expected initial mode %q, got %q", llm.ModePlan, m.mode)
+	}
+	if m.appState.Mode() != llm.ModePlan {
+		t.Fatalf("expected app state mode %q, got %q", llm.ModePlan, m.appState.Mode())
 	}
 }
 

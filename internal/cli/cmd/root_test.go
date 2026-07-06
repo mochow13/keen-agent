@@ -1,14 +1,18 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mochow13/keen-agent/internal/agentconfig"
 	"github.com/mochow13/keen-agent/internal/config"
+	"github.com/mochow13/keen-agent/internal/llm"
 	keenmcp "github.com/mochow13/keen-agent/internal/mcp"
 	"github.com/mochow13/keen-agent/internal/providers"
 )
@@ -314,6 +318,114 @@ func TestNewRunCommand_HasAgentFlag(t *testing.T) {
 	}
 	if runCmd.Flags().Lookup("agent") == nil {
 		t.Fatal("expected run command to have --agent flag")
+	}
+}
+
+func TestNewRootCommand_HasModeFlag(t *testing.T) {
+	cmd := NewRootCommand("0.1.0")
+	if cmd.Flags().Lookup("mode") == nil {
+		t.Fatal("expected root command to have --mode flag")
+	}
+}
+
+func TestNewRunCommand_HasModeFlag(t *testing.T) {
+	cmd := NewRootCommand("0.1.0")
+	runCmd, _, err := cmd.Find([]string{"run"})
+	if err != nil {
+		t.Fatalf("Find(run) error = %v", err)
+	}
+	if runCmd.Flags().Lookup("mode") == nil {
+		t.Fatal("expected run command to have --mode flag")
+	}
+}
+
+func TestNewRootCommand_HasValidateCommand(t *testing.T) {
+	cmd := NewRootCommand("0.1.0")
+	validateCmd, _, err := cmd.Find([]string{"validate"})
+	if err != nil {
+		t.Fatalf("Find(validate) error = %v", err)
+	}
+	if validateCmd == nil || validateCmd.Name() != "validate" {
+		t.Fatalf("expected validate command, got %#v", validateCmd)
+	}
+	if validateCmd.Flags().Lookup("agent") == nil {
+		t.Fatal("expected validate command to have --agent flag")
+	}
+}
+
+func TestValidateCommand_ValidConfig(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "agent.yaml")
+	if err := os.WriteFile(path, []byte("name: test\nsystem_prompt: hi\n"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	cmd := NewRootCommand("0.1.0")
+	cmd.SetArgs([]string{"validate", "--agent", path})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, output = %q", err, out.String())
+	}
+	if !strings.Contains(out.String(), "is valid") {
+		t.Fatalf("expected valid output, got %q", out.String())
+	}
+}
+
+func TestValidateCommand_InvalidConfig(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "agent.yaml")
+	if err := os.WriteFile(path, []byte("name: \"\"\n"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	cmd := NewRootCommand("0.1.0")
+	cmd.SetArgs([]string{"validate", "--agent", path})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid config")
+	}
+	// Mirror what cmd/main.go prints so the assertion reflects real CLI output.
+	_, _ = fmt.Fprintf(&out, "Error: %v\n", err)
+
+	if !strings.Contains(out.String(), "Error:") {
+		t.Fatalf("expected error output, got %q", out.String())
+	}
+	summary := fmt.Sprintf("agent config %q is invalid", path)
+	if strings.Count(out.String(), summary) != 1 {
+		t.Fatalf("expected summary %q exactly once, got %q", summary, out.String())
+	}
+}
+
+func TestResolveModeOverride(t *testing.T) {
+	cfg := &agentconfig.Config{DefaultMode: agentconfig.ModePlan}
+
+	tests := []struct {
+		name    string
+		flag    string
+		cfg     *agentconfig.Config
+		want    llm.AgentMode
+		wantErr bool
+	}{
+		{"config default plan", "", cfg, llm.ModePlan, false},
+		{"flag overrides config", "build", cfg, llm.ModeBuild, false},
+		{"flag plan", "plan", cfg, llm.ModePlan, false},
+		{"invalid flag", "debug", cfg, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveModeOverride(tt.cfg, tt.flag)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveModeOverride() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("resolveModeOverride() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
