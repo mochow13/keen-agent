@@ -11,12 +11,12 @@ func TestSessionsRootDir_UsesHome(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	got, err := sessionsRootDir()
+	got, err := sessionsRootDir("agent")
 	if err != nil {
 		t.Fatalf("sessionsRootDir() error = %v", err)
 	}
 
-	want := filepath.Join(tmp, ".keen-agent", "sessions")
+	want := filepath.Join(tmp, ".keen-agent", "agent", "sessions")
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}

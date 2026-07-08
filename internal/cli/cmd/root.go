@@ -60,13 +60,17 @@ func NewRootCommand(version string) *cobra.Command {
 
 			var resumeSession *session.LoadedSession
 			if resumeSessionID != "" {
-				resumeSession, err = loadResumeSession(wd, resumeSessionID)
+				var agentSlug string
+				if agentCfg != nil {
+					agentSlug = agentCfg.AgentSlug()
+				}
+				resumeSession, err = loadResumeSession(wd, resumeSessionID, agentSlug)
 				if err != nil {
 					return err
 				}
 			}
 
-			mcpManager, closeMCP, mcpErr := startMCPRuntime(context.Background())
+			mcpManager, closeMCP, mcpErr := startMCPRuntime(context.Background(), agentCfg)
 			defer closeMCP()
 			if mcpErr != nil {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "MCP unavailable: %v\n", mcpErr)
@@ -92,8 +96,14 @@ func NewRootCommand(version string) *cobra.Command {
 	return cmd
 }
 
-func startMCPRuntime(ctx context.Context) (keenmcp.Runtime, func(), error) {
-	manager, err := newMCPManager()
+func startMCPRuntime(ctx context.Context, agentCfg *agentconfig.Config) (keenmcp.Runtime, func(), error) {
+	var opts []keenmcp.Option
+	if agentCfg != nil {
+		if dirs := agentCfg.ResolvedMCPConfigDirs(); len(dirs) > 0 {
+			opts = append(opts, keenmcp.WithConfigPaths(dirs))
+		}
+	}
+	manager, err := newMCPManager(opts...)
 	if err != nil {
 		return nil, func() {}, err
 	}
@@ -178,7 +188,7 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, closeMCP, mcpErr := startMCPRuntime(context.Background())
+			_, closeMCP, mcpErr := startMCPRuntime(context.Background(), agentCfg)
 			defer closeMCP()
 			if mcpErr != nil {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "MCP unavailable: %v\n", mcpErr)

@@ -6,8 +6,8 @@ import (
 	"github.com/mochow13/keen-agent/internal/session"
 )
 
-func loadResumeSession(workingDir, sessionID string) (*session.LoadedSession, error) {
-	store, err := session.NewStore(workingDir)
+func loadResumeSession(workingDir, sessionID, agentSlug string) (*session.LoadedSession, error) {
+	store, err := session.NewStore(workingDir, agentSlug)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open session store: %w", err)
 	}

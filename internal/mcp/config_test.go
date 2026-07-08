@@ -9,7 +9,8 @@ import (
 
 func TestLoadConfigMissingFile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	cfg, err := LoadConfig()
+	path := DefaultConfigPath()
+	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
@@ -78,7 +79,7 @@ func TestLoadConfigValidation(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tt.config), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			_, err := LoadConfig()
+			_, err := LoadConfig(path)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("LoadConfig() error = %v, want containing %q", err, tt.wantErr)
 			}
@@ -102,7 +103,7 @@ func TestLoadConfigInfersTransport(t *testing.T) {
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := LoadConfig()
+	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}

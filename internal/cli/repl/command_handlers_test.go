@@ -13,6 +13,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/mochow13/keen-agent/internal/agentconfig"
+
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
 	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
 	replwidgets "github.com/mochow13/keen-agent/internal/cli/repl/widgets"
@@ -23,6 +25,15 @@ import (
 	"github.com/mochow13/keen-agent/internal/providers"
 	"github.com/mochow13/keen-agent/internal/skills"
 )
+
+func setTestAgentConfig(m *replModel, work string) {
+	cfg := &agentconfig.Config{
+		SkillsDirs:    []string{filepath.Join(work, ".agents", "skills")},
+		SubagentsDirs: []string{filepath.Join(work, ".agents", "agents")},
+	}
+	m.appState.SetAgentConfig(cfg)
+	m.ctx.agentCfg = cfg
+}
 
 func TestHandleEnterKey_EmptyInput(t *testing.T) {
 	m := newTestModel()
@@ -150,7 +161,7 @@ func TestHandleEnterKey_SessionsCommand_EmptyState(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	m := newTestModel()
-	m.sessions = newReplSessionState(filepath.Join(tmp, "project"))
+	m.sessions = newReplSessionState(filepath.Join(tmp, "project"), "agent")
 	m.textarea.SetValue(replcommands.Sessions)
 
 	newM, cmd := m.handleEnterKey()
@@ -340,6 +351,8 @@ func TestHandleMCPConnectDoneGeneratesAndEnablesSkill(t *testing.T) {
 	work := t.TempDir()
 	m := newTestModel()
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	if err := m.appState.SetSkillStatus("mcp:deepwiki", skills.StatusDisabled); err != nil {
 		t.Fatalf("disable deepwiki: %v", err)
 	}
@@ -365,7 +378,7 @@ func TestHandleMCPConnectDoneGeneratesAndEnablesSkill(t *testing.T) {
 	if !m.appState.GetSkillsConfig().Enabled("mcp:deepwiki") {
 		t.Fatalf("expected mcp:deepwiki skill to be enabled")
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".keen-agent", "skills", "mcp:deepwiki", "SKILL.md"))
+	data, err := os.ReadFile(filepath.Join(work, ".agents", "skills", "mcp:deepwiki", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("read SKILL.md: %v", err)
 	}
@@ -380,7 +393,9 @@ func TestHandleMCPConnectDoneFailureDisablesSkill(t *testing.T) {
 	work := t.TempDir()
 	m := newTestModel()
 	m.appState = replappstate.New(nil, work)
-	if err := mcpskills.Generate("deepwiki", "", []keenmcp.Tool{{Name: "ask", Description: "Ask DeepWiki"}}); err != nil {
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
+	if err := mcpskills.Generate([]string{filepath.Join(work, ".agents", "skills")}, "deepwiki", "", []keenmcp.Tool{{Name: "ask", Description: "Ask DeepWiki"}}); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	m.appState.ReloadSkills()
@@ -401,6 +416,8 @@ func TestHandleMCPStartupStatusGeneratesConnectedSkillsWithoutChangingStatus(t *
 	work := t.TempDir()
 	m := newTestModel()
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	if err := m.appState.SetSkillStatus("mcp:deepwiki", skills.StatusDisabled); err != nil {
 		t.Fatalf("disable deepwiki: %v", err)
 	}
@@ -416,7 +433,7 @@ func TestHandleMCPStartupStatusGeneratesConnectedSkillsWithoutChangingStatus(t *
 	if m.appState.GetSkillsConfig().Enabled("mcp:deepwiki") {
 		t.Fatalf("expected mcp:deepwiki skill to remain disabled")
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".keen-agent", "skills", "mcp:deepwiki", "SKILL.md"))
+	data, err := os.ReadFile(filepath.Join(work, ".agents", "skills", "mcp:deepwiki", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("read SKILL.md: %v", err)
 	}
@@ -431,7 +448,9 @@ func TestHandleMCPStartupStatusDisablesFailedSkills(t *testing.T) {
 	work := t.TempDir()
 	m := newTestModel()
 	m.appState = replappstate.New(nil, work)
-	if err := mcpskills.Generate("posthog", "", []keenmcp.Tool{{Name: "query", Description: "Query PostHog"}}); err != nil {
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
+	if err := mcpskills.Generate([]string{filepath.Join(work, ".agents", "skills")}, "posthog", "", []keenmcp.Tool{{Name: "query", Description: "Query PostHog"}}); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	m.appState.ReloadSkills()
@@ -441,7 +460,7 @@ func TestHandleMCPStartupStatusDisablesFailedSkills(t *testing.T) {
 	if m.appState.GetSkillsConfig().Enabled("mcp:posthog") {
 		t.Fatalf("expected mcp:posthog skill to be disabled")
 	}
-	if _, err := os.Stat(filepath.Join(home, ".keen-agent", "skills", "mcp:posthog", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(work, ".agents", "skills", "mcp:posthog", "SKILL.md")); err != nil {
 		t.Fatalf("expected mcp:posthog files to remain: %v", err)
 	}
 	if m.appState.SkillsCatalog() != "" && strings.Contains(m.appState.SkillsCatalog(), "mcp:posthog") {
@@ -455,10 +474,12 @@ func TestHandleMCPStartupStatusRemovesUnconfiguredSkillStatuses(t *testing.T) {
 	work := t.TempDir()
 	m := newTestModel()
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	m.ctx.mcp = &fakeMCPRuntime{tools: map[string][]keenmcp.Tool{
 		"context7": {{Name: "resolve", Description: "Resolve docs"}},
 	}}
-	if err := mcpskills.Generate("deepwiki", "", []keenmcp.Tool{{Name: "ask", Description: "Ask DeepWiki"}}); err != nil {
+	if err := mcpskills.Generate([]string{filepath.Join(work, ".agents", "skills")}, "deepwiki", "", []keenmcp.Tool{{Name: "ask", Description: "Ask DeepWiki"}}); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	if err := m.appState.SetSkillStatus("mcp:deepwiki", skills.StatusEnabled); err != nil {
@@ -481,7 +502,7 @@ func TestHandleMCPStartupStatusRemovesUnconfiguredSkillStatuses(t *testing.T) {
 	if _, ok := cfg.IsEnabled["mcp:disabled"]; ok {
 		t.Fatalf("expected unconfigured mcp:disabled status to be removed")
 	}
-	if _, err := os.Stat(filepath.Join(home, ".keen-agent", "skills", "mcp:deepwiki")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(work, ".agents", "skills", "mcp:deepwiki")); !os.IsNotExist(err) {
 		t.Fatalf("expected unconfigured mcp:deepwiki skill files to be removed, err = %v", err)
 	}
 	if !cfg.Enabled("debug") {
@@ -569,6 +590,8 @@ func TestHandleSkillsCommandList(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	m.textarea.SetValue("/skills list")
 	newM, _ := m.handleEnterKey()
 
@@ -607,6 +630,8 @@ func TestHandleSkillsCommandListStylesDisabledStatus(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	m.textarea.SetValue("/skills list")
 	newM, _ := m.handleEnterKey()
 
@@ -671,6 +696,8 @@ func TestHandleSkillsCommandListTruncatesLongDescriptions(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	m.textarea.SetValue("/skills list")
 	newM, _ := m.handleEnterKey()
 
@@ -698,6 +725,8 @@ func TestHandleSkillsCommandDisable(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	m.textarea.SetValue("/skills disable demo")
 	newM, _ := m.handleEnterKey()
 
@@ -727,6 +756,8 @@ func TestHandleSubagentsCommandList(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSubagents()
 	m.textarea.SetValue("/subagents list")
 	newM, _ := m.handleEnterKey()
 
@@ -756,6 +787,8 @@ func TestHandleSubagentsCommandRootLists(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSubagents()
 	m.textarea.SetValue("/subagents")
 	newM, _ := m.handleEnterKey()
 
@@ -837,6 +870,8 @@ func TestHandleSkillsCommandStatus(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	m.textarea.SetValue("/skills status")
 	newM, _ := m.handleEnterKey()
 
@@ -863,6 +898,8 @@ func TestHandleSkillsCommandRejectsNameFirstStatus(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	m.textarea.SetValue("/skills demo enable")
 	newM, _ := m.handleEnterKey()
 
@@ -885,6 +922,8 @@ func TestHandleSkillsCommandReload(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 
 	writeSkillDir := filepath.Join(work, ".agents", "skills", "demo")
 	if err := os.MkdirAll(writeSkillDir, 0755); err != nil {
@@ -1039,7 +1078,7 @@ func TestHandleEnterKey_SessionsCommandWithSessions(t *testing.T) {
 	m.ctx.registry = &providers.Registry{Providers: []providers.Provider{}}
 	m.ctx.globalCfg = &config.GlobalConfig{}
 	m.ctx.loader = config.NewLoader()
-	m.sessions = newReplSessionState(workingDir)
+	m.sessions = newReplSessionState(workingDir, "agent")
 	if err := m.sessions.appendUserMessage("saved prompt"); err != nil {
 		t.Fatalf("append user message: %v", err)
 	}
@@ -1064,7 +1103,7 @@ func TestHandleEnterKey_ResumeCommand(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	m := newTestModel()
-	m.sessions = newReplSessionState(filepath.Join(tmp, "project"))
+	m.sessions = newReplSessionState(filepath.Join(tmp, "project"), "agent")
 	m.textarea.SetValue(replcommands.Resume)
 
 	newM, _ := m.handleEnterKey()

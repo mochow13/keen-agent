@@ -48,7 +48,7 @@ func newTestModel() replModel {
 		permissionRequester: replpermissions.NewRequester(nil),
 		projectPerms:        config.NewProjectPermissions(),
 		diffEmitter:         repltooling.NewDiffEmitter(),
-		sessions:            newReplSessionState(""),
+		sessions:            newReplSessionState("", "agent"),
 		spinner:             spinner.New(),
 		btwSpinner:          spinner.New(),
 		width:               80,
@@ -187,6 +187,8 @@ func TestActivateSkillInput(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 	activated, ok := m.activateSkillInput("/demo thing")
 	if !ok {
 		t.Fatal("expected skill activation")
@@ -211,6 +213,8 @@ func TestActivateSkillInput_UsesFrontmatterNameNotDir(t *testing.T) {
 	m := newTestModel()
 	m.ctx.workingDir = work
 	m.appState = replappstate.New(nil, work)
+	setTestAgentConfig(&m, work)
+	m.appState.ReloadSkills()
 
 	if _, ok := m.activateSkillInput("/any-dir foo"); ok {
 		t.Fatal("expected /<dirname> to NOT activate")

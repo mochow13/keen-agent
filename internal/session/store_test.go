@@ -56,7 +56,7 @@ func TestStoreCreateAppendListLoad(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	store, err := NewStore(filepath.Join(tmp, "project"))
+	store, err := NewStore(filepath.Join(tmp, "project"), "agent")
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
@@ -109,7 +109,7 @@ func TestStoreList_UsesLastUserMessagePreview(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	store, err := NewStore(filepath.Join(tmp, "project"))
+	store, err := NewStore(filepath.Join(tmp, "project"), "agent")
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}

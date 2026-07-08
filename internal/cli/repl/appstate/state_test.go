@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/llm"
 	"github.com/mochow13/keen-agent/internal/skills"
@@ -57,6 +58,14 @@ func TestNewAppState(t *testing.T) {
 	if len(state.messages) != 0 {
 		t.Errorf("expected empty messages, got %d", len(state.messages))
 	}
+}
+
+func setTestAgentConfig(state *AppState, work string) {
+	cfg := &agentconfig.Config{
+		SkillsDirs: []string{filepath.Join(work, ".agents", "skills")},
+		SubagentsDirs: []string{filepath.Join(work, ".agents", "agents")},
+	}
+	state.SetAgentConfig(cfg)
 }
 
 func TestAppState_AddMessage(t *testing.T) {
@@ -152,6 +161,8 @@ func TestAppState_ReloadSkillsCachesMetadataOnly(t *testing.T) {
 	}
 
 	state := New(nil, work)
+	setTestAgentConfig(state, work)
+	state.ReloadSkills()
 	discovery := state.GetSkills()
 	var demo *skills.Skill
 	for i := range discovery.Skills {
@@ -176,6 +187,8 @@ func TestAppState_SkillsReloadUpdatesMetadata(t *testing.T) {
 	work := t.TempDir()
 	t.Setenv("HOME", home)
 	state := New(nil, work)
+	setTestAgentConfig(state, work)
+	state.ReloadSkills()
 	if _, ok := state.FindEnabledSkill("demo"); ok {
 		t.Fatal("did not expect demo skill before it is written")
 	}
@@ -207,6 +220,8 @@ func TestAppState_SetSkillStatusUpdatesCachedConfig(t *testing.T) {
 	}
 
 	state := New(nil, work)
+	setTestAgentConfig(state, work)
+	state.ReloadSkills()
 	if err := state.SetSkillStatus("demo", skills.StatusDisabled); err != nil {
 		t.Fatalf("SetSkillStatus() error = %v", err)
 	}
@@ -265,6 +280,8 @@ func TestAppState_StreamChat_WithClient(t *testing.T) {
 	}
 
 	state := New(client, work)
+	setTestAgentConfig(state, work)
+	state.ReloadSkills()
 	state.AddMessage(llm.RoleUser, "Hi")
 
 	cfg := &config.ResolvedConfig{APIKey: "key", Model: "model"}

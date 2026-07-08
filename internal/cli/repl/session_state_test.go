@@ -90,7 +90,7 @@ func TestReplSessionState_SetSession(t *testing.T) {
 	work := t.TempDir()
 	t.Setenv("HOME", home)
 
-	state := newReplSessionState(work)
+	state := newReplSessionState(work, "agent")
 	if state == nil {
 		t.Fatal("newReplSessionState() returned nil")
 	}

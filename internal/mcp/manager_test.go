@@ -465,6 +465,7 @@ func newTestManagerWithOptions(t *testing.T, servers map[string]ServerConfig, op
 		WithTimeouts(2*time.Second, 2*time.Second, 2*time.Second),
 		WithStandaloneSSEDisabled(true),
 		WithStreamableMaxRetries(-1),
+		WithConfigPaths([]string{path}),
 	}
 	opts = append(defaults, opts...)
 	manager, err := NewManager(opts...)

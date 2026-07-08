@@ -11,7 +11,7 @@ func TestLoadResumeSession(t *testing.T) {
 	work := t.TempDir()
 	t.Setenv("HOME", home)
 
-	store, err := session.NewStore(work)
+	store, err := session.NewStore(work, "agent")
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
@@ -23,7 +23,7 @@ func TestLoadResumeSession(t *testing.T) {
 		t.Fatalf("Append() error = %v", err)
 	}
 
-	loaded, err := loadResumeSession(work, sess.ID)
+	loaded, err := loadResumeSession(work, sess.ID, "agent")
 	if err != nil {
 		t.Fatalf("loadResumeSession() error = %v", err)
 	}
@@ -31,7 +31,7 @@ func TestLoadResumeSession(t *testing.T) {
 		t.Fatalf("loaded session ID = %q, want %q", loaded.Session.ID, sess.ID)
 	}
 
-	_, err = loadResumeSession(work, "nonexistent")
+	_, err = loadResumeSession(work, "nonexistent", "agent")
 	if err == nil {
 		t.Fatal("loadResumeSession(nonexistent) error = nil, want error")
 	}

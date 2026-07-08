@@ -83,7 +83,7 @@ func TestStartMCPRuntimeStartsWithE2EConfigAndCloses(t *testing.T) {
 		return fake, nil
 	}
 
-	manager, closeMCP, err := startMCPRuntime(context.Background())
+	manager, closeMCP, err := startMCPRuntime(context.Background(), nil)
 	closeMCP()
 	if err != nil {
 		t.Fatalf("startMCPRuntime() error = %v", err)
@@ -111,7 +111,7 @@ func TestStartMCPRuntimeIsBestEffortOnCreateError(t *testing.T) {
 		return nil, errors.New("boom")
 	}
 
-	manager, closeMCP, err := startMCPRuntime(context.Background())
+	manager, closeMCP, err := startMCPRuntime(context.Background(), nil)
 	closeMCP()
 	if manager != nil {
 		t.Fatalf("manager = %#v, want nil", manager)
@@ -130,7 +130,7 @@ func TestStartMCPRuntimeClosesAfterStartError(t *testing.T) {
 		return fake, nil
 	}
 
-	manager, closeMCP, err := startMCPRuntime(context.Background())
+	manager, closeMCP, err := startMCPRuntime(context.Background(), nil)
 	closeMCP()
 	if manager != nil {
 		t.Fatalf("manager = %#v, want nil", manager)

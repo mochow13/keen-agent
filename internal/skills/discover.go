@@ -14,11 +14,11 @@ type Discovery struct {
 	Warnings []string
 }
 
-func Discover(workingDir, bundledDir string) Discovery {
+func Discover(configDirs []string, workingDir, bundledDir string) Discovery {
 	var result Discovery
 	seen := map[string]bool{}
 
-	for _, root := range discoveryRoots(workingDir, bundledDir) {
+	for _, root := range discoveryRoots(configDirs, workingDir, bundledDir) {
 		matches, err := filepath.Glob(filepath.Join(root, "*", "SKILL.md"))
 		if err != nil {
 			continue
@@ -113,22 +113,9 @@ containing SKILL.md:
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-func discoveryRoots(workingDir, bundledDir string) []string {
-	roots := []string{
-		filepath.Join(workingDir, ".agents", "skills"),
-		filepath.Join(workingDir, ".keen-agent", "skills"),
-		filepath.Join(workingDir, ".claude", "skills"),
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		roots = append(roots,
-			filepath.Join(home, ".agents", "skills"),
-			filepath.Join(home, ".keen-agent", "skills"),
-			filepath.Join(home, ".claude", "skills"),
-		)
-	}
-	if strings.TrimSpace(bundledDir) != "" {
-		roots = append(roots, bundledDir)
-	}
+func discoveryRoots(configDirs []string, workingDir, bundledDir string) []string {
+	var roots []string
+	roots = append(roots, configDirs...)
 	return roots
 }
 

@@ -32,13 +32,13 @@ type LoadedSession struct {
 	Session *Session
 }
 
-func NewStore(workingDir string) (*Store, error) {
+func NewStore(workingDir, agentSlug string) (*Store, error) {
 	abs, err := filepath.Abs(workingDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve working directory: %w", err)
 	}
 
-	rootDir, err := sessionsRootDir()
+	rootDir, err := sessionsRootDir(agentSlug)
 	if err != nil {
 		return nil, err
 	}

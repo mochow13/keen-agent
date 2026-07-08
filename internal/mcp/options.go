@@ -27,6 +27,7 @@ type managerOptions struct {
 	oauthClientMetadataURL   string
 	oauthPreregisteredID     string
 	oauthPreregisteredSecret string
+	configPaths              []string
 }
 
 func defaultOptions() managerOptions {
@@ -88,6 +89,12 @@ func WithOAuthPreregisteredClient(clientID, clientSecret string) Option {
 	return func(o *managerOptions) {
 		o.oauthPreregisteredID = clientID
 		o.oauthPreregisteredSecret = clientSecret
+	}
+}
+
+func WithConfigPaths(paths []string) Option {
+	return func(o *managerOptions) {
+		o.configPaths = paths
 	}
 }
 

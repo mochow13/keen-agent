@@ -39,28 +39,23 @@ func ServerName(skillName string) string {
 	return strings.TrimPrefix(skillName, "mcp:")
 }
 
-func SkillDir(server string) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("mcpskills: home dir: %w", err)
+func SkillDir(configDirs []string, server string) (string, error) {
+	if len(configDirs) == 0 {
+		return "", fmt.Errorf("mcpskills: no config directories provided")
 	}
-	return filepath.Join(skillsRoot(home), SkillName(server)), nil
+	return filepath.Join(configDirs[0], SkillName(server)), nil
 }
 
-func Remove(server string) error {
-	dir, err := SkillDir(server)
+func Remove(configDirs []string, server string) error {
+	dir, err := SkillDir(configDirs, server)
 	if err != nil {
 		return err
 	}
 	return os.RemoveAll(dir)
 }
 
-func skillsRoot(home string) string {
-	return filepath.Join(home, ".keen-agent", "skills")
-}
-
-func Generate(server, description string, tools []keenmcp.Tool) error {
-	dir, err := SkillDir(server)
+func Generate(configDirs []string, server, description string, tools []keenmcp.Tool) error {
+	dir, err := SkillDir(configDirs, server)
 	if err != nil {
 		return err
 	}

@@ -1,10 +1,13 @@
 package agentconfig
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -139,6 +142,20 @@ func (c *Config) EffectiveDefaultMode() string {
 		return DefaultMode
 	}
 	return c.DefaultMode
+}
+
+func (c *Config) AgentSlug() string {
+	name := strings.ToLower(strings.TrimSpace(c.Name))
+	name = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(name, "-")
+	name = strings.Trim(name, "-")
+	if name == "" {
+		name = "agent"
+	}
+
+	hash := sha256.Sum256([]byte(c.baseDir))
+	hashStr := hex.EncodeToString(hash[:])[:8]
+
+	return fmt.Sprintf("%s-%s", name, hashStr)
 }
 
 type ModelRef struct {

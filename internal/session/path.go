@@ -15,12 +15,15 @@ const transcriptFileName = "transcript_events.jsonl"
 
 var unsafePathChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
-func sessionsRootDir() (string, error) {
+func sessionsRootDir(agentSlug string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("get home directory: %w", err)
 	}
-	return filepath.Join(home, ".keen-agent", "sessions"), nil
+	if agentSlug == "" {
+		agentSlug = "agent"
+	}
+	return filepath.Join(home, ".keen-agent", agentSlug, "sessions"), nil
 }
 
 func namespaceDirName(workingDir string) string {

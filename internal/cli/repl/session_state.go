@@ -15,8 +15,8 @@ type replSessionState struct {
 	current *session.Session
 }
 
-func newReplSessionState(workingDir string) *replSessionState {
-	store, err := session.NewStore(workingDir)
+func newReplSessionState(workingDir, agentSlug string) *replSessionState {
+	store, err := session.NewStore(workingDir, agentSlug)
 	if err != nil {
 		return nil
 	}

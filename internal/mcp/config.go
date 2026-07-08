@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -49,28 +50,30 @@ func DefaultConfigPath() string {
 	return filepath.Join(home, ".keen-agent", "mcp", "configs.json")
 }
 
-func LoadConfig() (*Config, error) {
-	path := DefaultConfigPath()
+func LoadConfig(paths ...string) (*Config, error) {
+	merged := &Config{Servers: map[string]ServerConfig{}}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return &Config{Servers: map[string]ServerConfig{}}, nil
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, err
 		}
-		return nil, err
+
+		var cfg Config
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("parse MCP config from %q: %w", path, err)
+		}
+
+		maps.Copy(merged.Servers, cfg.Servers)
 	}
 
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse MCP config: %w", err)
-	}
-	if cfg.Servers == nil {
-		cfg.Servers = map[string]ServerConfig{}
-	}
-	if err := cfg.Validate(); err != nil {
+	if err := merged.Validate(); err != nil {
 		return nil, err
 	}
-	return &cfg, nil
+	return merged, nil
 }
 
 func (c *Config) Validate() error {

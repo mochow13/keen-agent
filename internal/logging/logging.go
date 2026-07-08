@@ -37,16 +37,19 @@ func parseLogLevel() slog.Level {
 	}
 }
 
-func getLogDirectory() (string, error) {
+func getLogDirectory(agentSlug string) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("getting home directory: %w", err)
 	}
-	return filepath.Join(homeDir, ".keen-agent", "logs"), nil
+	if agentSlug == "" {
+		agentSlug = "agent"
+	}
+	return filepath.Join(homeDir, ".keen-agent", agentSlug, "logs"), nil
 }
 
-func createLogFile() (*os.File, string, error) {
-	logDir, err := getLogDirectory()
+func createLogFile(agentSlug string) (*os.File, string, error) {
+	logDir, err := getLogDirectory(agentSlug)
 	if err != nil {
 		return nil, "", err
 	}
@@ -193,8 +196,8 @@ func (h *prettyHandler) WithGroup(_ string) slog.Handler {
 	return h
 }
 
-func Init() (func(), string, error) {
-	file, logFile, err := createLogFile()
+func Init(agentSlug string) (func(), string, error) {
+	file, logFile, err := createLogFile(agentSlug)
 	if err != nil {
 		return nil, "", err
 	}

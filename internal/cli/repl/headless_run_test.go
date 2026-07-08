@@ -206,7 +206,7 @@ func headlessTestConfig() *config.ResolvedConfig {
 
 func loadOnlyHeadlessSessionEvents(t *testing.T, workingDir string) []session.Event {
 	t.Helper()
-	store, err := session.NewStore(workingDir)
+	store, err := session.NewStore(workingDir, "agent")
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}

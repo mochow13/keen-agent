@@ -180,7 +180,11 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 
 	permissionRequester := replpermissions.NewRequester(projectPerms)
 	diffEmitter := repltooling.NewDiffEmitter()
-	sessions := newReplSessionState(ctx.workingDir)
+	var agentSlug string
+	if ctx.agentCfg != nil {
+		agentSlug = ctx.agentCfg.AgentSlug()
+	}
+	sessions := newReplSessionState(ctx.workingDir, agentSlug)
 
 	fileGitAwareness := filesystem.NewGitAwareness()
 	_ = fileGitAwareness.LoadGitignore(filepath.Join(ctx.workingDir, ".gitignore"))
@@ -245,9 +249,9 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 
 	historyDir, err := os.UserHomeDir()
 	if err == nil {
-		historyDir = filepath.Join(historyDir, ".keen-agent")
+		historyDir = filepath.Join(historyDir, ".keen-agent", agentSlug)
 		if mkdirErr := os.MkdirAll(historyDir, 0755); mkdirErr == nil {
-			_ = model.history.LoadFromFile(filepath.Join(historyDir, "input-history"))
+			_ = model.history.LoadFromFile(filepath.Join(historyDir, "input-history.jsonl"))
 		}
 	}
 

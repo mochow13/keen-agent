@@ -12,13 +12,13 @@ import (
 
 func TestRemoveDeletesGeneratedSkill(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := Generate("github", "", []keenmcp.Tool{{Name: "search"}}); err != nil {
+	configDirs := []string{filepath.Join(home, ".keen-agent", "skills")}
+	if err := Generate(configDirs, "github", "", []keenmcp.Tool{{Name: "search"}}); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	dir := filepath.Join(home, ".keen-agent", "skills", "mcp:github")
 
-	if err := Remove("github"); err != nil {
+	if err := Remove(configDirs, "github"); err != nil {
 		t.Fatalf("Remove() error = %v", err)
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
@@ -28,14 +28,14 @@ func TestRemoveDeletesGeneratedSkill(t *testing.T) {
 
 func TestGenerate_CreatesSkillDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	configDirs := []string{filepath.Join(home, ".keen-agent", "skills")}
 
 	tools := []keenmcp.Tool{
 		{Name: "create_issue", Description: "Create a GitHub issue", InputSchema: map[string]any{"type": "object"}},
 		{Name: "list_issues", Description: "List issues", InputSchema: map[string]any{"type": "object"}},
 	}
 
-	if err := Generate("github", "Manage GitHub issues and pull requests.", tools); err != nil {
+	if err := Generate(configDirs, "github", "Manage GitHub issues and pull requests.", tools); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
@@ -93,14 +93,14 @@ func TestGenerate_CreatesSkillDir(t *testing.T) {
 
 func TestGenerate_Idempotent(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	configDirs := []string{filepath.Join(home, ".keen-agent", "skills")}
 
 	tools := []keenmcp.Tool{{Name: "ping", Description: "Ping", InputSchema: nil}}
 
-	if err := Generate("myserver", "", tools); err != nil {
+	if err := Generate(configDirs, "myserver", "", tools); err != nil {
 		t.Fatalf("first Generate() error = %v", err)
 	}
-	if err := Generate("myserver", "", tools); err != nil {
+	if err := Generate(configDirs, "myserver", "", tools); err != nil {
 		t.Fatalf("second Generate() error = %v", err)
 	}
 
@@ -112,9 +112,9 @@ func TestGenerate_Idempotent(t *testing.T) {
 
 func TestGenerate_QuotesFrontmatter(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	configDirs := []string{filepath.Join(home, ".keen-agent", "skills")}
 
-	if err := Generate("git:hub", "", nil); err != nil {
+	if err := Generate(configDirs, "git:hub", "", nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
@@ -129,9 +129,9 @@ func TestGenerate_QuotesFrontmatter(t *testing.T) {
 
 func TestGenerate_RejectsPathTraversalToolName(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	configDirs := []string{filepath.Join(home, ".keen-agent", "skills")}
 
-	err := Generate("srv", "", []keenmcp.Tool{{Name: "../escape", Description: "bad"}})
+	err := Generate(configDirs, "srv", "", []keenmcp.Tool{{Name: "../escape", Description: "bad"}})
 	if err == nil {
 		t.Fatal("expected invalid tool name error")
 	}
@@ -139,9 +139,9 @@ func TestGenerate_RejectsPathTraversalToolName(t *testing.T) {
 
 func TestGenerate_FallsBackToStaticDescription(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	configDirs := []string{filepath.Join(home, ".keen-agent", "skills")}
 
-	if err := Generate("github", " \n\t ", nil); err != nil {
+	if err := Generate(configDirs, "github", " \n\t ", nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 

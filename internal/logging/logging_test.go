@@ -41,7 +41,7 @@ func TestParseLogLevel(t *testing.T) {
 func TestGetLogDirectory(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	dir, err := getLogDirectory()
+	dir, err := getLogDirectory("agent")
 	if err != nil {
 		t.Fatalf("getLogDirectory() error = %v", err)
 	}
@@ -58,7 +58,7 @@ func TestGetLogDirectory(t *testing.T) {
 func TestCreateLogFile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	file, logFile, err := createLogFile()
+	file, logFile, err := createLogFile("agent")
 	if err != nil {
 		t.Fatalf("createLogFile() error = %v", err)
 	}
@@ -80,7 +80,7 @@ func TestCreateLogFile(t *testing.T) {
 func TestInit(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	cleanup, logFile, err := Init()
+	cleanup, logFile, err := Init("agent")
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}

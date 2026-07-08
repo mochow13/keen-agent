@@ -40,7 +40,7 @@ Explore with focus.
 		t.Fatalf("write bundled profile: %v", err)
 	}
 
-	discovery := Discover(workingDir, bundledDir)
+	discovery := Discover([]string{projectDir, bundledDir}, "", "")
 	if len(discovery.Profiles) != 2 {
 		t.Fatalf("expected 2 discovered profiles, got %d: %+v", len(discovery.Profiles), discovery.Profiles)
 	}

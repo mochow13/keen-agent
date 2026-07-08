@@ -71,7 +71,11 @@ func RunHeadless(ctx context.Context, opts HeadlessRunOptions) (*HeadlessRunResu
 	diffEmitter := repltooling.NewDiffEmitter()
 	repltooling.SetupToolRegistry(opts.WorkingDir, appState, permissionRequester, diffEmitter, nil, opts.Config)
 
-	sessions := newReplSessionState(opts.WorkingDir)
+	var agentSlug string
+	if opts.AgentCfg != nil {
+		agentSlug = opts.AgentCfg.AgentSlug()
+	}
+	sessions := newReplSessionState(opts.WorkingDir, agentSlug)
 	if sessions == nil {
 		return nil, fmt.Errorf("session store unavailable")
 	}

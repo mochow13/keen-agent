@@ -300,6 +300,10 @@ func (m *replModel) syncMCPSkills(statuses []keenmcp.ServerStatus) {
 
 func (m *replModel) removeUnconfiguredMCPSkillStatuses(configured map[string]bool) bool {
 	changed := false
+	var configDirs []string
+	if m.ctx != nil && m.ctx.agentCfg != nil {
+		configDirs = m.ctx.agentCfg.ResolvedSkillsDirs()
+	}
 	for name := range m.appState.GetSkillsConfig().IsEnabled {
 		if !mcpskills.IsSkillName(name) {
 			continue
@@ -309,7 +313,7 @@ func (m *replModel) removeUnconfiguredMCPSkillStatuses(configured map[string]boo
 			continue
 		}
 		_ = m.appState.RemoveSkillStatus(name)
-		_ = mcpskills.Remove(server)
+		_ = mcpskills.Remove(configDirs, server)
 		changed = true
 	}
 	return changed
@@ -319,12 +323,19 @@ func (m *replModel) refreshMCPSkill(server, description string) bool {
 	if m.ctx == nil || m.ctx.mcp == nil {
 		return false
 	}
+	var configDirs []string
+	if m.ctx.agentCfg != nil {
+		configDirs = m.ctx.agentCfg.ResolvedSkillsDirs()
+	}
+	if len(configDirs) == 0 {
+		return false
+	}
 	tools, err := m.ctx.mcp.ListTools(context.Background(), server)
 	if err != nil {
 		slog.Default().Debug("mcpskills list tools failed", "server", server, "error", err)
 		return false
 	}
-	if err := mcpskills.Generate(server, description, tools); err != nil {
+	if err := mcpskills.Generate(configDirs, server, description, tools); err != nil {
 		slog.Default().Debug("mcpskills generate failed", "server", server, "error", err)
 		return false
 	}
