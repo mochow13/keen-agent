@@ -883,6 +883,10 @@ func waitForAdversaryEvent(llmCh <-chan llm.StreamEvent) tea.Cmd {
 			switch event.Type {
 			case llm.StreamEventTypeChunk:
 				return adversaryChunkMsg(event.Content)
+			case llm.StreamEventTypeToolStart:
+				return adversaryToolStartMsg{toolCall: event.ToolCall}
+			case llm.StreamEventTypeToolEnd:
+				return adversaryToolEndMsg{toolCall: event.ToolCall}
 			case llm.StreamEventTypeDone:
 				return adversaryDoneMsg{}
 			case llm.StreamEventTypeError:

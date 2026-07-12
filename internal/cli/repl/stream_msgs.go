@@ -83,3 +83,9 @@ type adversaryDoneMsg struct{}
 type adversaryErrorMsg struct {
 	err error
 }
+type adversaryToolStartMsg struct {
+	toolCall *llm.ToolCall
+}
+type adversaryToolEndMsg struct {
+	toolCall *llm.ToolCall
+}

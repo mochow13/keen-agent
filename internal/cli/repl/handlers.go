@@ -777,7 +777,7 @@ func (m replModel) handleBtwStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 func (m replModel) handleAdversaryStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 	if m.adversary.streamHandler == nil || !m.adversary.streamHandler.IsActive() {
 		switch msg.(type) {
-		case adversaryChunkMsg, adversaryDoneMsg, adversaryErrorMsg:
+		case adversaryChunkMsg, adversaryDoneMsg, adversaryErrorMsg, adversaryToolStartMsg, adversaryToolEndMsg:
 			return m, nil, true
 		}
 		return m, nil, false
@@ -787,6 +787,18 @@ func (m replModel) handleAdversaryStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bo
 	case adversaryChunkMsg:
 		m.adversary.streamHandler.HandleChunk(string(msg))
 		return m, tea.Batch(m.afterStreamUpdate(), waitForAdversaryEvent(m.adversary.streamHandler.eventCh)), true
+	case adversaryToolStartMsg:
+		m.flushStreamRender()
+		m.adversary.streamHandler.HandleToolStart(msg.toolCall)
+		m.updateViewportContent()
+		m.scrollToBottomIfFollowing()
+		return m, waitForAdversaryEvent(m.adversary.streamHandler.eventCh), true
+	case adversaryToolEndMsg:
+		m.flushStreamRender()
+		m.adversary.streamHandler.HandleToolEnd(msg.toolCall)
+		m.updateViewportContent()
+		m.scrollToBottomIfFollowing()
+		return m, waitForAdversaryEvent(m.adversary.streamHandler.eventCh), true
 	case adversaryDoneMsg:
 		m.flushStreamRender()
 		responseLines, _ := m.adversary.streamHandler.HandleDone()
