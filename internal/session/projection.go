@@ -15,7 +15,7 @@ func BuildConversation(events []Event) []llm.Message {
 				})
 			}
 		case KindAssistantTurn:
-			if event.AssistantTurn != nil && event.AssistantTurn.Message != "" {
+			if event.AssistantTurn != nil && (event.AssistantTurn.Message != "" || !event.AssistantTurn.TurnMemory.IsEmpty()) {
 				messages = append(messages, llm.Message{
 					Role:       llm.RoleAssistant,
 					Content:    event.AssistantTurn.Message,

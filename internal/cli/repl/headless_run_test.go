@@ -128,6 +128,36 @@ func TestRunHeadless_ResumesSessionConversation(t *testing.T) {
 	}
 }
 
+func TestRunHeadless_PersistsHistoricalToolActivity(t *testing.T) {
+	workingDir := setupHeadlessTestHome(t)
+	client := &recordingHeadlessClient{events: []llm.StreamEvent{
+		{Type: llm.StreamEventTypeChunk, Content: "Let me inspect."},
+		{Type: llm.StreamEventTypeToolStart, ToolCall: &llm.ToolCall{Name: "read_file", Input: map[string]any{"path": filepath.Join(workingDir, "a.go")}}},
+		{Type: llm.StreamEventTypeToolEnd, ToolCall: &llm.ToolCall{Name: "read_file", Input: map[string]any{"path": filepath.Join(workingDir, "a.go")}}},
+		{Type: llm.StreamEventTypeChunk, Content: " Found it."},
+		{Type: llm.StreamEventTypeDone},
+	}}
+
+	if _, err := RunHeadless(context.Background(), HeadlessRunOptions{
+		WorkingDir: workingDir,
+		Config:     headlessTestConfig(),
+		Client:     client,
+		Prompt:     "inspect",
+	}); err != nil {
+		t.Fatalf("RunHeadless() error = %v", err)
+	}
+
+	events := loadOnlyHeadlessSessionEvents(t, workingDir)
+	memory := events[len(events)-1].AssistantTurn.TurnMemory
+	if memory == nil || len(memory.ToolActivity) != 1 {
+		t.Fatalf("expected historical tool activity, got %#v", memory)
+	}
+	activity := memory.ToolActivity[0]
+	if activity.Tool != "read_file" || activity.Target != "a.go" || activity.TextOffset != len("Let me inspect.") {
+		t.Fatalf("unexpected historical tool activity %#v", activity)
+	}
+}
+
 func TestRunHeadless_WritesJSON(t *testing.T) {
 	workingDir := setupHeadlessTestHome(t)
 	client := &recordingHeadlessClient{events: []llm.StreamEvent{

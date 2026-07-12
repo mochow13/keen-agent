@@ -1,15 +1,24 @@
 package repl
 
 import (
+	"net/url"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/mochow13/keen-agent/internal/llm"
 )
+
+const maxHistoricalToolTargetBytes = 256
+
+var sensitiveTargetPattern = regexp.MustCompile(`(?i)(api[_-]?key|token|secret|password|passwd|authorization|credential)`)
 
 type turnMemoryAccumulator struct {
 	filesChanged []string
 	seenFiles    map[string]struct{}
 	failedBash   []llm.FailedBashCommand
+	toolActivity []llm.HistoricalToolActivity
 }
 
 func newTurnMemoryAccumulator() *turnMemoryAccumulator {
@@ -28,7 +37,11 @@ func (a *turnMemoryAccumulator) RecordToolEnd(toolCall *llm.ToolCall) {
 		if toolCall.Error != "" {
 			return
 		}
-		if path := extractStringField(toolCall.Output, "path"); path != "" {
+		path := extractStringField(toolCall.Output, "path")
+		if path == "" {
+			path = inputStringField(toolCall, "path")
+		}
+		if path != "" {
 			a.addFileChanged(path)
 		}
 	case "bash":
@@ -53,14 +66,144 @@ func (a *turnMemoryAccumulator) RecordToolEnd(toolCall *llm.ToolCall) {
 	}
 }
 
+func (a *turnMemoryAccumulator) RecordToolActivity(segments []streamSegment, workingDir string) {
+	if a == nil {
+		return
+	}
+	a.toolActivity = collectHistoricalToolActivity(segments, workingDir)
+}
+
+func collectHistoricalToolActivity(segments []streamSegment, workingDir string) []llm.HistoricalToolActivity {
+	textOffset := 0
+	activities := make([]llm.HistoricalToolActivity, 0)
+
+	for _, segment := range segments {
+		switch segment.kind {
+		case segmentAssistant:
+			textOffset += len(segment.content)
+		case segmentToolEnd:
+			if segment.toolCall != nil {
+				activities = append(activities, historicalToolActivity(segment.toolCall, textOffset, workingDir, ""))
+			}
+		case segmentBash:
+			if segment.toolCall != nil {
+				activities = append(activities, historicalToolActivity(segment.toolCall, textOffset, workingDir, segment.command))
+			}
+		}
+	}
+
+	return activities
+}
+
+func historicalToolActivity(toolCall *llm.ToolCall, textOffset int, workingDir, bashCommand string) llm.HistoricalToolActivity {
+	activity := llm.HistoricalToolActivity{
+		TextOffset: textOffset,
+		Tool:       toolCall.Name,
+		Status:     "success",
+	}
+	if toolCall.Error != "" {
+		activity.Status = "error"
+	}
+
+	if toolCall.Name == "call_mcp_tool" {
+		activity.Server = boundedTarget(toolStringField(toolCall, "server"))
+		activity.Tool = boundedTarget(toolStringField(toolCall, "tool"))
+		if activity.Tool == "" {
+			activity.Tool = toolCall.Name
+		}
+		return activity
+	}
+
+	activity.Target = historicalToolTarget(toolCall, workingDir, bashCommand)
+	return activity
+}
+
+func historicalToolTarget(toolCall *llm.ToolCall, workingDir, bashCommand string) string {
+	var target string
+	switch toolCall.Name {
+	case "read_file", "write_file", "edit_file":
+		target = relativizePath(toolStringField(toolCall, "path"), workingDir)
+	case "glob", "grep":
+		path := relativizePath(inputStringField(toolCall, "path"), workingDir)
+		pattern := inputStringField(toolCall, "pattern")
+		target = joinTarget(path, pattern)
+	case "bash":
+		target = bashCommand
+		if target == "" {
+			target = toolStringField(toolCall, "command")
+		}
+	case "web_fetch":
+		target = sanitizedURL(inputStringField(toolCall, "url"))
+	case "delegate_task":
+		target = inputStringField(toolCall, "agent")
+	}
+	return boundedTarget(target)
+}
+
+func toolStringField(toolCall *llm.ToolCall, key string) string {
+	if toolCall == nil {
+		return ""
+	}
+	if value := extractStringField(toolCall.Output, key); value != "" {
+		return value
+	}
+	return inputStringField(toolCall, key)
+}
+
+func inputStringField(toolCall *llm.ToolCall, key string) string {
+	if toolCall == nil || toolCall.Input == nil {
+		return ""
+	}
+	value, _ := toolCall.Input[key].(string)
+	return value
+}
+
+func joinTarget(path, detail string) string {
+	if path == "" || path == "." {
+		return detail
+	}
+	if detail == "" {
+		return path
+	}
+	return path + " :: " + detail
+}
+
+func sanitizedURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func boundedTarget(target string) string {
+	target = strings.Join(strings.Fields(target), " ")
+	if sensitiveTargetPattern.MatchString(target) {
+		return ""
+	}
+	if len(target) <= maxHistoricalToolTargetBytes {
+		return target
+	}
+
+	limit := maxHistoricalToolTargetBytes - len("...")
+	for limit > 0 && !utf8.RuneStart(target[limit]) {
+		limit--
+	}
+	return target[:limit] + "..."
+}
+
 func (a *turnMemoryAccumulator) Build() *llm.TurnMemory {
-	if a == nil || (len(a.filesChanged) == 0 && len(a.failedBash) == 0) {
+	if a == nil || (len(a.filesChanged) == 0 && len(a.failedBash) == 0 && len(a.toolActivity) == 0) {
 		return nil
 	}
 
 	return &llm.TurnMemory{
 		FilesChanged: append([]string(nil), a.filesChanged...),
 		FailedBash:   append([]llm.FailedBashCommand(nil), a.failedBash...),
+		ToolActivity: append([]llm.HistoricalToolActivity(nil), a.toolActivity...),
 	}
 }
 
@@ -121,6 +264,32 @@ func (m *replModel) recordToolMemory(toolCall *llm.ToolCall) {
 	m.turnMemory.RecordToolEnd(toolCall)
 }
 
+func (m *replModel) recordHistoricalToolActivity(segments []streamSegment) {
+	if m == nil || m.turnMemory == nil {
+		return
+	}
+	m.turnMemory.RecordToolActivity(segments, m.turnMemoryWorkingDir())
+}
+
+func (m *replModel) rebuildTurnMemoryFromSegments(segments []streamSegment) {
+	if m == nil || m.turnMemory == nil {
+		return
+	}
+
+	m.turnMemory = newTurnMemoryAccumulator()
+	workingDir := m.turnMemoryWorkingDir()
+	for _, segment := range segments {
+		if segment.toolCall == nil || (segment.kind != segmentToolEnd && segment.kind != segmentBash) {
+			continue
+		}
+		toolCall := segment.toolCall
+		if toolCall.Name == "write_file" || toolCall.Name == "edit_file" {
+			toolCall = cloneToolCallWithRelativePath(toolCall, workingDir)
+		}
+		m.turnMemory.RecordToolEnd(toolCall)
+	}
+}
+
 func (m *replModel) consumeTurnMemory() *llm.TurnMemory {
 	if m == nil || m.turnMemory == nil {
 		return nil
@@ -177,12 +346,12 @@ func cloneToolCallWithRelativePath(toolCall *llm.ToolCall, workingDir string) *l
 }
 
 func relativizePath(path string, workingDir string) string {
-	if path == "" || workingDir == "" {
+	if path == "" || workingDir == "" || !filepath.IsAbs(path) {
 		return path
 	}
 
 	relativePath, err := filepath.Rel(workingDir, path)
-	if err != nil {
+	if err != nil || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
 		return path
 	}
 	return relativePath

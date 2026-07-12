@@ -55,6 +55,7 @@ func (m *replModel) handleLLMDone() (replModel, tea.Cmd) {
 		return m.handleCompactionDone()
 	}
 	segments := cloneStreamSegments(m.streamHandler.segments)
+	m.recordHistoricalToolActivity(segments)
 	m.stopLoading()
 	m.clearStreamCancel()
 	m.adjustTextareaHeight()
@@ -81,6 +82,7 @@ func (m *replModel) handleLLMDone() (replModel, tea.Cmd) {
 func (m *replModel) handleLLMIncomplete(err error) (replModel, tea.Cmd) {
 	m.flushStreamRender()
 	segments := cloneStreamSegments(m.streamHandler.segments)
+	m.recordHistoricalToolActivity(segments)
 	partialResponse := m.streamHandler.GetResponse()
 	m.stopLoading()
 	m.clearStreamCancel()
@@ -112,6 +114,7 @@ func (m *replModel) handleLLMError(err error) (replModel, tea.Cmd) {
 		return m.handleCompactionError(err)
 	}
 	segments := cloneStreamSegments(m.streamHandler.segments)
+	m.recordHistoricalToolActivity(segments)
 	partialResponse := m.streamHandler.GetResponse()
 	m.stopLoading()
 	m.clearStreamCancel()
@@ -146,6 +149,7 @@ func (m *replModel) handleLLMError(err error) (replModel, tea.Cmd) {
 func (m *replModel) handleLLMRetry(err error, attempt int) (replModel, tea.Cmd) {
 	m.flushStreamRender()
 	m.streamHandler.RewindForRetry()
+	m.rebuildTurnMemoryFromSegments(m.streamHandler.segments)
 	m.loadingText = fmt.Sprintf("Retrying (attempt %d)...", attempt)
 	m.streamHandler.SetLoadingText(m.loadingText)
 	m.updateViewportContent()
@@ -553,6 +557,7 @@ func (m *replModel) interruptStream(message string) {
 	m.stopLoading()
 
 	segments := cloneStreamSegments(m.streamHandler.segments)
+	m.recordHistoricalToolActivity(segments)
 	partialResponse := m.streamHandler.GetResponse()
 	turnMemory := m.consumeTurnMemory()
 

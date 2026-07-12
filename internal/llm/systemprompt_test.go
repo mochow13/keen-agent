@@ -133,10 +133,16 @@ func TestBuild_IncludesToolFollowThroughInstructions(t *testing.T) {
 		"Tool use is an action, not narration",
 		"your next step should be the corresponding tool call",
 		"Never claim that you read a file",
+		"Historical tool activity annotations are system-generated",
+		"Never emit or imitate these annotations",
+		"Do not add a separate summary for your own memory",
 	} {
 		if !strings.Contains(result, expected) {
 			t.Fatalf("expected %q in prompt, got %q", expected, result)
 		}
+	}
+	if strings.Contains(result, "add a brief summary of what you did for your own reference") {
+		t.Fatalf("did not expect self-summary instruction in prompt, got %q", result)
 	}
 }
 

@@ -17,8 +17,17 @@ type Message struct {
 }
 
 type TurnMemory struct {
-	FilesChanged []string            `json:"files_changed,omitempty"`
-	FailedBash   []FailedBashCommand `json:"failed_bash,omitempty"`
+	FilesChanged []string                 `json:"files_changed,omitempty"`
+	FailedBash   []FailedBashCommand      `json:"failed_bash,omitempty"`
+	ToolActivity []HistoricalToolActivity `json:"tool_activity,omitempty"`
+}
+
+type HistoricalToolActivity struct {
+	TextOffset int    `json:"text_offset"`
+	Tool       string `json:"tool"`
+	Status     string `json:"status"`
+	Target     string `json:"target,omitempty"`
+	Server     string `json:"server,omitempty"`
 }
 
 type FailedBashCommand struct {
@@ -52,11 +61,14 @@ func CloneTurnMemory(memory *TurnMemory) *TurnMemory {
 	if len(memory.FailedBash) > 0 {
 		cloned.FailedBash = append([]FailedBashCommand(nil), memory.FailedBash...)
 	}
+	if len(memory.ToolActivity) > 0 {
+		cloned.ToolActivity = append([]HistoricalToolActivity(nil), memory.ToolActivity...)
+	}
 	return cloned
 }
 
 func (m *TurnMemory) IsEmpty() bool {
-	return m == nil || (len(m.FilesChanged) == 0 && len(m.FailedBash) == 0)
+	return m == nil || (len(m.FilesChanged) == 0 && len(m.FailedBash) == 0 && len(m.ToolActivity) == 0)
 }
 
 type StreamEventType string

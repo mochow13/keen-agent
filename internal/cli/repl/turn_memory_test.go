@@ -65,6 +65,9 @@ func TestHandleLLMDone_AttachesTurnMemoryToAssistantMessage(t *testing.T) {
 	workingDir := t.TempDir()
 	sh := NewStreamHandler(nil)
 	sh.Start(make(<-chan llm.StreamEvent), "Loading...")
+	sh.HandleChunk("working")
+	sh.HandleToolStart(&llm.ToolCall{Name: "edit_file", Input: map[string]any{"path": "nested/a.go"}})
+	sh.HandleToolEnd(&llm.ToolCall{Name: "edit_file", Input: map[string]any{"path": "nested/a.go"}})
 	sh.HandleChunk("done")
 
 	m := replModel{
@@ -100,6 +103,9 @@ func TestHandleLLMDone_AttachesTurnMemoryToAssistantMessage(t *testing.T) {
 	if len(messages[0].TurnMemory.FailedBash) != 1 {
 		t.Fatalf("unexpected failed bash entries %#v", messages[0].TurnMemory.FailedBash)
 	}
+	if len(messages[0].TurnMemory.ToolActivity) != 1 || messages[0].TurnMemory.ToolActivity[0].TextOffset != len("working") {
+		t.Fatalf("unexpected tool activity %#v", messages[0].TurnMemory.ToolActivity)
+	}
 }
 
 func TestRecordToolMemory_UsesRelativePathFromWorkingDir(t *testing.T) {
@@ -121,5 +127,92 @@ func TestRecordToolMemory_UsesRelativePathFromWorkingDir(t *testing.T) {
 	}
 	if memory.FilesChanged[0] != filepath.Join("dir", "file.go") {
 		t.Fatalf("expected relative changed file path, got %#v", memory.FilesChanged)
+	}
+}
+
+func TestCollectHistoricalToolActivity_RecordsOffsetsTargetsAndStatus(t *testing.T) {
+	workingDir := t.TempDir()
+	segments := []streamSegment{
+		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "glob", Input: map[string]any{"path": workingDir, "pattern": "**/*.go"}}},
+		{kind: segmentAssistant, content: "Inspecting. "},
+		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "read_file", Input: map[string]any{"path": filepath.Join(workingDir, "a.go")}}},
+		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "edit_file", Error: "failed", Input: map[string]any{"path": filepath.Join(workingDir, "a.go")}}},
+		{kind: segmentAssistant, content: "Done."},
+		{kind: segmentBash, command: "go test ./...", toolCall: &llm.ToolCall{Name: "bash"}},
+	}
+
+	got := collectHistoricalToolActivity(segments, workingDir)
+	if len(got) != 4 {
+		t.Fatalf("expected four activities, got %#v", got)
+	}
+	if got[0].TextOffset != 0 || got[0].Target != "**/*.go" {
+		t.Fatalf("unexpected glob activity %#v", got[0])
+	}
+	if got[1].TextOffset != len("Inspecting. ") || got[1].Target != "a.go" || got[1].Status != "success" {
+		t.Fatalf("unexpected read activity %#v", got[1])
+	}
+	if got[2].TextOffset != got[1].TextOffset || got[2].Status != "error" {
+		t.Fatalf("unexpected edit activity %#v", got[2])
+	}
+	if got[3].TextOffset != len("Inspecting. Done.") || got[3].Target != "go test ./..." {
+		t.Fatalf("unexpected bash activity %#v", got[3])
+	}
+}
+
+func TestCollectHistoricalToolActivity_ExtractsMCPWithoutArguments(t *testing.T) {
+	segments := []streamSegment{{
+		kind: segmentToolEnd,
+		toolCall: &llm.ToolCall{
+			Name: "call_mcp_tool",
+			Input: map[string]any{
+				"server":    "requested-server",
+				"tool":      "requested-tool",
+				"arguments": map[string]any{"secret": "do not retain"},
+			},
+			Output: map[string]any{
+				"server":  "context7",
+				"tool":    "query-docs",
+				"content": "do not retain",
+			},
+		},
+	}}
+
+	got := collectHistoricalToolActivity(segments, "")
+	if len(got) != 1 {
+		t.Fatalf("expected one activity, got %#v", got)
+	}
+	if got[0].Server != "context7" || got[0].Tool != "query-docs" || got[0].Target != "" {
+		t.Fatalf("unexpected MCP activity %#v", got[0])
+	}
+}
+
+func TestRebuildTurnMemoryFromSegments_DropsAbandonedOutcomes(t *testing.T) {
+	workingDir := t.TempDir()
+	m := replModel{appState: replappstate.New(nil, workingDir)}
+	m.startAssistantTurnMemory()
+	m.recordToolMemory(
+		&llm.ToolCall{Name: "edit_file", Input: map[string]any{"path": "abandoned.go"}})
+
+	m.rebuildTurnMemoryFromSegments([]streamSegment{
+		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "write_file", Input: map[string]any{"path": "kept.go"}}},
+	})
+	memory := m.consumeTurnMemory()
+	if memory == nil || len(memory.FilesChanged) != 1 || memory.FilesChanged[0] != "kept.go" {
+		t.Fatalf("expected only surviving outcome, got %#v", memory)
+	}
+}
+
+func TestCollectHistoricalToolActivity_SanitizesTargets(t *testing.T) {
+	segments := []streamSegment{
+		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "web_fetch", Input: map[string]any{"url": "https://user:pass@example.com/docs?token=secret#section"}}},
+		{kind: segmentBash, command: "curl -H 'Authorization: secret' example.com", toolCall: &llm.ToolCall{Name: "bash"}},
+	}
+
+	got := collectHistoricalToolActivity(segments, "")
+	if got[0].Target != "https://example.com/docs" {
+		t.Fatalf("expected sanitized URL, got %#v", got[0])
+	}
+	if got[1].Target != "" {
+		t.Fatalf("expected sensitive command target to be omitted, got %#v", got[1])
 	}
 }

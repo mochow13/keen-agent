@@ -56,6 +56,23 @@ func TestBuildConversation_IgnoresAssistantTurnWithoutMessage(t *testing.T) {
 	}
 }
 
+func TestBuildConversation_PreservesToolOnlyAssistantTurn(t *testing.T) {
+	events := []Event{{
+		Kind: KindAssistantTurn,
+		AssistantTurn: &AssistantTurnPayload{
+			TurnMemory: &llm.TurnMemory{ToolActivity: []llm.HistoricalToolActivity{{
+				Tool:   "read_file",
+				Status: "success",
+			}}},
+		},
+	}}
+
+	got := BuildConversation(events)
+	if len(got) != 1 || got[0].Content != "" || got[0].TurnMemory.IsEmpty() {
+		t.Fatalf("expected tool-only assistant turn, got %#v", got)
+	}
+}
+
 func TestBuildConversation_CompactionCloneIsIndependent(t *testing.T) {
 	compacted := []llm.Message{
 		{Role: llm.RoleUser, Content: "summary"},

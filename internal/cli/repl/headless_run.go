@@ -130,6 +130,7 @@ func RunHeadless(ctx context.Context, opts HeadlessRunOptions) (*HeadlessRunResu
 				lastUsage = event.Usage
 			case llm.StreamEventTypeRetry:
 				handler.RewindForRetry()
+				turnMemory = rebuildHeadlessTurnMemory(handler.segments, opts.WorkingDir)
 			case llm.StreamEventTypeDone:
 				return finishHeadlessRun(opts.Out, format, sessions, handler, turnMemory, lastUsage)
 			case llm.StreamEventTypeIncomplete:
@@ -180,8 +181,20 @@ func handleHeadlessToolEnd(handler *StreamHandler, toolCall *llm.ToolCall) {
 	handler.HandleToolEnd(toolCall)
 }
 
+func rebuildHeadlessTurnMemory(segments []streamSegment, workingDir string) *turnMemoryAccumulator {
+	memory := newTurnMemoryAccumulator()
+	for _, segment := range segments {
+		if segment.toolCall == nil || (segment.kind != segmentToolEnd && segment.kind != segmentBash) {
+			continue
+		}
+		memory.RecordToolEnd(cloneToolCallWithRelativePath(segment.toolCall, workingDir))
+	}
+	return memory
+}
+
 func finishHeadlessRun(out io.Writer, format string, sessions *replSessionState, handler *StreamHandler, turnMemory *turnMemoryAccumulator, usage *llm.TokenUsage) (*HeadlessRunResult, error) {
 	segments := cloneStreamSegments(handler.segments)
+	turnMemory.RecordToolActivity(segments, handler.workingDir)
 	_, response := handler.HandleDone()
 	assistantMessage := llm.Message{
 		Role:       llm.RoleAssistant,
@@ -206,6 +219,7 @@ func failHeadlessRun(sessions *replSessionState, handler *StreamHandler, turnMem
 		err = fmt.Errorf("LLM stream incomplete")
 	}
 	segments := cloneStreamSegments(handler.segments)
+	turnMemory.RecordToolActivity(segments, handler.workingDir)
 	partialResponse := handler.GetResponse()
 	_, errMsg := handler.HandleError(err)
 	assistantMessage := llm.Message{
