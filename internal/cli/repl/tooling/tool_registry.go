@@ -3,6 +3,7 @@ package tooling
 import (
 	"path/filepath"
 
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	"github.com/mochow13/keen-agent/internal/config"
@@ -20,34 +21,44 @@ func SetupToolRegistry(
 	diffEmitter *DiffEmitter,
 	mcpRuntime keenmcp.Runtime,
 	cfg *config.ResolvedConfig,
+	agentCfg *agentconfig.Config,
 ) {
 	gitAwareness := filesystem.NewGitAwareness()
 	_ = gitAwareness.LoadGitignore(filepath.Join(workingDir, ".gitignore"))
 	guard := filesystem.NewGuard(workingDir, gitAwareness)
 
+	excluded := builtinToolsExcluded(agentCfg)
+
+	register := func(tool tools.Tool) {
+		if excluded[tool.Name()] {
+			return
+		}
+		_ = appState.RegisterTool(tool)
+	}
+
 	readFileTool := tools.NewReadFileTool(guard, permissionRequester)
-	appState.RegisterTool(readFileTool)
+	register(readFileTool)
 
 	globTool := tools.NewGlobTool(guard, permissionRequester)
-	appState.RegisterTool(globTool)
+	register(globTool)
 
 	grepTool := tools.NewGrepTool(guard, permissionRequester)
-	appState.RegisterTool(grepTool)
+	register(grepTool)
 
 	writeFileTool := tools.NewWriteFileTool(guard, diffEmitter, permissionRequester)
-	appState.RegisterTool(writeFileTool)
+	register(writeFileTool)
 
 	editFileTool := tools.NewEditFileTool(guard, diffEmitter, permissionRequester)
-	appState.RegisterTool(editFileTool)
+	register(editFileTool)
 
 	bashTool := tools.NewBashTool(guard, permissionRequester)
-	appState.RegisterTool(bashTool)
+	register(bashTool)
 
 	webFetchTool := tools.NewWebFetchTool()
-	appState.RegisterTool(webFetchTool)
+	register(webFetchTool)
 
 	if mcpRuntime != nil {
-		appState.RegisterTool(tools.NewCallMCPTool(mcpRuntime, permissionRequester))
+		register(tools.NewCallMCPTool(mcpRuntime, permissionRequester))
 	}
 
 	runner := &subagents.Runner{
@@ -59,5 +70,16 @@ func SetupToolRegistry(
 		NewClient: llm.NewClient,
 		Registry:  appState.GetToolRegistry(),
 	}
-	appState.RegisterTool(tools.NewDelegateTool(runner))
+	register(tools.NewDelegateTool(runner))
+}
+
+func builtinToolsExcluded(cfg *agentconfig.Config) map[string]bool {
+	excluded := make(map[string]bool)
+	if cfg == nil || cfg.BuiltinTools == nil {
+		return excluded
+	}
+	for _, name := range cfg.BuiltinTools.Exclude {
+		excluded[name] = true
+	}
+	return excluded
 }
