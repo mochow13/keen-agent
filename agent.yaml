@@ -1,4 +1,4 @@
-name: 
+name: TestAgent
 ascii_art: |
   ░▀█▀░█▀▀░█▀▀░▀█▀░░░█▀█░█▀▀░█▀▀░█▀█░▀█▀
   ░░█░░█▀▀░▀▀█░░█░░░░█▀█░█░█░█▀▀░█░█░░█░
@@ -17,6 +17,11 @@ default_mode: build
 model:
   model_id: deepseek-v4-flash
   provider: opencode-go
+
+builtin_tools:
+  exclude:
+    - web_fetch
+    - bash
 
 # Mode overlays: inline + file per mode
 modes:
