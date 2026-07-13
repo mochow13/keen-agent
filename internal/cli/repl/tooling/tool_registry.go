@@ -57,20 +57,22 @@ func SetupToolRegistry(
 	webFetchTool := tools.NewWebFetchTool()
 	register(webFetchTool)
 
-	if mcpRuntime != nil {
+	if mcpRuntime != nil && hasMCPConfigDirs(agentCfg) {
 		register(tools.NewCallMCPTool(mcpRuntime, permissionRequester))
 	}
 
-	runner := &subagents.Runner{
-		WorkingDir: workingDir,
-		Config:     cfg,
-		GetProfiles: func() []subagents.Profile {
-			return appState.GetSubagents().Profiles
-		},
-		NewClient: llm.NewClient,
-		Registry:  appState.GetToolRegistry(),
+	if hasSubagentsDirs(agentCfg) {
+		runner := &subagents.Runner{
+			WorkingDir: workingDir,
+			Config:     cfg,
+			GetProfiles: func() []subagents.Profile {
+				return appState.GetSubagents().Profiles
+			},
+			NewClient: llm.NewClient,
+			Registry:  appState.GetToolRegistry(),
+		}
+		register(tools.NewDelegateTool(runner))
 	}
-	register(tools.NewDelegateTool(runner))
 }
 
 func builtinToolsExcluded(cfg *agentconfig.Config) map[string]bool {
@@ -82,4 +84,12 @@ func builtinToolsExcluded(cfg *agentconfig.Config) map[string]bool {
 		excluded[name] = true
 	}
 	return excluded
+}
+
+func hasMCPConfigDirs(cfg *agentconfig.Config) bool {
+	return cfg != nil && len(cfg.ResolvedMCPConfigDirs()) > 0
+}
+
+func hasSubagentsDirs(cfg *agentconfig.Config) bool {
+	return cfg != nil && len(cfg.ResolvedSubagentsDirs()) > 0
 }

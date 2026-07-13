@@ -10,6 +10,7 @@ import (
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/llm"
+	"github.com/mochow13/keen-agent/internal/mcp"
 	"github.com/mochow13/keen-agent/internal/tools"
 )
 
@@ -23,6 +24,21 @@ func (f *fakeLLMClient) StreamChat(ctx context.Context, messages []llm.Message, 
 
 func (f *fakeLLMClient) Reset() {}
 
+type fakeMCPRuntime struct{}
+
+func (f *fakeMCPRuntime) Start(context.Context) error           { return nil }
+func (f *fakeMCPRuntime) Close() error                          { return nil }
+func (f *fakeMCPRuntime) Servers() []mcp.ServerStatus           { return nil }
+func (f *fakeMCPRuntime) Status(string) mcp.ServerStatus        { return mcp.ServerStatus{} }
+func (f *fakeMCPRuntime) WaitInitialScan(context.Context) error { return nil }
+func (f *fakeMCPRuntime) ListTools(context.Context, string) ([]mcp.Tool, error) {
+	return nil, nil
+}
+func (f *fakeMCPRuntime) CallTool(context.Context, string, string, map[string]any) (*mcp.ToolResult, error) {
+	return nil, nil
+}
+func (f *fakeMCPRuntime) Refresh(context.Context, string, ...mcp.RefreshOption) error { return nil }
+
 func toolNames(t *testing.T, state *replappstate.AppState) []string {
 	t.Helper()
 	var names []string
@@ -33,7 +49,7 @@ func toolNames(t *testing.T, state *replappstate.AppState) []string {
 	return names
 }
 
-func TestSetupToolRegistry_DefaultRegistersAllTools(t *testing.T) {
+func TestSetupToolRegistry_DefaultRegistersNoConditionalTools(t *testing.T) {
 	work := t.TempDir()
 	state := replappstate.New(&fakeLLMClient{}, work)
 	permissionRequester := replpermissions.NewAutoApproveRequester()
@@ -43,7 +59,7 @@ func TestSetupToolRegistry_DefaultRegistersAllTools(t *testing.T) {
 	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, resolvedCfg, nil)
 
 	names := toolNames(t, state)
-	want := []string{"bash", "delegate_task", "edit_file", "glob", "grep", "read_file", "web_fetch", "write_file"}
+	want := []string{"bash", "edit_file", "glob", "grep", "read_file", "web_fetch", "write_file"}
 	if !slices.Equal(names, want) {
 		t.Errorf("registered tools = %v, want %v", names, want)
 	}
@@ -69,9 +85,50 @@ func TestSetupToolRegistry_ExcludesListedTools(t *testing.T) {
 			t.Errorf("expected %q to be excluded, but it was registered", excluded)
 		}
 	}
-	want := []string{"delegate_task", "edit_file", "glob", "grep", "read_file", "web_fetch"}
+	want := []string{"edit_file", "glob", "grep", "read_file", "web_fetch"}
 	if !slices.Equal(names, want) {
 		t.Errorf("registered tools = %v, want %v", names, want)
 	}
 }
 
+func TestSetupToolRegistry_IncludesMCPToolWhenConfigDirsPresent(t *testing.T) {
+	work := t.TempDir()
+	state := replappstate.New(&fakeLLMClient{}, work)
+	permissionRequester := replpermissions.NewAutoApproveRequester()
+	diffEmitter := NewDiffEmitter()
+	resolvedCfg := &config.ResolvedConfig{}
+	agentCfg := &agentconfig.Config{
+		MCPConfigDirs: agentconfig.StringOrArray{"./mcp.json"},
+	}
+
+	SetupToolRegistry(work, state, permissionRequester, diffEmitter, &fakeMCPRuntime{}, resolvedCfg, agentCfg)
+
+	names := toolNames(t, state)
+	if !slices.Contains(names, "call_mcp_tool") {
+		t.Errorf("expected call_mcp_tool to be registered when mcp_config_dirs is set")
+	}
+	if slices.Contains(names, "delegate_task") {
+		t.Errorf("expected delegate_task to be excluded when subagents_dirs is not set")
+	}
+}
+
+func TestSetupToolRegistry_IncludesDelegateToolWhenSubagentsDirsPresent(t *testing.T) {
+	work := t.TempDir()
+	state := replappstate.New(&fakeLLMClient{}, work)
+	permissionRequester := replpermissions.NewAutoApproveRequester()
+	diffEmitter := NewDiffEmitter()
+	resolvedCfg := &config.ResolvedConfig{}
+	agentCfg := &agentconfig.Config{
+		SubagentsDirs: agentconfig.StringOrArray{"./subagents"},
+	}
+
+	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, resolvedCfg, agentCfg)
+
+	names := toolNames(t, state)
+	if !slices.Contains(names, "delegate_task") {
+		t.Errorf("expected delegate_task to be registered when subagents_dirs is set")
+	}
+	if slices.Contains(names, "call_mcp_tool") {
+		t.Errorf("expected call_mcp_tool to be excluded when mcp_config_dirs is not set")
+	}
+}

@@ -191,7 +191,7 @@ func (s *AppState) StreamChat(ctx context.Context, cfg *config.ResolvedConfig, o
 	messages := append([]llm.Message{systemMsg}, s.GetMessages()...)
 	registry := s.toolRegistry
 	if s.mode == llm.ModePlan {
-		registry = s.toolRegistry.Without("write_file", "edit_file")
+		registry = s.toolRegistry.Without(planModeExcludedTools()...)
 	}
 	return s.llmClient.StreamChat(ctx, messages, registry, opts...)
 }
@@ -264,7 +264,7 @@ func (s *AppState) StreamAdversary(ctx context.Context, focus string) (<-chan ll
 		instruction = focus
 	}
 	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: instruction})
-	readOnlyRegistry := s.toolRegistry.Without("write_file", "edit_file", "bash", "call_mcp_tool", "delegate_task")
+	readOnlyRegistry := s.toolRegistry.Without(append(planModeExcludedTools(), "bash", "call_mcp_tool", "delegate_task")...)
 	return s.adversaryClient.StreamChat(ctx, messages, readOnlyRegistry, llm.StreamOptions{OneShot: true})
 }
 
@@ -283,6 +283,10 @@ func btwContext(messages []llm.Message, max int) []llm.Message {
 	result := make([]llm.Message, end-start)
 	copy(result, messages[start:end])
 	return result
+}
+
+func planModeExcludedTools() []string {
+	return []string{"write_file", "edit_file"}
 }
 
 func (s *AppState) ApplyCompaction(summary string) error {
