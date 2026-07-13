@@ -101,7 +101,8 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 		})
 	case config.ProviderDeepSeek,
 		config.ProviderMoonshotAI,
-		config.ProviderZAI:
+		config.ProviderZAI,
+		config.ProviderOpenAICompatible:
 		return NewOpenAICompatibleClient(&ClientConfig{
 			Provider:            Provider(cfg.Provider),
 			APIKey:              cfg.APIKey,

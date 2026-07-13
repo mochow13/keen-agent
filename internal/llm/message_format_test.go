@@ -54,7 +54,7 @@ func TestFormatMessageForProvider_InjectsHistoricalActivityInOrder(t *testing.T)
 	}
 
 	got := FormatMessageForProvider(message)
-	want := "Let me inspect.\n\n<historical_tool_activity>\n{\"status\":\"success\",\"target\":\"a.go\",\"tool\":\"read_file\"}\n</historical_tool_activity>\n\n<historical_tool_activity>\n{\"status\":\"error\",\"target\":\"internal :: TODO\",\"tool\":\"grep\"}\n</historical_tool_activity>\n\n Found it."
+	want := "Let me inspect.\n\n[System generated internal note: earlier tool \"read_file\" completed for \"a.go\"; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]\n\n[System generated internal note: earlier tool \"grep\" failed for \"internal :: TODO\"; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]\n\n Found it."
 	if got != want {
 		t.Fatalf("unexpected formatted message:\nwant: %q\ngot:  %q", want, got)
 	}
@@ -103,7 +103,7 @@ func TestFormatMessageForProvider_HandlesBoundaryAndInvalidOffsets(t *testing.T)
 	}
 
 	got := FormatMessageForProvider(message)
-	want := "<historical_tool_activity>\n{\"status\":\"success\",\"tool\":\"read_file\"}\n</historical_tool_activity>\n\ndone\n\n<historical_tool_activity>\n{\"status\":\"success\",\"target\":\"go test ./...\",\"tool\":\"bash\"}\n</historical_tool_activity>"
+	want := "[System generated internal note: earlier tool \"read_file\" completed; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]\n\ndone\n\n[System generated internal note: earlier tool \"bash\" completed for \"go test ./...\"; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]"
 	if got != want {
 		t.Fatalf("unexpected formatted message:\nwant: %q\ngot:  %q", want, got)
 	}

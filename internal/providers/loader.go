@@ -40,6 +40,15 @@ func Load() (*Registry, error) {
 	if err := yaml.Unmarshal(data, &reg); err != nil {
 		return nil, err
 	}
+
+	filtered := make([]Provider, 0)
+	for _, p := range reg.Providers {
+		if len(p.Models) > 0 {
+			filtered = append(filtered, p)
+		}
+	}
+	reg.Providers = filtered
+
 	return &reg, nil
 }
 

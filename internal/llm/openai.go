@@ -105,6 +105,8 @@ func openAICompatibleBaseURL(provider Provider) (string, error) {
 		return zaiBaseURL, nil
 	case Provider(config.ProviderOpenCodeGo):
 		return openCodeGoBaseURL + "/v1/", nil
+	case Provider(config.ProviderOpenAICompatible):
+		return "", fmt.Errorf("base_url must be configured for provider: %s. %s", provider, config.ConfigFixHint)
 	default:
 		return "", fmt.Errorf("unsupported OpenAI-compatible provider: %s. %s", provider, config.ConfigFixHint)
 	}

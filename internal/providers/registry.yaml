@@ -79,6 +79,10 @@ providers:
         context_window: 256000
         thinking_efforts: ["none", "low", "medium", "high", "xhigh"]
 
+  - id: openai-compatible
+    name: OpenAI Compatible
+    models: []
+
   - id: googleai
     name: Google AI
     models:

@@ -7,21 +7,23 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 )
 
 const (
-	ProviderAnthropic   = "anthropic"
-	ProviderOpenAI      = "openai"
-	ProviderOpenAICodex = "openai-codex"
-	ProviderGoogleAI    = "googleai"
-	ProviderMoonshotAI  = "moonshotai"
-	ProviderDeepSeek    = "deepseek"
-	ProviderZAI         = "zai"
-	ProviderMiniMax     = "minimax"
-	ProviderOpenCodeGo  = "opencode-go"
-	ProviderBedrock     = "amazon-bedrock"
+	ProviderAnthropic        = "anthropic"
+	ProviderOpenAI           = "openai"
+	ProviderOpenAICodex      = "openai-codex"
+	ProviderGoogleAI         = "googleai"
+	ProviderMoonshotAI       = "moonshotai"
+	ProviderDeepSeek         = "deepseek"
+	ProviderZAI              = "zai"
+	ProviderMiniMax          = "minimax"
+	ProviderOpenCodeGo       = "opencode-go"
+	ProviderBedrock          = "amazon-bedrock"
+	ProviderOpenAICompatible = "openai-compatible"
 )
 
 const ConfigFixHint = "To fix configs manually, check ~/.keen-agent/configs.json"
@@ -70,7 +72,19 @@ func (g *GlobalConfig) SetProviderConfig(provider string, cfg ProviderConfig) {
 	if g.Providers == nil {
 		g.Providers = make(map[string]ProviderConfig)
 	}
-	g.Providers[provider] = cfg
+	mergedModels := make([]string, 0)
+	mergedModels = append(mergedModels, cfg.Models...)
+	mergedModels = append(mergedModels, g.Providers[provider].Models...)
+	sort.Strings(mergedModels)
+	mergedModels = slices.Compact(mergedModels)
+
+	g.Providers[provider] = ProviderConfig{
+		Models:       mergedModels,
+		APIKey:       cfg.APIKey,
+		APIKeyHelper: cfg.APIKeyHelper,
+		BaseURL:      cfg.BaseURL,
+		Headers:      cfg.Headers,
+	}
 }
 
 func (g *GlobalConfig) AddModel(provider string, model string) {

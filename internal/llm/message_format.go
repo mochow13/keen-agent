@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"encoding/json"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -65,8 +64,6 @@ func injectHistoricalToolActivity(content string, activities []HistoricalToolAct
 }
 
 func writeHistoricalToolActivity(result *strings.Builder, activity HistoricalToolActivity) {
-	payload, _ := json.Marshal(activityPayload(activity))
-
 	if result.Len() > 0 && !strings.HasSuffix(result.String(), "\n\n") {
 		if strings.HasSuffix(result.String(), "\n") {
 			result.WriteByte('\n')
@@ -74,9 +71,23 @@ func writeHistoricalToolActivity(result *strings.Builder, activity HistoricalToo
 			result.WriteString("\n\n")
 		}
 	}
-	result.WriteString("<historical_tool_activity>\n")
-	result.Write(payload)
-	result.WriteString("\n</historical_tool_activity>\n\n")
+
+	result.WriteString("[System generated internal note: earlier tool ")
+	if activity.Server != "" {
+		result.WriteString(strconv.Quote(activity.Server + "/" + activity.Tool))
+	} else {
+		result.WriteString(strconv.Quote(activity.Tool))
+	}
+	if activity.Status == "success" {
+		result.WriteString(" completed")
+	} else {
+		result.WriteString(" failed")
+	}
+	if activity.Target != "" {
+		result.WriteString(" for ")
+		result.WriteString(strconv.Quote(activity.Target))
+	}
+	result.WriteString("; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]\n\n")
 }
 
 func trimBuilderSuffix(result *strings.Builder, suffix string) {
@@ -85,18 +96,4 @@ func trimBuilderSuffix(result *strings.Builder, suffix string) {
 		result.Reset()
 		result.WriteString(strings.TrimSuffix(value, suffix))
 	}
-}
-
-func activityPayload(activity HistoricalToolActivity) map[string]string {
-	payload := map[string]string{
-		"tool":   activity.Tool,
-		"status": activity.Status,
-	}
-	if activity.Target != "" {
-		payload["target"] = activity.Target
-	}
-	if activity.Server != "" {
-		payload["server"] = activity.Server
-	}
-	return payload
 }
