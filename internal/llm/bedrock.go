@@ -107,19 +107,51 @@ func toBedrockMessages(messages []Message) ([]brtypes.SystemContentBlock, []brty
 	var system []brtypes.SystemContentBlock
 	var result []brtypes.Message
 
-	for _, m := range messages {
+	for messageIndex, m := range messages {
 		content := FormatMessageForProvider(m)
-		if content == "" {
-			continue
-		}
-
 		switch m.Role {
 		case RoleSystem:
-			system = append(system, &brtypes.SystemContentBlockMemberText{Value: content})
+			if content != "" {
+				system = append(system, &brtypes.SystemContentBlockMemberText{Value: content})
+			}
 		case RoleUser:
-			result = append(result, bedrockTextMessage(brtypes.ConversationRoleUser, content))
+			if content != "" {
+				result = append(result, bedrockTextMessage(brtypes.ConversationRoleUser, content))
+			}
 		case RoleAssistant:
-			result = append(result, bedrockTextMessage(brtypes.ConversationRoleAssistant, content))
+			for _, step := range historicalMessageSteps(messageIndex, m) {
+				blocks := make([]brtypes.ContentBlock, 0, len(step.Activities)+1)
+				if step.Text != "" {
+					blocks = append(blocks, &brtypes.ContentBlockMemberText{Value: step.Text})
+				}
+				for _, invocation := range step.Activities {
+					blocks = append(blocks, &brtypes.ContentBlockMemberToolUse{Value: brtypes.ToolUseBlock{
+						ToolUseId: aws.String(invocation.ID),
+						Name:      aws.String(invocation.Tool),
+						Input:     document.NewLazyDocument(map[string]any{}),
+					}})
+				}
+				if len(blocks) > 0 {
+					result = append(result, brtypes.Message{Role: brtypes.ConversationRoleAssistant, Content: blocks})
+				}
+				if len(step.Activities) > 0 {
+					resultBlocks := make([]brtypes.ContentBlock, 0, len(step.Activities))
+					for _, invocation := range step.Activities {
+						status := brtypes.ToolResultStatusSuccess
+						if invocation.Status != "success" {
+							status = brtypes.ToolResultStatusError
+						}
+						resultBlocks = append(resultBlocks, &brtypes.ContentBlockMemberToolResult{Value: brtypes.ToolResultBlock{
+							ToolUseId: aws.String(invocation.ID),
+							Content: []brtypes.ToolResultContentBlock{
+								&brtypes.ToolResultContentBlockMemberText{Value: historicalToolResult(invocation.Status)},
+							},
+							Status: status,
+						}})
+					}
+					result = append(result, brtypes.Message{Role: brtypes.ConversationRoleUser, Content: resultBlocks})
+				}
+			}
 		}
 	}
 

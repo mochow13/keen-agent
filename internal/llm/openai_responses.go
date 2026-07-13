@@ -90,7 +90,7 @@ func NewOpenAIResponsesClient(cfg *ClientConfig) (*OpenAIResponsesClient, error)
 
 func toOpenAIResponseInput(messages []Message) []responses.ResponseInputItemUnionParam {
 	result := make([]responses.ResponseInputItemUnionParam, 0, len(messages))
-	for _, m := range messages {
+	for messageIndex, m := range messages {
 		content := FormatMessageForProvider(m)
 		switch m.Role {
 		case RoleSystem:
@@ -98,7 +98,17 @@ func toOpenAIResponseInput(messages []Message) []responses.ResponseInputItemUnio
 		case RoleUser:
 			result = append(result, responses.ResponseInputItemParamOfMessage(content, responses.EasyInputMessageRoleUser))
 		case RoleAssistant:
-			result = append(result, responses.ResponseInputItemParamOfMessage(content, responses.EasyInputMessageRoleAssistant))
+			for _, step := range historicalMessageSteps(messageIndex, m) {
+				if step.Text != "" {
+					result = append(result, responses.ResponseInputItemParamOfMessage(step.Text, responses.EasyInputMessageRoleAssistant))
+				}
+				for _, invocation := range step.Activities {
+					result = append(result, responses.ResponseInputItemParamOfFunctionCall(`{}`, invocation.ID, invocation.Tool))
+				}
+				for _, invocation := range step.Activities {
+					result = append(result, responses.ResponseInputItemParamOfFunctionCallOutput(invocation.ID, historicalToolResult(invocation.Status)))
+				}
+			}
 		}
 	}
 	return result

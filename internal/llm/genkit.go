@@ -79,14 +79,42 @@ func toGenkitRole(role Role) ai.Role {
 }
 
 func toGenkitMessages(messages []Message) []*ai.Message {
-	aiMessages := make([]*ai.Message, len(messages))
-	for i, m := range messages {
-		content := FormatMessageForProvider(m)
-		aiMessages[i] = &ai.Message{
-			Role: toGenkitRole(m.Role),
-			Content: []*ai.Part{
-				ai.NewTextPart(content),
-			},
+	var aiMessages []*ai.Message
+	for messageIndex, m := range messages {
+		if m.Role != RoleAssistant {
+			aiMessages = append(aiMessages, &ai.Message{
+				Role:    toGenkitRole(m.Role),
+				Content: []*ai.Part{ai.NewTextPart(FormatMessageForProvider(m))},
+			})
+			continue
+		}
+
+		for _, step := range historicalMessageSteps(messageIndex, m) {
+			parts := make([]*ai.Part, 0, len(step.Activities)+1)
+			if step.Text != "" {
+				parts = append(parts, ai.NewTextPart(step.Text))
+			}
+			for _, invocation := range step.Activities {
+				parts = append(parts, ai.NewToolRequestPart(&ai.ToolRequest{
+					Name:  invocation.Tool,
+					Ref:   invocation.ID,
+					Input: map[string]any{},
+				}))
+			}
+			if len(parts) > 0 {
+				aiMessages = append(aiMessages, &ai.Message{Role: ai.RoleModel, Content: parts})
+			}
+			if len(step.Activities) > 0 {
+				responses := make([]*ai.Part, 0, len(step.Activities))
+				for _, invocation := range step.Activities {
+					responses = append(responses, ai.NewToolResponsePart(&ai.ToolResponse{
+						Name:   invocation.Tool,
+						Ref:    invocation.ID,
+						Output: historicalToolResult(invocation.Status),
+					}))
+				}
+				aiMessages = append(aiMessages, &ai.Message{Role: ai.RoleTool, Content: responses})
+			}
 		}
 	}
 	return aiMessages

@@ -6,13 +6,27 @@ import (
 	"unicode/utf8"
 )
 
+const (
+	historicalToolSuccessResult = "Historical tool data intentionally removed; call required tools with valid arguments for actual results."
+	historicalToolFailureResult = "Historical tool invocation failed and details were removed; call required tools with valid arguments if needed."
+)
+
+type historicalMessageStep struct {
+	Text       string
+	Activities []historicalToolInvocation
+}
+
+type historicalToolInvocation struct {
+	ID     string
+	Tool   string
+	Status string
+}
+
 func FormatMessageForProvider(message Message) string {
 	content := message.Content
 	if message.Role != RoleAssistant || message.TurnMemory == nil || message.TurnMemory.IsEmpty() {
 		return content
 	}
-
-	content = injectHistoricalToolActivity(content, message.TurnMemory.ToolActivity)
 
 	lines := make([]string, 0, 1+len(message.TurnMemory.FailedBash)+1)
 	if len(message.TurnMemory.FilesChanged) > 0 || len(message.TurnMemory.FailedBash) > 0 {
@@ -35,65 +49,61 @@ func FormatMessageForProvider(message Message) string {
 	return content + "\n\n" + strings.Join(lines, "\n")
 }
 
-func injectHistoricalToolActivity(content string, activities []HistoricalToolActivity) string {
-	if len(activities) == 0 {
-		return content
+func historicalMessageSteps(messageIndex int, message Message) []historicalMessageStep {
+	if message.Role != RoleAssistant || message.TurnMemory == nil || len(message.TurnMemory.ToolActivity) == 0 {
+		return []historicalMessageStep{{Text: FormatMessageForProvider(message)}}
 	}
 
-	var result strings.Builder
+	steps := make([]historicalMessageStep, 0, len(message.TurnMemory.ToolActivity)+1)
 	cursor := 0
-	wroteActivity := false
-	for _, activity := range activities {
-		if activity.TextOffset < cursor || activity.TextOffset > len(content) || activity.Tool == "" {
+	activityIndex := 0
+	for _, activity := range message.TurnMemory.ToolActivity {
+		if activity.TextOffset < cursor || activity.TextOffset > len(message.Content) || activity.Tool == "" {
 			continue
 		}
-		if activity.TextOffset > 0 && activity.TextOffset < len(content) && !utf8.RuneStart(content[activity.TextOffset]) {
+		if activity.TextOffset > 0 && activity.TextOffset < len(message.Content) && !utf8.RuneStart(message.Content[activity.TextOffset]) {
 			continue
 		}
 
-		result.WriteString(content[cursor:activity.TextOffset])
-		if wroteActivity && activity.TextOffset == cursor {
-			trimBuilderSuffix(&result, "\n\n")
+		invocation := historicalToolInvocation{
+			ID:     "historical_" + strconv.Itoa(messageIndex) + "_" + strconv.Itoa(activityIndex),
+			Tool:   historicalProviderToolName(activity),
+			Status: activity.Status,
 		}
-		writeHistoricalToolActivity(&result, activity)
+		activityIndex++
+
+		if len(steps) > 0 && activity.TextOffset == cursor && len(steps[len(steps)-1].Activities) > 0 {
+			steps[len(steps)-1].Activities = append(steps[len(steps)-1].Activities, invocation)
+			continue
+		}
+
+		steps = append(steps, historicalMessageStep{
+			Text:       message.Content[cursor:activity.TextOffset],
+			Activities: []historicalToolInvocation{invocation},
+		})
 		cursor = activity.TextOffset
-		wroteActivity = true
 	}
-	result.WriteString(content[cursor:])
-	return strings.TrimSpace(result.String())
+
+	if len(steps) == 0 {
+		return []historicalMessageStep{{Text: FormatMessageForProvider(message)}}
+	}
+
+	finalMessage := message
+	finalMessage.Content = message.Content[cursor:]
+	steps = append(steps, historicalMessageStep{Text: FormatMessageForProvider(finalMessage)})
+	return steps
 }
 
-func writeHistoricalToolActivity(result *strings.Builder, activity HistoricalToolActivity) {
-	if result.Len() > 0 && !strings.HasSuffix(result.String(), "\n\n") {
-		if strings.HasSuffix(result.String(), "\n") {
-			result.WriteByte('\n')
-		} else {
-			result.WriteString("\n\n")
-		}
+func historicalToolResult(status string) string {
+	if status == "success" {
+		return historicalToolSuccessResult
 	}
+	return historicalToolFailureResult
+}
 
-	result.WriteString("[System generated internal note: earlier tool ")
+func historicalProviderToolName(activity HistoricalToolActivity) string {
 	if activity.Server != "" {
-		result.WriteString(strconv.Quote(activity.Server + "/" + activity.Tool))
-	} else {
-		result.WriteString(strconv.Quote(activity.Tool))
+		return "call_mcp_tool"
 	}
-	if activity.Status == "success" {
-		result.WriteString(" completed")
-	} else {
-		result.WriteString(" failed")
-	}
-	if activity.Target != "" {
-		result.WriteString(" for ")
-		result.WriteString(strconv.Quote(activity.Target))
-	}
-	result.WriteString("; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]\n\n")
-}
-
-func trimBuilderSuffix(result *strings.Builder, suffix string) {
-	value := result.String()
-	if strings.HasSuffix(value, suffix) {
-		result.Reset()
-		result.WriteString(strings.TrimSuffix(value, suffix))
-	}
+	return activity.Tool
 }

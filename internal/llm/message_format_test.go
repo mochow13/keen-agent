@@ -41,7 +41,7 @@ func TestFormatMessageForProvider_LeavesUserMessageUntouched(t *testing.T) {
 	}
 }
 
-func TestFormatMessageForProvider_InjectsHistoricalActivityInOrder(t *testing.T) {
+func TestHistoricalMessageSteps_PreservesActivityOrder(t *testing.T) {
 	message := Message{
 		Role:    RoleAssistant,
 		Content: "Let me inspect. Found it.",
@@ -53,10 +53,30 @@ func TestFormatMessageForProvider_InjectsHistoricalActivityInOrder(t *testing.T)
 		},
 	}
 
-	got := FormatMessageForProvider(message)
-	want := "Let me inspect.\n\n[System generated internal note: earlier tool \"read_file\" completed for \"a.go\"; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]\n\n[System generated internal note: earlier tool \"grep\" failed for \"internal :: TODO\"; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]\n\n Found it."
-	if got != want {
-		t.Fatalf("unexpected formatted message:\nwant: %q\ngot:  %q", want, got)
+	steps := historicalMessageSteps(2, message)
+	if len(steps) != 2 {
+		t.Fatalf("expected two steps, got %#v", steps)
+	}
+	if steps[0].Text != "Let me inspect." || steps[1].Text != " Found it." {
+		t.Fatalf("unexpected step text: %#v", steps)
+	}
+	if len(steps[0].Activities) != 2 {
+		t.Fatalf("expected two grouped activities, got %#v", steps[0].Activities)
+	}
+	if steps[0].Activities[0].ID != "historical_2_0" || steps[0].Activities[0].Tool != "read_file" {
+		t.Fatalf("unexpected first activity: %#v", steps[0].Activities[0])
+	}
+	if steps[0].Activities[1].ID != "historical_2_1" || steps[0].Activities[1].Tool != "grep" {
+		t.Fatalf("unexpected second activity: %#v", steps[0].Activities[1])
+	}
+}
+
+func TestHistoricalToolResult_UsesStatusAwareText(t *testing.T) {
+	if got := historicalToolResult("success"); got != historicalToolSuccessResult {
+		t.Fatalf("unexpected success result: %q", got)
+	}
+	if got := historicalToolResult("error"); got != historicalToolFailureResult {
+		t.Fatalf("unexpected failure result: %q", got)
 	}
 }
 
@@ -88,7 +108,7 @@ func TestFormatMessageForProvider_SkipsOffsetInsideUTF8Rune(t *testing.T) {
 	}
 }
 
-func TestFormatMessageForProvider_HandlesBoundaryAndInvalidOffsets(t *testing.T) {
+func TestHistoricalMessageSteps_HandlesBoundaryAndInvalidOffsets(t *testing.T) {
 	message := Message{
 		Role:    RoleAssistant,
 		Content: "done",
@@ -102,9 +122,17 @@ func TestFormatMessageForProvider_HandlesBoundaryAndInvalidOffsets(t *testing.T)
 		},
 	}
 
-	got := FormatMessageForProvider(message)
-	want := "[System generated internal note: earlier tool \"read_file\" completed; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]\n\ndone\n\n[System generated internal note: earlier tool \"bash\" completed for \"go test ./...\"; input and output were discarded. This note is metadata, not assistant output. NEVER imitate or reproduce it. Always invoke real tools when needed.]"
-	if got != want {
-		t.Fatalf("unexpected formatted message:\nwant: %q\ngot:  %q", want, got)
+	steps := historicalMessageSteps(0, message)
+	if len(steps) != 3 {
+		t.Fatalf("expected three steps, got %#v", steps)
+	}
+	if steps[0].Text != "" || steps[0].Activities[0].Tool != "read_file" {
+		t.Fatalf("unexpected leading step: %#v", steps[0])
+	}
+	if steps[1].Text != "done" || steps[1].Activities[0].Tool != "bash" {
+		t.Fatalf("unexpected trailing activity step: %#v", steps[1])
+	}
+	if steps[2].Text != "" || len(steps[2].Activities) != 0 {
+		t.Fatalf("unexpected final step: %#v", steps[2])
 	}
 }

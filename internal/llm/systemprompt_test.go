@@ -133,8 +133,12 @@ func TestBuild_IncludesToolFollowThroughInstructions(t *testing.T) {
 		"Tool use is an action, not narration",
 		"your next step should be the corresponding tool call",
 		"Never claim that you read a file",
-		"Historical tool activity annotations are system-generated",
-		"Never emit or imitate these annotations",
+		"Prior-turn tool calls may appear as system-generated provider tool blocks",
+		"empty arguments and fixed results are intentional placeholders",
+		"Prior assistant text and historical tool blocks are not substitutes for current tool evidence",
+		"A successful tool call remains usable for the rest of the current turn",
+		"In a later turn",
+		"make a fresh tool call with valid arguments",
 		"Do not add a separate summary for your own memory",
 	} {
 		if !strings.Contains(result, expected) {

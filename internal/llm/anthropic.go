@@ -117,7 +117,7 @@ func toAnthropicMessages(messages []Message) ([]anthropic.TextBlockParam, []anth
 	var systemBlocks []anthropic.TextBlockParam
 	var msgParams []anthropic.MessageParam
 
-	for _, m := range messages {
+	for messageIndex, m := range messages {
 		content := FormatMessageForProvider(m)
 		switch m.Role {
 		case RoleSystem:
@@ -127,8 +127,24 @@ func toAnthropicMessages(messages []Message) ([]anthropic.TextBlockParam, []anth
 				msgParams = append(msgParams, anthropic.NewUserMessage(anthropic.NewTextBlock(content)))
 			}
 		case RoleAssistant:
-			if content != "" {
-				msgParams = append(msgParams, anthropic.NewAssistantMessage(anthropic.NewTextBlock(content)))
+			for _, step := range historicalMessageSteps(messageIndex, m) {
+				blocks := make([]anthropic.ContentBlockParamUnion, 0, len(step.Activities)+1)
+				if step.Text != "" {
+					blocks = append(blocks, anthropic.NewTextBlock(step.Text))
+				}
+				for _, invocation := range step.Activities {
+					blocks = append(blocks, anthropic.NewToolUseBlock(invocation.ID, json.RawMessage(`{}`), invocation.Tool))
+				}
+				if len(blocks) > 0 {
+					msgParams = append(msgParams, anthropic.NewAssistantMessage(blocks...))
+				}
+				if len(step.Activities) > 0 {
+					results := make([]anthropic.ContentBlockParamUnion, 0, len(step.Activities))
+					for _, invocation := range step.Activities {
+						results = append(results, anthropic.NewToolResultBlock(invocation.ID, historicalToolResult(invocation.Status), invocation.Status != "success"))
+					}
+					msgParams = append(msgParams, anthropic.NewUserMessage(results...))
+				}
 			}
 		}
 	}

@@ -112,9 +112,18 @@ func openAICompatibleBaseURL(provider Provider) (string, error) {
 	}
 }
 
+func logOpenAIMessageOrder(messages []openai.ChatCompletionMessageParamUnion) {
+	prettyJSON, err := json.MarshalIndent(messages, "", "  ")
+	if err != nil {
+		slog.Debug("Failed to log OpenAI message order", "error", err)
+		return
+	}
+	slog.Debug("OpenAI message order:\n" + string(prettyJSON))
+}
+
 func toOpenAIMessages(messages []Message) []openai.ChatCompletionMessageParamUnion {
 	result := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
-	for _, m := range messages {
+	for messageIndex, m := range messages {
 		content := FormatMessageForProvider(m)
 		switch m.Role {
 		case RoleSystem:
@@ -122,13 +131,30 @@ func toOpenAIMessages(messages []Message) []openai.ChatCompletionMessageParamUni
 		case RoleUser:
 			result = append(result, openai.UserMessage(content))
 		case RoleAssistant:
-			am := openai.ChatCompletionAssistantMessageParam{}
-			am.Content.OfString = openai.String(content)
-			result = append(result, openai.ChatCompletionMessageParamUnion{
-				OfAssistant: &am,
-			})
+			for _, step := range historicalMessageSteps(messageIndex, m) {
+				am := openai.ChatCompletionAssistantMessageParam{}
+				if step.Text != "" {
+					am.Content.OfString = openai.String(step.Text)
+				}
+				for _, invocation := range step.Activities {
+					am.ToolCalls = append(am.ToolCalls, openai.ChatCompletionMessageToolCallParam{
+						ID: invocation.ID,
+						Function: openai.ChatCompletionMessageToolCallFunctionParam{
+							Name:      invocation.Tool,
+							Arguments: `{}`,
+						},
+					})
+				}
+				if step.Text != "" || len(step.Activities) > 0 {
+					result = append(result, openai.ChatCompletionMessageParamUnion{OfAssistant: &am})
+				}
+				for _, invocation := range step.Activities {
+					result = append(result, openai.ToolMessage(historicalToolResult(invocation.Status), invocation.ID))
+				}
+			}
 		}
 	}
+	logOpenAIMessageOrder(result)
 	return result
 }
 
@@ -456,9 +482,6 @@ func (c *OpenAICompatibleClient) StreamChat(
 
 		turnStartLen := len(oaiMessages)
 
-		if prettyJSON, err := json.MarshalIndent(oaiMessages, "", "  "); err == nil {
-			slog.Debug("OpenAI messages", "messages", string(prettyJSON))
-		}
 		oaiTools := toOpenAITools(toolRegistry)
 		requestOpts := c.requestOptions(streamOpts)
 
