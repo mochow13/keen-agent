@@ -66,7 +66,7 @@ func (t *WebFetchTool) ValidateInput(_ context.Context, input any) error {
 	url, ok := params["url"].(string)
 	if !ok || url == "" {
 		if _, exists := params["url"]; !exists {
-			return fmt.Errorf("invalid input: missing required 'url' parameter")
+			return missingRequiredParameter("web_fetch", "url", `{"url":"https://example.com"}`, "Provide the complete public URL to fetch")
 		}
 		return fmt.Errorf("invalid input: url must be a non-empty string")
 	}

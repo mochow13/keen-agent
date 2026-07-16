@@ -25,6 +25,14 @@ func ValidateInput(ctx context.Context, tool Tool, input any) error {
 	return validator.ValidateInput(ctx, input)
 }
 
+func missingRequiredParameter(tool, parameter, example, guidance string) error {
+	message := fmt.Sprintf("invalid input: missing required %q parameter. Retry %s with all required fields: %s", parameter, tool, example)
+	if guidance != "" {
+		message += ". " + guidance
+	}
+	return fmt.Errorf("%s", message)
+}
+
 type Registry struct {
 	tools map[string]Tool
 }

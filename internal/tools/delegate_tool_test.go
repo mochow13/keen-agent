@@ -140,8 +140,8 @@ func TestDelegateTool_ValidateInputRejectsInvalidInput(t *testing.T) {
 		input   any
 		wantErr string
 	}{
-		{name: "missing agent", input: map[string]any{"task": "Inspect docs."}, wantErr: "agent is required"},
-		{name: "missing task", input: map[string]any{"agent": "explorer"}, wantErr: "task is required"},
+		{name: "missing agent", input: map[string]any{"task": "Inspect docs."}, wantErr: `missing required "agent" parameter`},
+		{name: "missing task", input: map[string]any{"agent": "explorer"}, wantErr: `missing required "task" parameter`},
 		{name: "non-integer timeout", input: map[string]any{"agent": "explorer", "task": "Inspect docs.", "timeout_seconds": "30"}, wantErr: "cannot unmarshal"},
 	}
 

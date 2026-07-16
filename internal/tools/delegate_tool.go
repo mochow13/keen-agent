@@ -74,6 +74,16 @@ func (t *DelegateTool) Execute(ctx context.Context, input any) (any, error) {
 
 func parseDelegateInput(input any) (delegateInput, error) {
 	var parsed delegateInput
+	params, ok := input.(map[string]any)
+	if !ok {
+		return parsed, fmt.Errorf("invalid input: expected map[string]any, got %T", input)
+	}
+	if _, exists := params["agent"]; !exists {
+		return parsed, missingRequiredParameter("delegate_task", "agent", `{"agent":"<subagent profile>","task":"<bounded task with relevant paths>"}`, "Use a listed subagent profile and provide a self-contained task")
+	}
+	if _, exists := params["task"]; !exists {
+		return parsed, missingRequiredParameter("delegate_task", "task", `{"agent":"<subagent profile>","task":"<bounded task with relevant paths>"}`, "Use a listed subagent profile and provide a self-contained task")
+	}
 	data, err := json.Marshal(input)
 	if err != nil {
 		return parsed, err
@@ -82,10 +92,10 @@ func parseDelegateInput(input any) (delegateInput, error) {
 		return parsed, err
 	}
 	if parsed.Agent == "" {
-		return parsed, fmt.Errorf("agent is required")
+		return parsed, fmt.Errorf("invalid input: agent must be a non-empty string")
 	}
 	if parsed.Task == "" {
-		return parsed, fmt.Errorf("task is required")
+		return parsed, fmt.Errorf("invalid input: task must be a non-empty string")
 	}
 	return parsed, nil
 }

@@ -164,7 +164,7 @@ func (t *GrepTool) parseSearchConfig(input any) (*searchConfig, error) {
 func (t *GrepTool) extractPattern(params map[string]any) (string, error) {
 	patternValue, ok := params["pattern"]
 	if !ok {
-		return "", fmt.Errorf("invalid input: missing required 'pattern' parameter")
+		return "", missingRequiredParameter("grep", "pattern", `{"pattern":"<Go/RE2 regular expression>"}`, "Use path or include to narrow the search when possible")
 	}
 
 	pattern, ok := patternValue.(string)

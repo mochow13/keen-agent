@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	historicalToolSuccessResult = "Historical tool data intentionally removed; call required tools with valid arguments for actual results."
-	historicalToolFailureResult = "Historical tool invocation failed and details were removed; call required tools with valid arguments if needed."
+	historicalToolSuccessResult = `{"status":"success","output_retained":false}`
+	historicalToolFailureResult = `{"status":"error","output_retained":false}`
 )
 
 type historicalMessageStep struct {

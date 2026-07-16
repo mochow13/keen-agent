@@ -77,20 +77,29 @@ func (t *EditFileTool) ValidateInput(_ context.Context, input any) error {
 	path, ok := params["path"].(string)
 	if !ok || path == "" {
 		if _, exists := params["path"]; !exists {
-			return fmt.Errorf("invalid input: missing required 'path' parameter")
+			return missingEditFileParameter("path")
 		}
 		return fmt.Errorf("invalid input: path must be a non-empty string")
 	}
 	for _, name := range []string{"oldString", "newString"} {
 		value, exists := params[name]
 		if !exists {
-			return fmt.Errorf("invalid input: missing required '%s' parameter", name)
+			return missingEditFileParameter(name)
 		}
 		if _, ok := value.(string); !ok {
 			return fmt.Errorf("invalid input: %s must be a string", name)
 		}
 	}
 	return nil
+}
+
+func missingEditFileParameter(name string) error {
+	return missingRequiredParameter(
+		"edit_file",
+		name,
+		`{"path":"<existing file path>","oldString":"<exact text from read_file without line prefixes>","newString":"<replacement text>"}`,
+		"Read the file first; newString may be empty, but it must be provided",
+	)
 }
 
 func (t *EditFileTool) Execute(ctx context.Context, input any) (any, error) {

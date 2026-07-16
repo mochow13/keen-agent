@@ -84,7 +84,7 @@ func (t *ReadFileTool) ValidateInput(_ context.Context, input any) error {
 	path, ok := params["path"].(string)
 	if !ok || path == "" {
 		if _, exists := params["path"]; !exists {
-			return fmt.Errorf("invalid input: missing required 'path' parameter")
+			return missingRequiredParameter("read_file", "path", `{"path":"<file path>"}`, "Provide an absolute or relative file path; offset and limit are optional")
 		}
 		return fmt.Errorf("invalid input: path must be a non-empty string")
 	}

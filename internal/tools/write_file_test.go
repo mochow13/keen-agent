@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mochow13/keen-agent/internal/filesystem"
@@ -98,6 +99,32 @@ func TestWriteFileTool_ValidateInput_InvalidInput(t *testing.T) {
 			err := tool.ValidateInput(ctx, tt.input)
 			if err == nil {
 				t.Error("expected error for invalid input")
+			}
+		})
+	}
+}
+
+func TestWriteFileTool_ValidateInput_MissingFieldsAreInstructional(t *testing.T) {
+	tool := NewWriteFileTool(nil, nil, nil)
+	tests := []struct {
+		name    string
+		input   map[string]any
+		missing string
+	}{
+		{name: "path", input: map[string]any{"content": "test"}, missing: "path"},
+		{name: "content", input: map[string]any{"path": "a.go"}, missing: "content"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tool.ValidateInput(context.Background(), tt.input)
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			for _, want := range []string{`missing required "` + tt.missing + `" parameter`, "Retry write_file with all required fields", `"path"`, `"content"`, "complete file content"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error %q does not contain %q", err, want)
+				}
 			}
 		})
 	}

@@ -71,11 +71,11 @@ func TestHistoricalMessageSteps_PreservesActivityOrder(t *testing.T) {
 	}
 }
 
-func TestHistoricalToolResult_UsesStatusAwareText(t *testing.T) {
-	if got := historicalToolResult("success"); got != historicalToolSuccessResult {
+func TestHistoricalToolResult_UsesConciseStatusJSON(t *testing.T) {
+	if got := historicalToolResult("success"); got != `{"status":"success","output_retained":false}` {
 		t.Fatalf("unexpected success result: %q", got)
 	}
-	if got := historicalToolResult("error"); got != historicalToolFailureResult {
+	if got := historicalToolResult("error"); got != `{"status":"error","output_retained":false}` {
 		t.Fatalf("unexpected failure result: %q", got)
 	}
 }

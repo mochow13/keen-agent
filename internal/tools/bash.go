@@ -110,7 +110,7 @@ func (t *BashTool) ValidateInput(_ context.Context, input any) error {
 	command, ok := params["command"].(string)
 	if !ok || command == "" {
 		if _, exists := params["command"]; !exists {
-			return fmt.Errorf("invalid input: missing required 'command' parameter")
+			return missingRequiredParameter("bash", "command", `{"command":"<shell command>"}`, "Provide the exact command to execute; include isDangerous when it may modify files or system state")
 		}
 		return fmt.Errorf("invalid input: command must be a non-empty string")
 	}

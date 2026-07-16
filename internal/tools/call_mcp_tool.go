@@ -92,10 +92,16 @@ func (t *CallMCPTool) ValidateInput(ctx context.Context, input any) error {
 	}
 	server, err := requiredString(params, "server")
 	if err != nil {
+		if _, exists := params["server"]; !exists {
+			return missingRequiredParameter("call_mcp_tool", "server", `{"server":"<configured server name>","tool":"<exact tool name>"}`, "Read the server skill and tool schema before retrying; arguments must match that schema")
+		}
 		return err
 	}
 	tool, err := requiredString(params, "tool")
 	if err != nil {
+		if _, exists := params["tool"]; !exists {
+			return missingRequiredParameter("call_mcp_tool", "tool", `{"server":"<configured server name>","tool":"<exact tool name>"}`, "Read the server skill and tool schema before retrying; arguments must match that schema")
+		}
 		return err
 	}
 	server, tool, err = normalizeMCPCallTarget(server, tool)

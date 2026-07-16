@@ -71,7 +71,7 @@ func (t *GlobTool) ValidateInput(_ context.Context, input any) error {
 	pattern, ok := params["pattern"].(string)
 	if !ok || pattern == "" {
 		if _, exists := params["pattern"]; !exists {
-			return fmt.Errorf("invalid input: missing required 'pattern' parameter")
+			return missingRequiredParameter("glob", "pattern", `{"pattern":"<glob pattern>"}`, "Use **/ for recursive matching; path is optional")
 		}
 		return fmt.Errorf("invalid input: pattern must be a non-empty string")
 	}

@@ -725,22 +725,14 @@ func (c *AnthropicClient) executeTools(
 					ToolCall: toolCall,
 				}
 			}
-			resultContent = fmt.Sprintf(`{"error":%q}`, execErr.Error())
+			resultContent = serializeToolOutput(map[string]any{"error": execErr.Error()})
 		} else {
 			slog.Debug("Tool response", "tool", tu.name, "duration", duration)
 			eventCh <- StreamEvent{
 				Type:     StreamEventTypeToolEnd,
 				ToolCall: toolCall,
 			}
-			if output == nil {
-				output = map[string]any{}
-			}
-			b, err := json.Marshal(output)
-			if err != nil {
-				resultContent = "{}"
-			} else {
-				resultContent = string(b)
-			}
+			resultContent = serializeToolOutput(output)
 		}
 
 		resultBlocks = append(resultBlocks, anthropic.NewToolResultBlock(tu.id, resultContent, execErr != nil))

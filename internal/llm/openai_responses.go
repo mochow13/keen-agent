@@ -508,22 +508,14 @@ func (c *OpenAIResponsesClient) executeTools(
 					ToolCall: toolCall,
 				}
 			}
-			toolOutput = fmt.Sprintf(`{"error":%q}`, execErr.Error())
+			toolOutput = serializeToolOutput(map[string]any{"error": execErr.Error()})
 		} else {
 			slog.Debug("Tool response", "tool", tc.Name, "duration", duration)
 			eventCh <- StreamEvent{
 				Type:     StreamEventTypeToolEnd,
 				ToolCall: toolCall,
 			}
-			if output == nil {
-				output = map[string]any{}
-			}
-			b, err := json.Marshal(output)
-			if err != nil {
-				toolOutput = "{}"
-			} else {
-				toolOutput = string(b)
-			}
+			toolOutput = serializeToolOutput(output)
 		}
 
 		toolMessages = append(toolMessages, responses.ResponseInputItemParamOfFunctionCallOutput(tc.CallID, toolOutput))

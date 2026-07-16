@@ -67,17 +67,26 @@ func (t *WriteFileTool) ValidateInput(_ context.Context, input any) error {
 	path, ok := params["path"].(string)
 	if !ok || path == "" {
 		if _, exists := params["path"]; !exists {
-			return fmt.Errorf("invalid input: missing required 'path' parameter")
+			return missingWriteFileParameter("path")
 		}
 		return fmt.Errorf("invalid input: path must be a non-empty string")
 	}
 	if _, exists := params["content"]; !exists {
-		return fmt.Errorf("invalid input: missing required 'content' parameter")
+		return missingWriteFileParameter("content")
 	}
 	if _, ok := params["content"].(string); !ok {
 		return fmt.Errorf("invalid input: content must be a string")
 	}
 	return nil
+}
+
+func missingWriteFileParameter(name string) error {
+	return missingRequiredParameter(
+		"write_file",
+		name,
+		`{"path":"<file path>","content":"<complete file content>"}`,
+		"content may be empty, but it must be provided",
+	)
 }
 
 func (t *WriteFileTool) Execute(ctx context.Context, input any) (any, error) {
