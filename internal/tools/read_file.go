@@ -76,30 +76,30 @@ func (t *ReadFileTool) InputSchema() map[string]any {
 	}
 }
 
-func (t *ReadFileTool) Execute(ctx context.Context, input any) (any, error) {
+func (t *ReadFileTool) ValidateInput(_ context.Context, input any) error {
 	params, ok := input.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid input: expected map[string]any, got %T", input)
+		return fmt.Errorf("invalid input: expected map[string]any, got %T", input)
 	}
-
-	pathValue, ok := params["path"]
-	if !ok {
-		return nil, fmt.Errorf("invalid input: missing required 'path' parameter")
-	}
-
-	path, ok := pathValue.(string)
+	path, ok := params["path"].(string)
 	if !ok || path == "" {
-		return nil, fmt.Errorf("invalid input: path must be a non-empty string")
+		if _, exists := params["path"]; !exists {
+			return fmt.Errorf("invalid input: missing required 'path' parameter")
+		}
+		return fmt.Errorf("invalid input: path must be a non-empty string")
 	}
+	if _, err := optionalPositiveInt(params, "offset", 1); err != nil {
+		return err
+	}
+	_, err := optionalPositiveInt(params, "limit", defaultLimit)
+	return err
+}
 
-	offset, err := optionalPositiveInt(params, "offset", 1)
-	if err != nil {
-		return nil, err
-	}
-	limit, err := optionalPositiveInt(params, "limit", defaultLimit)
-	if err != nil {
-		return nil, err
-	}
+func (t *ReadFileTool) Execute(ctx context.Context, input any) (any, error) {
+	params := input.(map[string]any)
+	path := params["path"].(string)
+	offset, _ := optionalPositiveInt(params, "offset", 1)
+	limit, _ := optionalPositiveInt(params, "limit", defaultLimit)
 
 	resolvedPath, err := t.guard.ResolvePath(path)
 	if err != nil {

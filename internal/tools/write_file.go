@@ -59,31 +59,31 @@ func (t *WriteFileTool) InputSchema() map[string]any {
 	}
 }
 
-func (t *WriteFileTool) Execute(ctx context.Context, input any) (any, error) {
+func (t *WriteFileTool) ValidateInput(_ context.Context, input any) error {
 	params, ok := input.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid input: expected map[string]any, got %T", input)
+		return fmt.Errorf("invalid input: expected map[string]any, got %T", input)
 	}
-
-	pathValue, ok := params["path"]
-	if !ok {
-		return nil, fmt.Errorf("invalid input: missing required 'path' parameter")
-	}
-
-	path, ok := pathValue.(string)
+	path, ok := params["path"].(string)
 	if !ok || path == "" {
-		return nil, fmt.Errorf("invalid input: path must be a non-empty string")
+		if _, exists := params["path"]; !exists {
+			return fmt.Errorf("invalid input: missing required 'path' parameter")
+		}
+		return fmt.Errorf("invalid input: path must be a non-empty string")
 	}
+	if _, exists := params["content"]; !exists {
+		return fmt.Errorf("invalid input: missing required 'content' parameter")
+	}
+	if _, ok := params["content"].(string); !ok {
+		return fmt.Errorf("invalid input: content must be a string")
+	}
+	return nil
+}
 
-	contentValue, ok := params["content"]
-	if !ok {
-		return nil, fmt.Errorf("invalid input: missing required 'content' parameter")
-	}
-
-	content, ok := contentValue.(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid input: content must be a string")
-	}
+func (t *WriteFileTool) Execute(ctx context.Context, input any) (any, error) {
+	params := input.(map[string]any)
+	path := params["path"].(string)
+	content := params["content"].(string)
 
 	resolvedPath, err := t.guard.ResolvePath(path)
 	if err != nil {

@@ -398,24 +398,8 @@ func (c *GenkitClient) executeTools(
 			}
 		}
 		slog.Debug("Tool request", "tool", req.Name, "input", input)
-		eventCh <- StreamEvent{
-			Type: StreamEventTypeToolStart,
-			ToolCall: &ToolCall{
-				Name:  req.Name,
-				Input: input,
-			},
-		}
 
-		var output any
-		var execErr error
-
-		if registry == nil {
-			execErr = fmt.Errorf("tool registry not available")
-		} else if tool, exists := registry.Get(req.Name); !exists {
-			execErr = fmt.Errorf("tool %q not found", req.Name)
-		} else {
-			output, execErr = tool.Execute(ctx, input)
-		}
+		output, execErr, toolStarted := executeValidatedTool(ctx, registry, req.Name, input, eventCh)
 
 		duration := time.Since(start)
 
@@ -429,9 +413,11 @@ func (c *GenkitClient) executeTools(
 		if execErr != nil {
 			toolCall.Error = execErr.Error()
 			slog.Debug("Tool response", "tool", req.Name, "error", execErr.Error(), "duration", duration)
-			eventCh <- StreamEvent{
-				Type:     StreamEventTypeToolEnd,
-				ToolCall: toolCall,
+			if toolStarted {
+				eventCh <- StreamEvent{
+					Type:     StreamEventTypeToolEnd,
+					ToolCall: toolCall,
+				}
 			}
 			toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
 				Name:   req.Name,

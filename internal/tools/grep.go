@@ -91,10 +91,22 @@ func (t *GrepTool) InputSchema() map[string]any {
 	}
 }
 
+func (t *GrepTool) ValidateInput(_ context.Context, input any) error {
+	_, err := t.parseSearchConfig(input)
+	return err
+}
+
 func (t *GrepTool) Execute(ctx context.Context, input any) (any, error) {
-	config, err := t.parseSearchConfig(input)
-	if err != nil {
-		return nil, err
+	params := input.(map[string]any)
+	pattern := params["pattern"].(string)
+	includeGlob, _ := t.extractIncludeGlob(params)
+	outputMode, _ := t.extractOutputMode(params)
+	config := &searchConfig{
+		pattern:     pattern,
+		regex:       regexp.MustCompile(pattern),
+		basePath:    t.extractBasePath(params),
+		includeGlob: includeGlob,
+		outputMode:  outputMode,
 	}
 
 	resolvedPath, err := t.guard.ResolvePath(config.basePath)

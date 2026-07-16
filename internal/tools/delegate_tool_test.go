@@ -134,7 +134,7 @@ func TestDelegateTool_ExecuteReturnsRunnerPartialResultOnError(t *testing.T) {
 	}
 }
 
-func TestDelegateTool_ExecuteRejectsInvalidInput(t *testing.T) {
+func TestDelegateTool_ValidateInputRejectsInvalidInput(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   any
@@ -150,12 +150,12 @@ func TestDelegateTool_ExecuteRejectsInvalidInput(t *testing.T) {
 			runner := &mockSubagentRunner{}
 			tool := NewDelegateTool(runner)
 
-			_, err := tool.Execute(context.Background(), tt.input)
+			err := tool.ValidateInput(context.Background(), tt.input)
 			if err == nil {
-				t.Fatal("Execute() expected error")
+				t.Fatal("ValidateInput() expected error")
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("Execute() error = %v, want containing %q", err, tt.wantErr)
+				t.Fatalf("ValidateInput() error = %v, want containing %q", err, tt.wantErr)
 			}
 			if runner.called {
 				t.Fatal("runner should not be called for invalid input")

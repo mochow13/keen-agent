@@ -53,14 +53,18 @@ func (t *DelegateTool) InputSchema() map[string]any {
 	}
 }
 
+func (t *DelegateTool) ValidateInput(_ context.Context, input any) error {
+	_, err := parseDelegateInput(input)
+	return err
+}
+
 func (t *DelegateTool) Execute(ctx context.Context, input any) (any, error) {
 	if t.runner == nil {
 		return nil, fmt.Errorf("subagent runner not configured")
 	}
-	parsed, err := parseDelegateInput(input)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(input)
+	var parsed delegateInput
+	_ = json.Unmarshal(data, &parsed)
 	result, runErr := t.runner.RunDelegate(ctx, parsed.Agent, parsed.Task, parsed.TimeoutSeconds)
 	if runErr != nil {
 		return result, runErr

@@ -69,38 +69,35 @@ func (t *EditFileTool) InputSchema() map[string]any {
 	}
 }
 
-func (t *EditFileTool) Execute(ctx context.Context, input any) (any, error) {
+func (t *EditFileTool) ValidateInput(_ context.Context, input any) error {
 	params, ok := input.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid input: expected map[string]any, got %T", input)
+		return fmt.Errorf("invalid input: expected map[string]any, got %T", input)
 	}
-
-	pathValue, ok := params["path"]
-	if !ok {
-		return nil, fmt.Errorf("invalid input: missing required 'path' parameter")
-	}
-	path, ok := pathValue.(string)
+	path, ok := params["path"].(string)
 	if !ok || path == "" {
-		return nil, fmt.Errorf("invalid input: path must be a non-empty string")
+		if _, exists := params["path"]; !exists {
+			return fmt.Errorf("invalid input: missing required 'path' parameter")
+		}
+		return fmt.Errorf("invalid input: path must be a non-empty string")
 	}
+	for _, name := range []string{"oldString", "newString"} {
+		value, exists := params[name]
+		if !exists {
+			return fmt.Errorf("invalid input: missing required '%s' parameter", name)
+		}
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("invalid input: %s must be a string", name)
+		}
+	}
+	return nil
+}
 
-	oldStringValue, ok := params["oldString"]
-	if !ok {
-		return nil, fmt.Errorf("invalid input: missing required 'oldString' parameter")
-	}
-	oldString, ok := oldStringValue.(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid input: oldString must be a string")
-	}
-
-	newStringValue, ok := params["newString"]
-	if !ok {
-		return nil, fmt.Errorf("invalid input: missing required 'newString' parameter")
-	}
-	newString, ok := newStringValue.(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid input: newString must be a string")
-	}
+func (t *EditFileTool) Execute(ctx context.Context, input any) (any, error) {
+	params := input.(map[string]any)
+	path := params["path"].(string)
+	oldString := params["oldString"].(string)
+	newString := params["newString"].(string)
 
 	shouldReplaceAll := false
 	if v, ok := params["shouldReplaceAll"]; ok {

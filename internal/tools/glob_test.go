@@ -69,7 +69,7 @@ func TestGlobTool_InputSchema(t *testing.T) {
 	}
 }
 
-func TestGlobTool_Execute_InvalidInput(t *testing.T) {
+func TestGlobTool_ValidateInput_InvalidInput(t *testing.T) {
 	tool := NewGlobTool(nil, nil)
 	ctx := context.Background()
 
@@ -87,7 +87,7 @@ func TestGlobTool_Execute_InvalidInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tool.Execute(ctx, tt.input)
+			err := tool.ValidateInput(ctx, tt.input)
 			if err == nil {
 				t.Error("expected error for invalid input")
 			}
@@ -95,7 +95,7 @@ func TestGlobTool_Execute_InvalidInput(t *testing.T) {
 	}
 }
 
-func TestGlobTool_Execute_InvalidPattern(t *testing.T) {
+func TestGlobTool_ValidateInput_InvalidPattern(t *testing.T) {
 	tmpDir := t.TempDir()
 	guard := filesystem.NewGuard(tmpDir, nil)
 	tool := NewGlobTool(guard, nil)
@@ -112,7 +112,7 @@ func TestGlobTool_Execute_InvalidPattern(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			input := map[string]any{"pattern": tt.pattern}
-			_, err := tool.Execute(ctx, input)
+			err := tool.ValidateInput(ctx, input)
 			if err == nil {
 				t.Error("expected error for invalid pattern")
 			}

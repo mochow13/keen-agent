@@ -85,37 +85,42 @@ func (t *CallMCPTool) InputSchema() map[string]any {
 	}
 }
 
-func (t *CallMCPTool) Execute(ctx context.Context, input any) (any, error) {
+func (t *CallMCPTool) ValidateInput(ctx context.Context, input any) error {
 	params, ok := input.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid input: expected map[string]any, got %T", input)
+		return fmt.Errorf("invalid input: expected map[string]any, got %T", input)
 	}
-
 	server, err := requiredString(params, "server")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	tool, err := requiredString(params, "tool")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	server, tool, err = normalizeMCPCallTarget(server, tool)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	var arguments map[string]any
+	if raw, exists := params["arguments"]; exists && raw != nil {
+		arguments, _ = raw.(map[string]any)
+	}
+	return t.validateRequiredArguments(ctx, server, tool, arguments)
+}
+
+func (t *CallMCPTool) Execute(ctx context.Context, input any) (any, error) {
+	params := input.(map[string]any)
+	server := params["server"].(string)
+	tool := params["tool"].(string)
+	server, tool, _ = normalizeMCPCallTarget(server, tool)
 
 	var arguments map[string]any
 	if raw, exists := params["arguments"]; exists && raw != nil {
-		if m, ok := raw.(map[string]any); ok {
-			arguments = m
-		}
+		arguments, _ = raw.(map[string]any)
 	}
 
 	_ = params["checkCache"] // reserved, no-op
-
-	if err := t.validateRequiredArguments(ctx, server, tool, arguments); err != nil {
-		return nil, err
-	}
 
 	argsJSON := ""
 	if len(arguments) > 0 {

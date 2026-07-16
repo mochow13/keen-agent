@@ -102,21 +102,24 @@ func (t *BashTool) InputSchema() map[string]any {
 	}
 }
 
-func (t *BashTool) Execute(ctx context.Context, input any) (any, error) {
+func (t *BashTool) ValidateInput(_ context.Context, input any) error {
 	params, ok := input.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid input: expected map[string]any, got %T", input)
+		return fmt.Errorf("invalid input: expected map[string]any, got %T", input)
 	}
-
-	commandValue, ok := params["command"]
-	if !ok {
-		return nil, fmt.Errorf("invalid input: missing required 'command' parameter")
-	}
-
-	command, ok := commandValue.(string)
+	command, ok := params["command"].(string)
 	if !ok || command == "" {
-		return nil, fmt.Errorf("invalid input: command must be a non-empty string")
+		if _, exists := params["command"]; !exists {
+			return fmt.Errorf("invalid input: missing required 'command' parameter")
+		}
+		return fmt.Errorf("invalid input: command must be a non-empty string")
 	}
+	return nil
+}
+
+func (t *BashTool) Execute(ctx context.Context, input any) (any, error) {
+	params := input.(map[string]any)
+	command := params["command"].(string)
 
 	isDangerous := false
 	if isDangerousValue, exists := params["isDangerous"]; exists {

@@ -591,24 +591,8 @@ func (c *BedrockClient) executeTools(
 		start := time.Now()
 
 		slog.Debug("Tool request", "tool", tu.name, "input", tu.input)
-		eventCh <- StreamEvent{
-			Type: StreamEventTypeToolStart,
-			ToolCall: &ToolCall{
-				Name:  tu.name,
-				Input: tu.input,
-			},
-		}
 
-		var output any
-		var execErr error
-
-		if registry == nil {
-			execErr = fmt.Errorf("tool registry not available")
-		} else if tool, exists := registry.Get(tu.name); !exists {
-			execErr = fmt.Errorf("tool %q not found", tu.name)
-		} else {
-			output, execErr = tool.Execute(ctx, tu.input)
-		}
+		output, execErr, toolStarted := executeValidatedTool(ctx, registry, tu.name, tu.input, eventCh)
 
 		duration := time.Since(start)
 		toolCall := &ToolCall{
@@ -624,11 +608,19 @@ func (c *BedrockClient) executeTools(
 			toolCall.Error = execErr.Error()
 			status = brtypes.ToolResultStatusError
 			slog.Debug("Tool response", "tool", tu.name, "error", execErr.Error(), "duration", duration)
-			eventCh <- StreamEvent{Type: StreamEventTypeToolEnd, ToolCall: toolCall}
+			if toolStarted {
+				eventCh <- StreamEvent{
+					Type:     StreamEventTypeToolEnd,
+					ToolCall: toolCall,
+				}
+			}
 			content = append(content, &brtypes.ToolResultContentBlockMemberJson{Value: document.NewLazyDocument(map[string]any{"error": execErr.Error()})})
 		} else {
 			slog.Debug("Tool response", "tool", tu.name, "duration", duration)
-			eventCh <- StreamEvent{Type: StreamEventTypeToolEnd, ToolCall: toolCall}
+			eventCh <- StreamEvent{
+				Type:     StreamEventTypeToolEnd,
+				ToolCall: toolCall,
+			}
 			if output == nil {
 				output = map[string]any{}
 			}

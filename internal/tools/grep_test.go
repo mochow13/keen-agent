@@ -76,7 +76,7 @@ func TestGrepTool_InputSchema(t *testing.T) {
 	}
 }
 
-func TestGrepTool_Execute_InvalidInput(t *testing.T) {
+func TestGrepTool_ValidateInput_InvalidInput(t *testing.T) {
 	tmpDir := t.TempDir()
 	guard := filesystem.NewGuard(tmpDir, nil)
 	tool := NewGrepTool(guard, nil)
@@ -110,28 +110,28 @@ func TestGrepTool_Execute_InvalidInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tool.Execute(ctx, tt.input)
+			err := tool.ValidateInput(ctx, tt.input)
 			if err == nil {
-				t.Error("Execute() should return error for invalid input")
+				t.Error("ValidateInput() should return error for invalid input")
 			}
 		})
 	}
 }
 
-func TestGrepTool_Execute_InvalidPattern(t *testing.T) {
+func TestGrepTool_ValidateInput_InvalidPattern(t *testing.T) {
 	tmpDir := t.TempDir()
 	guard := filesystem.NewGuard(tmpDir, nil)
 	tool := NewGrepTool(guard, nil)
 	ctx := context.Background()
 
 	input := map[string]any{"pattern": "[invalid("}
-	_, err := tool.Execute(ctx, input)
+	err := tool.ValidateInput(ctx, input)
 	if err == nil {
-		t.Error("Execute() should return error for invalid regex")
+		t.Error("ValidateInput() should return error for invalid regex")
 	}
 }
 
-func TestGrepTool_Execute_InvalidOutputMode(t *testing.T) {
+func TestGrepTool_ValidateInput_InvalidOutputMode(t *testing.T) {
 	tmpDir := t.TempDir()
 	guard := filesystem.NewGuard(tmpDir, nil)
 	tool := NewGrepTool(guard, nil)
@@ -141,9 +141,9 @@ func TestGrepTool_Execute_InvalidOutputMode(t *testing.T) {
 		"pattern":     "test",
 		"output_mode": "invalid",
 	}
-	_, err := tool.Execute(ctx, input)
+	err := tool.ValidateInput(ctx, input)
 	if err == nil {
-		t.Error("Execute() should return error for invalid output_mode")
+		t.Error("ValidateInput() should return error for invalid output_mode")
 	}
 }
 
@@ -611,7 +611,7 @@ func TestGrepTool_Execute_RelativePath(t *testing.T) {
 	}
 }
 
-func TestGrepTool_Execute_InvalidIncludeGlob(t *testing.T) {
+func TestGrepTool_ValidateInput_InvalidIncludeGlob(t *testing.T) {
 	tmpDir := t.TempDir()
 	guard := filesystem.NewGuard(tmpDir, nil)
 	tool := NewGrepTool(guard, nil)
@@ -621,9 +621,9 @@ func TestGrepTool_Execute_InvalidIncludeGlob(t *testing.T) {
 		"pattern": "test",
 		"include": "[invalid(",
 	}
-	_, err := tool.Execute(ctx, input)
+	err := tool.ValidateInput(ctx, input)
 	if err == nil {
-		t.Error("Execute() should return error for invalid include glob")
+		t.Error("ValidateInput() should return error for invalid include glob")
 	}
 }
 

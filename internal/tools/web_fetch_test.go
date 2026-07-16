@@ -53,25 +53,25 @@ func TestWebFetchTool_InputSchema(t *testing.T) {
 	}
 }
 
-func TestWebFetchTool_Execute_MissingURL(t *testing.T) {
+func TestWebFetchTool_ValidateInput_MissingURL(t *testing.T) {
 	tool := NewWebFetchTool()
-	_, err := tool.Execute(context.Background(), map[string]any{})
+	err := tool.ValidateInput(context.Background(), map[string]any{})
 	if err == nil {
 		t.Error("expected error for missing url")
 	}
 }
 
-func TestWebFetchTool_Execute_InvalidURLType(t *testing.T) {
+func TestWebFetchTool_ValidateInput_InvalidURLType(t *testing.T) {
 	tool := NewWebFetchTool()
-	_, err := tool.Execute(context.Background(), map[string]any{"url": 42})
+	err := tool.ValidateInput(context.Background(), map[string]any{"url": 42})
 	if err == nil {
 		t.Error("expected error for non-string url")
 	}
 }
 
-func TestWebFetchTool_Execute_InvalidInput(t *testing.T) {
+func TestWebFetchTool_ValidateInput_InvalidInput(t *testing.T) {
 	tool := NewWebFetchTool()
-	_, err := tool.Execute(context.Background(), "not a map")
+	err := tool.ValidateInput(context.Background(), "not a map")
 	if err == nil {
 		t.Error("expected error for invalid input type")
 	}

@@ -78,7 +78,7 @@ func TestReadFileTool_InputSchema(t *testing.T) {
 	}
 }
 
-func TestReadFileTool_Execute_InvalidInput(t *testing.T) {
+func TestReadFileTool_ValidateInput_InvalidInput(t *testing.T) {
 	tool := NewReadFileTool(nil, nil)
 	ctx := context.Background()
 
@@ -100,7 +100,7 @@ func TestReadFileTool_Execute_InvalidInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tool.Execute(ctx, tt.input)
+			err := tool.ValidateInput(ctx, tt.input)
 			if err == nil {
 				t.Error("expected error for invalid input")
 			}

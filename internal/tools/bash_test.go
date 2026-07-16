@@ -79,7 +79,7 @@ func TestBashTool_InputSchema(t *testing.T) {
 	}
 }
 
-func TestBashTool_Execute_InvalidInput(t *testing.T) {
+func TestBashTool_ValidateInput_InvalidInput(t *testing.T) {
 	tests := []struct {
 		name  string
 		input any
@@ -113,7 +113,7 @@ func TestBashTool_Execute_InvalidInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tool := NewBashTool(nil, nil)
-			_, err := tool.Execute(context.Background(), tt.input)
+			err := tool.ValidateInput(context.Background(), tt.input)
 			if err == nil {
 				t.Error("expected error for invalid input")
 			}

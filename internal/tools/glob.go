@@ -63,25 +63,27 @@ func (t *GlobTool) InputSchema() map[string]any {
 	}
 }
 
-func (t *GlobTool) Execute(ctx context.Context, input any) (any, error) {
+func (t *GlobTool) ValidateInput(_ context.Context, input any) error {
 	params, ok := input.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid input: expected map[string]any, got %T", input)
+		return fmt.Errorf("invalid input: expected map[string]any, got %T", input)
 	}
-
-	patternValue, ok := params["pattern"]
-	if !ok {
-		return nil, fmt.Errorf("invalid input: missing required 'pattern' parameter")
-	}
-
-	pattern, ok := patternValue.(string)
+	pattern, ok := params["pattern"].(string)
 	if !ok || pattern == "" {
-		return nil, fmt.Errorf("invalid input: pattern must be a non-empty string")
+		if _, exists := params["pattern"]; !exists {
+			return fmt.Errorf("invalid input: missing required 'pattern' parameter")
+		}
+		return fmt.Errorf("invalid input: pattern must be a non-empty string")
 	}
-
 	if !doublestar.ValidatePattern(pattern) {
-		return nil, fmt.Errorf("invalid pattern: malformed glob pattern %q", pattern)
+		return fmt.Errorf("invalid pattern: malformed glob pattern %q", pattern)
 	}
+	return nil
+}
+
+func (t *GlobTool) Execute(ctx context.Context, input any) (any, error) {
+	params := input.(map[string]any)
+	pattern := params["pattern"].(string)
 
 	basePath := ""
 	if pathValue, exists := params["path"]; exists {

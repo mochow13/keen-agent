@@ -104,19 +104,19 @@ func TestCallMCPTool_RejectsMissingRequiredArguments(t *testing.T) {
 	permissions := &mockPermissionRequester{allow: true}
 	callTool := NewCallMCPTool(runtime, permissions)
 
-	_, err := callTool.Execute(context.Background(), map[string]any{
+	err := callTool.ValidateInput(context.Background(), map[string]any{
 		"server":    "context7",
 		"tool":      "resolve-library-id",
 		"arguments": map[string]any{},
 	})
 	if err == nil {
-		t.Fatal("Execute() expected error for missing required arguments")
+		t.Fatal("ValidateInput() expected error for missing required arguments")
 	}
 	if !strings.Contains(err.Error(), "libraryName") {
-		t.Fatalf("Execute() error = %v, want missing field name", err)
+		t.Fatalf("ValidateInput() error = %v, want missing field name", err)
 	}
 	if !strings.Contains(err.Error(), "~/.keen-agent/skills/mcp:context7/schemas/resolve-library-id.json") {
-		t.Fatalf("Execute() error = %v, want schema path", err)
+		t.Fatalf("ValidateInput() error = %v, want schema path", err)
 	}
 	if permissions.called {
 		t.Fatal("permission should not be requested for invalid MCP arguments")
@@ -152,23 +152,23 @@ func TestCallMCPTool_PropagatesMCPError(t *testing.T) {
 	}
 }
 
-func TestCallMCPTool_MissingServer(t *testing.T) {
+func TestCallMCPTool_ValidateInput_MissingServer(t *testing.T) {
 	callTool := NewCallMCPTool(&mockMCPRuntime{}, &mockPermissionRequester{allow: true})
-	_, err := callTool.Execute(context.Background(), map[string]any{
+	err := callTool.ValidateInput(context.Background(), map[string]any{
 		"tool": "create_issue",
 	})
 	if err == nil {
-		t.Fatal("Execute() expected error for missing server")
+		t.Fatal("ValidateInput() expected error for missing server")
 	}
 }
 
-func TestCallMCPTool_MissingTool(t *testing.T) {
+func TestCallMCPTool_ValidateInput_MissingTool(t *testing.T) {
 	callTool := NewCallMCPTool(&mockMCPRuntime{}, &mockPermissionRequester{allow: true})
-	_, err := callTool.Execute(context.Background(), map[string]any{
+	err := callTool.ValidateInput(context.Background(), map[string]any{
 		"server": "github",
 	})
 	if err == nil {
-		t.Fatal("Execute() expected error for missing tool")
+		t.Fatal("ValidateInput() expected error for missing tool")
 	}
 }
 
@@ -211,15 +211,15 @@ func TestCallMCPTool_NotFound(t *testing.T) {
 	}
 	callTool := NewCallMCPTool(runtime, &mockPermissionRequester{allow: true})
 
-	_, err := callTool.Execute(context.Background(), map[string]any{
+	err := callTool.ValidateInput(context.Background(), map[string]any{
 		"server": "context7",
 		"tool":   "resolve_library_id",
 	})
 	if err == nil {
-		t.Fatal("Execute() expected error for unknown tool")
+		t.Fatal("ValidateInput() expected error for unknown tool")
 	}
 	if !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("Execute() error = %v, want not found", err)
+		t.Fatalf("ValidateInput() error = %v, want not found", err)
 	}
 	if !strings.Contains(err.Error(), "~/.keen-agent/skills/mcp:context7/SKILL.md") {
 		t.Fatalf("Execute() error = %v, want skill file path", err)

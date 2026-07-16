@@ -58,21 +58,24 @@ func (t *WebFetchTool) InputSchema() map[string]any {
 	}
 }
 
-func (t *WebFetchTool) Execute(ctx context.Context, input any) (any, error) {
+func (t *WebFetchTool) ValidateInput(_ context.Context, input any) error {
 	params, ok := input.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid input: expected map[string]any, got %T", input)
+		return fmt.Errorf("invalid input: expected map[string]any, got %T", input)
 	}
-
-	urlValue, ok := params["url"]
-	if !ok {
-		return nil, fmt.Errorf("invalid input: missing required 'url' parameter")
-	}
-
-	url, ok := urlValue.(string)
+	url, ok := params["url"].(string)
 	if !ok || url == "" {
-		return nil, fmt.Errorf("invalid input: url must be a non-empty string")
+		if _, exists := params["url"]; !exists {
+			return fmt.Errorf("invalid input: missing required 'url' parameter")
+		}
+		return fmt.Errorf("invalid input: url must be a non-empty string")
 	}
+	return nil
+}
+
+func (t *WebFetchTool) Execute(ctx context.Context, input any) (any, error) {
+	params := input.(map[string]any)
+	url := params["url"].(string)
 
 	client := &http.Client{Timeout: webFetchTimeout}
 

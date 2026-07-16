@@ -13,6 +13,18 @@ type Tool interface {
 	Execute(ctx context.Context, input any) (any, error)
 }
 
+type InputValidator interface {
+	ValidateInput(ctx context.Context, input any) error
+}
+
+func ValidateInput(ctx context.Context, tool Tool, input any) error {
+	validator, ok := tool.(InputValidator)
+	if !ok {
+		return nil
+	}
+	return validator.ValidateInput(ctx, input)
+}
+
 type Registry struct {
 	tools map[string]Tool
 }
