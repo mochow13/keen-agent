@@ -68,7 +68,7 @@ collisions.
 | ---------------------------------------------- | ------------------------------------------------------------------------------- |
 | `~/.keen/` (config, sessions, global skills)   | `~/.keen-agent/`                                                                |
 | `~/.keen/configs.json` (active provider/model) | `~/.keen-agent/configs.json`                                                    |
-| `~/.keen/skills/` (global skills)              | User-selected `skills_dirs` plus optional `~/.keen-agent/skills/` shared skills |
+| `~/.keen/skills/` (global skills)              | User-selected `skills_dirs` only                                                |
 | `~/.keen/sessions/` (or equivalent)            | `~/.keen-agent/<agent-name>/sessions/`                                          |
 | `~/.keen/logs/` (or equivalent)                | `~/.keen-agent/<agent-name>/logs/`                                              |
 | auth/token storage                             | `~/.keen-agent/auth.json`                                                       |
@@ -209,7 +209,7 @@ Format:
 | Permission system   | keen-code `internal/filesystem` | Same guard: cwd=granted, outside=pending, system=denied                                     |
 | TUI / REPL          | keen-code `internal/cli/repl`   | Customizable name                                                                           |
 | Built-in tools      | keen-code `internal/tools`      | read_file, write_file, edit_file, web_fetch, glob, grep, bash, call_mcp_tool, delegate_task |
-| Skill loader        | keen-code skill mechanism       | Agent-local (`skills_dirs`) + optional shared `~/.keen-agent/skills/`                       |
+| Skill loader        | keen-code skill mechanism       | Agent-local (`skills_dirs`) only                                                           |
 | MCP client          | keen-code MCP integration       | Same server config format; call_mcp_tool auto-included when mcp_config_dirs is set          |
 | Subagent system     | keen-code `internal/subagents`  | Discovery, runner, and `delegate_task` tool; auto-included when subagents_dirs is set       |
 | Session persistence | keen-code session storage       | Same format under `~/.keen-agent/<agent-name>/sessions/`; `/resume` command in TUI          |
@@ -448,13 +448,15 @@ as the main `model` block.
 
 ## Skills
 
-### Discovery order
+### Discovery
 
-1. **Agent-local**: `skills_dirs` from config (relative to config file location), processed in order
-2. **Project-local**: `.agents/skills/` or `.keen-agent/skills/` in cwd
-3. **Global**: `~/.keen-agent/skills/`
+Skills are discovered only from `skills_dirs` in `agent.yaml`, relative to the
+configuration file location and processed in order. If `skills_dirs` is absent,
+no skills are loaded.
 
-Earlier directories take precedence on name collision; later directories can extend the catalog with new skills.
+Earlier directories take precedence on name collision; later directories can extend the
+catalog with new skills. Keen Agent does not inspect project-local, global, bundled,
+or keen-code resource directories.
 
 ### Format
 
@@ -469,13 +471,15 @@ bounded tasks to via the `delegate_task` built-in tool. They are useful for
 scoped investigation, comparison, and summarization work that is separable from
 the main agent's primary task.
 
-### Discovery order
+### Discovery
 
-1. **Agent-local**: `subagents_dirs` from config (relative to config file location), processed in order
-2. **Project-local**: `.agents/agents/` or `.keen-agent/agents/` in cwd
-3. **Global**: `~/.keen-agent/agents/`
+Subagents are discovered only from `subagents_dirs` in `agent.yaml`, relative to
+the configuration file location and processed in order. If `subagents_dirs` is
+absent, no subagents are loaded and `delegate_task` is unavailable.
 
-Earlier directories take precedence on name collision; later directories can extend the catalog with new subagents.
+Earlier directories take precedence on name collision; later directories can extend the
+catalog with new subagents. Keen Agent does not inspect project-local, global, bundled,
+or keen-code resource directories.
 
 ### Format
 
@@ -556,8 +560,8 @@ keen-agent separates user-authored resources from runtime state:
 | --------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------- |
 | Agent config                                  | user-authored                 | `--agent ./agent.yaml`                                                       |
 | MCP server config                             | user-authored                 | `mcp_config_dirs` (optional)                                                 |
-| Skills                                        | user-authored                 | `skills_dirs`, project-local skills, optional shared `~/.keen-agent/skills/` |
-| Subagents                                     | user-authored                 | `subagents_dirs`, optional shared `~/.keen-agent/agents/`                    |
+| Skills                                        | user-authored                 | `skills_dirs` only                                                            |
+| Subagents                                     | user-authored                 | `subagents_dirs` only                                                         |
 | Provider/model config + API credentials       | shared keen-agent state       | `~/.keen-agent/configs.json`                                                 |
 | OAuth token cache for model providers and MCP | shared keen-agent state       | `~/.keen-agent/auth.json`                                                    |
 | Sessions                                      | agent-scoped keen-agent state | `~/.keen-agent/<agent-name>/sessions/`                                       |
@@ -734,8 +738,8 @@ before reporting so users see the full picture at once.
 ### Phase 4 — TUI + Skills + Subagents
 
 1. Extract/copy TUI/REPL with customization hooks
-2. Extract/copy skill loader with agent-local + global discovery
-3. Extract/copy subagent loader with agent-local + global discovery
+2. Extract/copy skill loader with configured-directory discovery
+3. Extract/copy subagent loader with configured-directory discovery
 4. Implement configurable `btw` and `adversary` one-shot helper flows with dedicated prompts (adversary supports optional model override; btw uses main model)
 5. Implement session persistence (same format as keen-code)
 
@@ -861,17 +865,15 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
   - Coverage proves unknown fields—including the removed `functions` field—fail at
     load time, and the obsolete schema is absent from code and tests.
 
-- [ ] **Implement the documented generic discovery order.**
-  - For skills: configured `skills_dirs`, then `.agents/skills/` or
-    `.keen-agent/skills/` in the working directory, then `~/.keen-agent/skills/`.
-  - For subagents: configured `subagents_dirs`, then `.agents/agents/` or
-    `.keen-agent/agents/`, then `~/.keen-agent/agents/`.
-  - Do not read keen-code's `.keen`, `~/.keen`, `.claude`, or related paths.
-  - Resolve whether fallback discovery should enable delegation by itself; the
-    preferred rule is: configured directories opt in to delegation, while fallback
-    directories extend discovery after that opt-in.
-  - Acceptance: directory precedence and collision behavior are covered by tests,
-    and no keen-code namespace path is inspected.
+- [x] **Use configured-directory-only resource discovery.**
+  - Skills load only from `skills_dirs`; subagents load only from `subagents_dirs`.
+    An absent setting loads no resource and does not enable its integration.
+  - Configured directories are processed in order; earlier entries win name
+    collisions and later entries may extend the catalog.
+  - Do not read project-local, global, bundled, keen-code `.keen`/`~/.keen`,
+    `.claude`, or related fallback paths.
+  - Acceptance: configured-directory precedence, collision behavior, and
+    absent-directory behavior are covered by tests.
 
 - [ ] **Finish validation, diagnostics, and runtime-readiness warnings.**
   - Keep structural, scalar, file, content, and cross-reference failures fatal.
@@ -891,8 +893,8 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
     failures without dropping successful results.
   - Raise the default subagent timeout to 30 minutes while respecting profile and
     caller overrides, cancellation, and read-only restrictions.
-  - Keep keen-agent's configured-directory opt-in; do not port keen-code's global
-    discovery or coding-specific profile behavior.
+  - Keep keen-agent's configured-directory-only opt-in; do not port keen-code's
+    global discovery or coding-specific profile behavior.
   - Acceptance: tests cover concurrent success, one-task failure, cancellation,
     task-count limits, and timeout override behavior.
 

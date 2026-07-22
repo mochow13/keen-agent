@@ -8,11 +8,7 @@ import (
 )
 
 func TestDiscoverAndLoadMetadata(t *testing.T) {
-	workingDir := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	projectDir := filepath.Join(workingDir, ".keen-agent", "agents")
+	projectDir := t.TempDir()
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatalf("create project agents dir: %v", err)
 	}
@@ -27,7 +23,7 @@ Review with focus.
 		t.Fatalf("write project profile: %v", err)
 	}
 
-	bundledDir := filepath.Join(t.TempDir(), "bundled")
+	bundledDir := t.TempDir()
 	if err := os.MkdirAll(bundledDir, 0o755); err != nil {
 		t.Fatalf("create bundled dir: %v", err)
 	}
@@ -40,7 +36,7 @@ Explore with focus.
 		t.Fatalf("write bundled profile: %v", err)
 	}
 
-	discovery := Discover([]string{projectDir, bundledDir}, "", "")
+	discovery := Discover([]string{projectDir, bundledDir})
 	if len(discovery.Profiles) != 2 {
 		t.Fatalf("expected 2 discovered profiles, got %d: %+v", len(discovery.Profiles), discovery.Profiles)
 	}

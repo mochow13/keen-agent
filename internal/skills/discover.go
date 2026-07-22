@@ -14,11 +14,11 @@ type Discovery struct {
 	Warnings []string
 }
 
-func Discover(configDirs []string, workingDir, bundledDir string) Discovery {
+func Discover(configDirs []string) Discovery {
 	var result Discovery
 	seen := map[string]bool{}
 
-	for _, root := range discoveryRoots(configDirs, workingDir, bundledDir) {
+	for _, root := range configDirs {
 		matches, err := filepath.Glob(filepath.Join(root, "*", "SKILL.md"))
 		if err != nil {
 			continue
@@ -111,12 +111,6 @@ containing SKILL.md:
 		"`[Activate skill: <name>]`, the SKILL.md body for that skill has already been " +
 		"provided inline in that message — do not call read_file on its path.")
 	return strings.TrimRight(sb.String(), "\n")
-}
-
-func discoveryRoots(configDirs []string, workingDir, bundledDir string) []string {
-	var roots []string
-	roots = append(roots, configDirs...)
-	return roots
 }
 
 func Find(skills []Skill, name string) (Skill, bool) {

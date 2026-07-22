@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-func Discover(configDirs []string, workingDir, bundledDir string) Discovery {
+func Discover(configDirs []string) Discovery {
 	var result Discovery
 	seen := map[string]bool{}
 
-	for _, root := range discoveryRoots(configDirs, workingDir, bundledDir) {
+	for _, root := range configDirs {
 		matches, err := filepath.Glob(filepath.Join(root, "*.md"))
 		if err != nil {
 			continue
@@ -101,10 +101,4 @@ func Catalog(profiles []Profile) string {
 		sb.WriteString("\n")
 	}
 	return strings.TrimRight(sb.String(), "\n")
-}
-
-func discoveryRoots(configDirs []string, workingDir, bundledDir string) []string {
-	var roots []string
-	roots = append(roots, configDirs...)
-	return roots
 }

@@ -67,16 +67,11 @@ func (s *AppState) ReloadSkills() skills.Discovery {
 		s.skills = skills.Discovery{}
 		return s.GetSkills()
 	}
-	bundledDir, bundledErr := skills.EnsureBundled()
 	var configDirs []string
 	if s.agentCfg != nil {
 		configDirs = s.agentCfg.ResolvedSkillsDirs()
 	}
-	discovery := skills.LoadMetadata(skills.Discover(configDirs, s.workingDir, bundledDir))
-	if bundledErr != nil {
-		discovery.Warnings = append(discovery.Warnings, "Bundled skills failed to extract: "+bundledErr.Error())
-	}
-	s.skills = discovery
+	s.skills = skills.LoadMetadata(skills.Discover(configDirs))
 	return s.GetSkills()
 }
 
@@ -138,16 +133,11 @@ func (s *AppState) ReloadSubagents() subagents.Discovery {
 		s.subagents = subagents.Discovery{}
 		return s.GetSubagents()
 	}
-	bundledDir, bundledErr := subagents.EnsureBundled()
 	var configDirs []string
 	if s.agentCfg != nil {
 		configDirs = s.agentCfg.ResolvedSubagentsDirs()
 	}
-	discovery := subagents.LoadMetadata(subagents.Discover(configDirs, s.workingDir, bundledDir))
-	if bundledErr != nil {
-		discovery.Warnings = append(discovery.Warnings, "Bundled subagents failed to extract: "+bundledErr.Error())
-	}
-	s.subagents = discovery
+	s.subagents = subagents.LoadMetadata(subagents.Discover(configDirs))
 	return s.GetSubagents()
 }
 

@@ -221,6 +221,34 @@ func TestAppState_SetAgentConfigReloadsConfiguredResources(t *testing.T) {
 	}
 }
 
+func TestAppState_DoesNotDiscoverUnconfiguredResources(t *testing.T) {
+	work := t.TempDir()
+
+	skillDir := filepath.Join(work, ".agents", "skills", "fallback")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir fallback skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: fallback\ndescription: Fallback skill\n---\nBody"), 0o644); err != nil {
+		t.Fatalf("write fallback skill: %v", err)
+	}
+
+	subagentDir := filepath.Join(work, ".keen-agent", "agents")
+	if err := os.MkdirAll(subagentDir, 0o755); err != nil {
+		t.Fatalf("mkdir fallback subagent: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subagentDir, "fallback.md"), []byte("---\nname: fallback\ndescription: Fallback subagent\n---\nPrompt"), 0o644); err != nil {
+		t.Fatalf("write fallback subagent: %v", err)
+	}
+
+	state := New(nil, work)
+	if got := state.GetSkills().Skills; len(got) != 0 {
+		t.Fatalf("expected no unconfigured skills, got %#v", got)
+	}
+	if got := state.GetSubagents().Profiles; len(got) != 0 {
+		t.Fatalf("expected no unconfigured subagents, got %#v", got)
+	}
+}
+
 func TestAppState_SkillsReloadUpdatesMetadata(t *testing.T) {
 	home := t.TempDir()
 	work := t.TempDir()
