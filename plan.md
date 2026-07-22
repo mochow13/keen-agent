@@ -813,14 +813,14 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
   - Coverage proves the configured MCP dispatch tool is registered. Add a real
     configured-server invocation test with the MCP integration suite.
 
-- [ ] **Finish config-driven tool registration.**
-  - In `internal/cli/repl/tooling/tool_registry.go`, honor
-    `builtin_tools.exclude` for excludable tools.
-  - Register `call_mcp_tool` only when `mcp_config_dirs` is non-empty and
-    `delegate_task` only when `subagents_dirs` is non-empty; neither can be
-    excluded explicitly.
-  - Acceptance: excluded `bash` is absent from the LLM registry; an agent with
-    neither integration directory has neither core integration tool.
+- [x] **Finish config-driven tool registration.**
+  - `builtin_tools.exclude` applies to excludable built-ins only.
+  - `call_mcp_tool` is registered only when `mcp_config_dirs` is non-empty and
+    `delegate_task` only when `subagents_dirs` is non-empty; configured core
+    integration tools cannot be excluded.
+  - Coverage verifies excluded `bash`, absent integration tools without their
+    configured directories, and required integration tools remain registered
+    despite an exclusion entry.
 
 - [ ] **Enforce plan mode through tool capabilities, not a name blacklist.**
   - [x] Add explicit read-only/capability metadata to the built-in tool contract

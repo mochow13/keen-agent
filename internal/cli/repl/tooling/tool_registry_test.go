@@ -132,3 +132,27 @@ func TestSetupToolRegistry_IncludesDelegateToolWhenSubagentsDirsPresent(t *testi
 		t.Errorf("expected call_mcp_tool to be excluded when mcp_config_dirs is not set")
 	}
 }
+
+func TestSetupToolRegistry_DoesNotExcludeRequiredIntegrationTools(t *testing.T) {
+	work := t.TempDir()
+	state := replappstate.New(&fakeLLMClient{}, work)
+	permissionRequester := replpermissions.NewAutoApproveRequester()
+	diffEmitter := NewDiffEmitter()
+	resolvedCfg := &config.ResolvedConfig{}
+	agentCfg := &agentconfig.Config{
+		BuiltinTools: &agentconfig.BuiltinTools{
+			Exclude: []string{"call_mcp_tool", "delegate_task"},
+		},
+		MCPConfigDirs: agentconfig.StringOrArray{"./mcp.json"},
+		SubagentsDirs: agentconfig.StringOrArray{"./subagents"},
+	}
+
+	SetupToolRegistry(work, state, permissionRequester, diffEmitter, &fakeMCPRuntime{}, resolvedCfg, agentCfg)
+
+	names := toolNames(t, state)
+	for _, required := range []string{"call_mcp_tool", "delegate_task"} {
+		if !slices.Contains(names, required) {
+			t.Errorf("expected required integration tool %q to remain registered", required)
+		}
+	}
+}

@@ -29,36 +29,39 @@ func SetupToolRegistry(
 
 	excluded := builtinToolsExcluded(agentCfg)
 
-	register := func(tool tools.Tool) {
+	registerExcludable := func(tool tools.Tool) {
 		if excluded[tool.Name()] {
 			return
 		}
 		_ = appState.RegisterTool(tool)
 	}
+	registerRequired := func(tool tools.Tool) {
+		_ = appState.RegisterTool(tool)
+	}
 
 	readFileTool := tools.NewReadFileTool(guard, permissionRequester)
-	register(readFileTool)
+	registerExcludable(readFileTool)
 
 	globTool := tools.NewGlobTool(guard, permissionRequester)
-	register(globTool)
+	registerExcludable(globTool)
 
 	grepTool := tools.NewGrepTool(guard, permissionRequester)
-	register(grepTool)
+	registerExcludable(grepTool)
 
 	writeFileTool := tools.NewWriteFileTool(guard, diffEmitter, permissionRequester)
-	register(writeFileTool)
+	registerExcludable(writeFileTool)
 
 	editFileTool := tools.NewEditFileTool(guard, diffEmitter, permissionRequester)
-	register(editFileTool)
+	registerExcludable(editFileTool)
 
 	bashTool := tools.NewBashTool(guard, permissionRequester)
-	register(bashTool)
+	registerExcludable(bashTool)
 
 	webFetchTool := tools.NewWebFetchTool()
-	register(webFetchTool)
+	registerExcludable(webFetchTool)
 
 	if mcpRuntime != nil && hasMCPConfigDirs(agentCfg) {
-		register(tools.NewCallMCPTool(mcpRuntime, permissionRequester))
+		registerRequired(tools.NewCallMCPTool(mcpRuntime, permissionRequester))
 	}
 
 	if hasSubagentsDirs(agentCfg) {
@@ -71,7 +74,7 @@ func SetupToolRegistry(
 			NewClient: llm.NewClient,
 			Registry:  appState.GetToolRegistry(),
 		}
-		register(tools.NewDelegateTool(runner))
+		registerRequired(tools.NewDelegateTool(runner))
 	}
 }
 
