@@ -3,14 +3,12 @@ package agentconfig
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,8 +21,7 @@ const (
 	PermissionRequiresApproval = "requires_approval"
 	PermissionDeny             = "deny"
 
-	DefaultMode            = ModeBuild
-	DefaultFunctionTimeout = 30 * time.Second
+	DefaultMode = ModeBuild
 )
 
 // StringOrArray accepts either a single YAML string or a sequence of strings.
@@ -61,7 +58,6 @@ type Config struct {
 	Btw                 *BtwConfig            `yaml:"btw,omitempty"`
 	Adversary           *AdversaryConfig      `yaml:"adversary,omitempty"`
 	BuiltinTools        *BuiltinTools         `yaml:"builtin_tools,omitempty"`
-	Functions           []FunctionDef         `yaml:"functions,omitempty"`
 	SubagentsDirs       StringOrArray         `yaml:"subagents_dirs,omitempty"`
 	MCPConfigDirs       StringOrArray         `yaml:"mcp_config_dirs,omitempty"`
 	SkillsDirs          StringOrArray         `yaml:"skills_dirs,omitempty"`
@@ -121,13 +117,6 @@ func (c *Config) ResolvedMCPConfigDirs() []string {
 
 func (c *Config) ResolvedSkillsDirs() []string {
 	return c.resolveAll(c.SkillsDirs)
-}
-
-func (c *Config) ResolvedFunctionInputSchemaFile(i int) string {
-	if i < 0 || i >= len(c.Functions) {
-		return ""
-	}
-	return c.ResolveConfigPath(c.Functions[i].InputSchemaFile)
 }
 
 func (c *Config) resolveAll(paths StringOrArray) []string {
@@ -219,31 +208,6 @@ type BashPolicy struct {
 type BashRule struct {
 	Match      []string `yaml:"match,omitempty"`
 	Permission string   `yaml:"permission,omitempty"`
-}
-
-type FunctionDef struct {
-	Name            string   `yaml:"name"`
-	Description     string   `yaml:"description"`
-	Command         string   `yaml:"command"`
-	InputSchemaFile string   `yaml:"input_schema_file"`
-	ReadOnly        bool     `yaml:"read_only,omitempty"`
-	Permission      string   `yaml:"permission,omitempty"`
-	Timeout         Duration `yaml:"timeout,omitempty"`
-	MaxRetries      int      `yaml:"max_retries,omitempty"`
-}
-
-func (f *FunctionDef) EffectivePermission() string {
-	if f.Permission == "" {
-		return PermissionAutoApprove
-	}
-	return f.Permission
-}
-
-func (f *FunctionDef) EffectiveTimeout() time.Duration {
-	if f.Timeout > 0 {
-		return f.Timeout.Std()
-	}
-	return DefaultFunctionTimeout
 }
 
 func Load(path string) (*Config, error) {
@@ -386,29 +350,6 @@ func validateFileExistence(cfg *Config, res *ValidationResult) {
 			}
 		}
 	}
-	for i, fn := range cfg.Functions {
-		prefix := fmt.Sprintf("functions[%d]", i)
-		if strings.TrimSpace(fn.Name) == "" {
-			res.addError(prefix+".name", "required field missing")
-		}
-		if strings.TrimSpace(fn.Description) == "" {
-			res.addError(prefix+".description", "required field missing")
-		}
-		if strings.TrimSpace(fn.Command) == "" {
-			res.addError(prefix+".command", "required field missing")
-		}
-		if strings.TrimSpace(fn.InputSchemaFile) == "" {
-			res.addError(prefix+".input_schema_file", "required field missing")
-			continue
-		}
-		resolved := cfg.ResolvedFunctionInputSchemaFile(i)
-		if !strings.HasSuffix(resolved, ".json") {
-			res.addError(prefix+".input_schema_file", "must be a .json file")
-		}
-		if _, err := os.Stat(resolved); err != nil {
-			res.addError(prefix+".input_schema_file", fmt.Sprintf("%q: %v", resolved, err))
-		}
-	}
 	for i, p := range cfg.ResolvedMCPConfigDirs() {
 		if _, err := os.Stat(p); err != nil {
 			res.addError(fmt.Sprintf("mcp_config_dirs[%d]", i), fmt.Sprintf("%q: %v", p, err))
@@ -431,25 +372,6 @@ func validateFileExistence(cfg *Config, res *ValidationResult) {
 }
 
 func validateContent(cfg *Config, res *ValidationResult) {
-	for i := range cfg.Functions {
-		prefix := fmt.Sprintf("functions[%d]", i)
-		resolved := cfg.ResolvedFunctionInputSchemaFile(i)
-		if resolved == "" {
-			continue
-		}
-		data, err := os.ReadFile(resolved)
-		if err != nil {
-			continue // already reported in file existence check
-		}
-		var schema map[string]any
-		if err := json.Unmarshal(data, &schema); err != nil {
-			res.addError(prefix+".input_schema_file", fmt.Sprintf("invalid JSON: %v", err))
-			continue
-		}
-		if typ, ok := schema["type"].(string); !ok || typ != "object" {
-			res.addError(prefix+".input_schema_file", "schema root type must be object")
-		}
-	}
 	for i, dir := range cfg.ResolvedSubagentsDirs() {
 		entries, err := os.ReadDir(dir)
 		if err != nil {

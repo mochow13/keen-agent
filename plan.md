@@ -854,13 +854,12 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
 
 ### P1 — Complete the config contract and discovery model
 
-- [ ] **Use strict YAML decoding and remove the unused `Functions` schema.**
-  - Reject unknown top-level and nested configuration keys during decode rather
-    than using permissive YAML unmarshalling.
-  - Remove `Functions`, `FunctionDef`, `Duration`, and their validation unless a
-    separately designed and implemented generic function-tool feature is approved.
-  - Acceptance: unknown YAML fields fail validation; the obsolete field is absent
-    from code, documentation, and tests.
+- [x] **Use strict YAML decoding and remove the unused `Functions` schema.**
+  - YAML decoding rejects unknown top-level and nested configuration keys.
+  - Removed `Functions`, `FunctionDef`, `Duration`, and their validation. A generic
+    function-tool feature requires separate design and implementation approval.
+  - Coverage proves unknown fields—including the removed `functions` field—fail at
+    load time, and the obsolete schema is absent from code and tests.
 
 - [ ] **Implement the documented generic discovery order.**
   - For skills: configured `skills_dirs`, then `.agents/skills/` or

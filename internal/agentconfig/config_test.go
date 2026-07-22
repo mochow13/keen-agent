@@ -3,8 +3,8 @@ package agentconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-	"time"
 )
 
 func writeConfig(t *testing.T, dir, content string) string {
@@ -32,7 +32,6 @@ func TestLoad_FullConfig(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "prompts", "build.md"), "build")
 	writeFile(t, filepath.Join(dir, "prompts", "btw.md"), "btw")
 	writeFile(t, filepath.Join(dir, "prompts", "adversary.md"), "adversary")
-	writeFile(t, filepath.Join(dir, "schemas", "run_query.json"), `{"type":"object"}`)
 	if err := os.MkdirAll(filepath.Join(dir, "subagents"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -83,15 +82,6 @@ builtin_tools:
     rules:
       - match: ["rm", "drop"]
         permission: deny
-functions:
-  - name: run_query
-    description: Execute a read-only SQL query
-    command: python3 ./functions/run_query.py
-    input_schema_file: ./schemas/run_query.json
-    read_only: true
-    permission: auto_approve
-    timeout: 30s
-    max_retries: 2
 subagents_dirs:
   - ./subagents
 mcp_config_dirs:
@@ -155,20 +145,6 @@ skills_dirs:
 	if len(cfg.BuiltinTools.Bash.Rules) != 1 || cfg.BuiltinTools.Bash.Rules[0].Permission != "deny" {
 		t.Errorf("unexpected bash rules: %+v", cfg.BuiltinTools.Bash.Rules)
 	}
-	if len(cfg.Functions) != 1 {
-		t.Fatalf("expected 1 function, got %d", len(cfg.Functions))
-	}
-	fn := cfg.Functions[0]
-	if fn.Name != "run_query" {
-		t.Errorf("expected function name run_query, got %q", fn.Name)
-	}
-	if fn.EffectivePermission() != "auto_approve" {
-		t.Errorf("expected permission auto_approve, got %q", fn.EffectivePermission())
-	}
-	if fn.EffectiveTimeout() != 30*time.Second {
-		t.Errorf("expected timeout 30s, got %v", fn.EffectiveTimeout())
-	}
-
 	resolvedSPF := cfg.ResolvedSystemPromptFiles()
 	if len(resolvedSPF) != 1 || resolvedSPF[0] != filepath.Join(dir, "prompts", "additional.md") {
 		t.Errorf("unexpected resolved system prompt files: %v", resolvedSPF)
@@ -203,12 +179,6 @@ skills_dirs:
 	if len(resolvedSkills) != 1 || resolvedSkills[0] != filepath.Join(dir, "skills") {
 		t.Errorf("unexpected resolved skills dirs: %v", resolvedSkills)
 	}
-	if cfg.ResolvedFunctionInputSchemaFile(0) != filepath.Join(dir, "schemas", "run_query.json") {
-		t.Errorf("unexpected resolved function schema file: %q", cfg.ResolvedFunctionInputSchemaFile(0))
-	}
-	if cfg.ResolvedFunctionInputSchemaFile(1) != "" {
-		t.Errorf("expected empty out-of-range function schema file, got %q", cfg.ResolvedFunctionInputSchemaFile(1))
-	}
 }
 
 func TestLoad_RejectsBtwModel(t *testing.T) {
@@ -224,6 +194,51 @@ btw:
 
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected btw.model to be rejected")
+	}
+}
+
+func TestLoad_RejectsUnknownFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		field   string
+	}{
+		{
+			name: "top level",
+			content: "name: test\n" +
+				"system_prompt: hi\n" +
+				"unknown_field: value\n",
+			field: "unknown_field",
+		},
+		{
+			name: "nested",
+			content: "name: test\n" +
+				"system_prompt: hi\n" +
+				"adversary:\n" +
+				"  enabled: true\n" +
+				"  unknown_field: value\n",
+			field: "unknown_field",
+		},
+		{
+			name: "removed functions",
+			content: "name: test\n" +
+				"system_prompt: hi\n" +
+				"functions: []\n",
+			field: "functions",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, t.TempDir(), tt.content)
+			_, err := Load(path)
+			if err == nil {
+				t.Fatal("expected unknown field error")
+			}
+			if !strings.Contains(err.Error(), tt.field) {
+				t.Errorf("error = %q, want field %q", err, tt.field)
+			}
+		})
 	}
 }
 
@@ -335,16 +350,6 @@ func TestLoad_MissingFile(t *testing.T) {
 	}
 }
 
-func TestFunctionDef_Defaults(t *testing.T) {
-	fn := FunctionDef{}
-	if fn.EffectivePermission() != PermissionAutoApprove {
-		t.Errorf("expected default permission %q, got %q", PermissionAutoApprove, fn.EffectivePermission())
-	}
-	if fn.EffectiveTimeout() != DefaultFunctionTimeout {
-		t.Errorf("expected default timeout %v, got %v", DefaultFunctionTimeout, fn.EffectiveTimeout())
-	}
-}
-
 func TestValidate_Minimal(t *testing.T) {
 	dir := t.TempDir()
 	path := writeConfig(t, dir, "name: minimal\nsystem_prompt: hello\n")
@@ -424,42 +429,6 @@ func TestValidate_MissingSystemPromptFile(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected system_prompt_files error, got: %+v", res.Errors)
-	}
-}
-
-func TestValidate_FunctionErrors(t *testing.T) {
-	dir := t.TempDir()
-	content := `name: bad-fn
-system_prompt: hi
-functions:
-  - name: ""
-    description: ""
-    command: ""
-    input_schema_file: ./schema.txt
-`
-	path := writeConfig(t, dir, content)
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("load error: %v", err)
-	}
-	res := Validate(cfg)
-	if res.OK() {
-		t.Fatal("expected validation to fail")
-	}
-	paths := map[string]bool{}
-	for _, e := range res.Errors {
-		paths[e.Path] = true
-	}
-	want := map[string]bool{
-		"functions[0].name":              true,
-		"functions[0].description":       true,
-		"functions[0].command":           true,
-		"functions[0].input_schema_file": true,
-	}
-	for p := range want {
-		if !paths[p] {
-			t.Errorf("expected error at %s, got errors: %+v", p, res.Errors)
-		}
 	}
 }
 
