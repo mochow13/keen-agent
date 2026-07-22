@@ -1207,7 +1207,9 @@ func TestHandleShowThinkingCommand_PersistsToGlobalConfig(t *testing.T) {
 func TestHandleEnterKey_BtwCommandStartsStream(t *testing.T) {
 	m := newTestModel()
 	m.ctx.cfg = &config.ResolvedConfig{APIKey: "key", Model: "model"}
+	m.ctx.agentCfg = &agentconfig.Config{Btw: &agentconfig.BtwConfig{Enabled: true, ContextMessages: 10}}
 	m.appState = replappstate.New(&mockLLMClient{}, "")
+	m.appState.SetAgentConfig(m.ctx.agentCfg)
 	m.appState.AddMessage(llm.RoleUser, "context message")
 	m.btwStreamHandler = NewStreamHandler(nil)
 	m.textarea.SetValue("/btw what is this?")
@@ -1231,7 +1233,9 @@ func TestHandleEnterKey_BtwCommandStartsStream(t *testing.T) {
 func TestHandleEnterKey_BtwCommandDuringActiveStream(t *testing.T) {
 	m := newTestModel()
 	m.ctx.cfg = &config.ResolvedConfig{APIKey: "key", Model: "model"}
+	m.ctx.agentCfg = &agentconfig.Config{Btw: &agentconfig.BtwConfig{Enabled: true, ContextMessages: 10}}
 	m.appState = replappstate.New(&mockLLMClient{}, "")
+	m.appState.SetAgentConfig(m.ctx.agentCfg)
 	m.btwStreamHandler = NewStreamHandler(nil)
 	eventCh := make(chan llm.StreamEvent)
 	m.streamHandler.Start(eventCh, "Loading...")
@@ -1249,6 +1253,8 @@ func TestHandleEnterKey_BtwCommandDuringActiveStream(t *testing.T) {
 
 func TestHandleEnterKey_BtwCommandNoQuestion(t *testing.T) {
 	m := newTestModel()
+	m.ctx.agentCfg = &agentconfig.Config{Btw: &agentconfig.BtwConfig{Enabled: true, ContextMessages: 10}}
+	m.appState.SetAgentConfig(m.ctx.agentCfg)
 	m.btwStreamHandler = NewStreamHandler(nil)
 	m.textarea.SetValue("/btw")
 
@@ -1274,6 +1280,8 @@ func TestHandleEnterKey_BtwCommandNoQuestion(t *testing.T) {
 
 func TestHandleEnterKey_BtwCommandNoQuestionShowsUsage(t *testing.T) {
 	m := newTestModel()
+	m.ctx.agentCfg = &agentconfig.Config{Btw: &agentconfig.BtwConfig{Enabled: true, ContextMessages: 10}}
+	m.appState.SetAgentConfig(m.ctx.agentCfg)
 	m.btwStreamHandler = NewStreamHandler(nil)
 	m.textarea.SetValue("/btw")
 
@@ -1350,6 +1358,8 @@ func (f *fakeMCPRuntime) CallTool(_ context.Context, _, _ string, _ map[string]a
 func TestHandleEnterKey_BtwCommandClientNotReady(t *testing.T) {
 	m := newTestModel()
 	m.ctx.cfg = &config.ResolvedConfig{}
+	m.ctx.agentCfg = &agentconfig.Config{Btw: &agentconfig.BtwConfig{Enabled: true, ContextMessages: 10}}
+	m.appState.SetAgentConfig(m.ctx.agentCfg)
 	m.btwStreamHandler = NewStreamHandler(nil)
 	m.textarea.SetValue("/btw question")
 
@@ -1370,6 +1380,43 @@ func TestHandleEnterKey_BtwCommandClientNotReady(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected error about LLM client not initialized for /btw")
+	}
+}
+
+func TestHandleAdversaryModelCommandStartsSelectionWithConfiguredModel(t *testing.T) {
+	m := newTestModel()
+	m.ctx.agentCfg = &agentconfig.Config{Adversary: &agentconfig.AdversaryConfig{
+		Enabled: true,
+		Model:   &agentconfig.ModelRef{Provider: "anthropic", ModelID: "configured-model"},
+	}}
+	m.ctx.globalCfg = &config.GlobalConfig{Providers: map[string]config.ProviderConfig{}}
+	m.ctx.loader = config.NewLoader()
+	m.ctx.registry = &providers.Registry{}
+	m.appState.SetAgentConfig(m.ctx.agentCfg)
+
+	updated, cmd := m.handleAdversaryCommand(replcommands.AdversaryModel)
+	if cmd != nil {
+		t.Fatal("expected no asynchronous command")
+	}
+	if updated.adversary.modelSelection == nil {
+		t.Fatal("expected adversary model selection")
+	}
+}
+
+func TestHandleEnterKey_DisabledHelperCommandsAreRejected(t *testing.T) {
+	for _, command := range []string{"/btw question", "/adversary"} {
+		t.Run(command, func(t *testing.T) {
+			m := newTestModel()
+			m.textarea.SetValue(command)
+
+			updated, cmd := m.handleEnterKey()
+			if cmd != nil {
+				t.Fatal("expected no command for disabled helper")
+			}
+			if !strings.Contains(strings.Join(updated.output.GetLines(), "\n"), "not enabled") {
+				t.Fatalf("expected disabled-helper error, got %q", updated.output.GetLines())
+			}
+		})
 	}
 }
 
@@ -1636,6 +1683,8 @@ func TestHandleEnterKey_EmptyQueueEmpty(t *testing.T) {
 
 func TestHandleEnterKey_AdversaryQueuedWhenBusy(t *testing.T) {
 	m := newTestModel()
+	m.ctx.agentCfg = &agentconfig.Config{Adversary: &agentconfig.AdversaryConfig{Enabled: true}}
+	m.appState.SetAgentConfig(m.ctx.agentCfg)
 	m.showSpinner = true
 	m.queuedInputs = nil
 
@@ -1655,6 +1704,8 @@ func TestHandleEnterKey_AdversaryQueuedWhenBusy(t *testing.T) {
 
 func TestHandleEnterKey_AdversaryQueuedWhenBusy_AdjustsViewportHeight(t *testing.T) {
 	m := newTestModel()
+	m.ctx.agentCfg = &agentconfig.Config{Adversary: &agentconfig.AdversaryConfig{Enabled: true}}
+	m.appState.SetAgentConfig(m.ctx.agentCfg)
 	m.showSpinner = true
 	m.adjustTextareaHeight()
 
@@ -1670,6 +1721,8 @@ func TestHandleEnterKey_AdversaryQueuedWhenBusy_AdjustsViewportHeight(t *testing
 
 func TestHandleEnterKey_AdversaryQueueFull(t *testing.T) {
 	m := newTestModel()
+	m.ctx.agentCfg = &agentconfig.Config{Adversary: &agentconfig.AdversaryConfig{Enabled: true}}
+	m.appState.SetAgentConfig(m.ctx.agentCfg)
 	m.showSpinner = true
 	m.queuedInputs = []string{"msg1", "msg2", "msg3", "msg4", "msg5"}
 

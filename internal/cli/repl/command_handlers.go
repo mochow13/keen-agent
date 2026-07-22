@@ -39,7 +39,7 @@ func (m *replModel) dispatchCommand(input string) (replModel, tea.Cmd, bool) {
 		return *m, tea.Quit, true
 
 	case input == replcommands.Help:
-		m.output.AddLine(getHelpText(m.helpWidth()))
+		m.output.AddLine(m.getHelpText(m.helpWidth()))
 		m.output.AddEmptyLine()
 		m.textarea.Reset()
 		m.updateViewportContent()
@@ -777,6 +777,10 @@ func (m *replModel) saveShowThinking(val bool) {
 }
 
 func (m *replModel) handleBtwCommand(input string) (replModel, tea.Cmd) {
+	if !m.btwEnabled() {
+		return m.rejectDisabledHelper(replcommands.Btw)
+	}
+
 	question := strings.TrimSpace(strings.TrimPrefix(input, replcommands.Btw))
 	if question == "" {
 		m.output.AddStyledLine("  Usage: /btw <question>", repltheme.UsageHintStyle)
@@ -855,21 +859,14 @@ func (m *replModel) handleBangCommand(input string) (replModel, tea.Cmd) {
 }
 
 func (m *replModel) handleAdversaryCommand(input string) (replModel, tea.Cmd) {
+	if !m.adversaryEnabled() {
+		return m.rejectDisabledHelper(replcommands.Adversary)
+	}
+
 	arg := strings.TrimSpace(strings.TrimPrefix(input, replcommands.Adversary))
 
 	if arg == "model" {
 		return m.startAdversaryModelSelection(), nil
-	}
-
-	hasAgentAdversary := m.ctx.agentCfg != nil && m.ctx.agentCfg.Adversary.Model != nil && m.ctx.agentCfg.Adversary.Model.IsComplete()
-	hasGlobalAdversary := m.ctx.globalCfg.AdversaryProvider != "" && m.ctx.globalCfg.AdversaryModel != ""
-
-	if !hasAgentAdversary && !hasGlobalAdversary {
-		m.output.AddStyledLine("  Adversary not configured. Add `adversary.model` to your agent config, or run `/adversary model` to select one.", repltheme.HighlightStyle)
-		m.output.AddEmptyLine()
-		m.updateViewportContent()
-		m.viewport.GotoBottom()
-		return *m, nil
 	}
 
 	if !m.appState.IsAdversaryClientReady() {
@@ -1018,14 +1015,22 @@ func (m *replModel) helpWidth() int {
 	return width
 }
 
+func (m *replModel) getHelpText(width int) string {
+	return formatHelpText(width, replcommands.Available(m.btwEnabled(), m.adversaryEnabled()))
+}
+
 func getHelpText(width int) string {
+	return formatHelpText(width, replcommands.All)
+}
+
+func formatHelpText(width int, commands []replcommands.SlashCommand) string {
 	const (
 		leftPadding  = "  "
 		rightPadding = 2
 		colGap       = "  "
 	)
 
-	cmdWidth := max(maxCommandNameWidth(replcommands.All), len("Command"))
+	cmdWidth := max(maxCommandNameWidth(commands), len("Command"))
 	descWidth := width - lipgloss.Width(leftPadding) - cmdWidth - lipgloss.Width(colGap) - rightPadding
 	if descWidth < 1 {
 		descWidth = 1
@@ -1034,7 +1039,7 @@ func getHelpText(width int) string {
 	var lines []string
 	lines = append(lines, leftPadding+repltheme.TitleStyle.Render("Available Commands"))
 	lines = append(lines, "")
-	for _, c := range replcommands.All {
+	for _, c := range commands {
 		descriptionLines := strings.Split(lipgloss.NewStyle().Width(descWidth).Render(c.Description), "\n")
 		if len(descriptionLines) == 0 {
 			descriptionLines = []string{""}

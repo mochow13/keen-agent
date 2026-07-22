@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -183,6 +184,21 @@ type BtwConfig struct {
 	SystemPromptFiles StringOrArray `yaml:"system_prompt_files,omitempty"`
 }
 
+func (c *Config) BtwEnabled() bool {
+	return c != nil && c.Btw != nil && c.Btw.Enabled
+}
+
+func (c *Config) AdversaryEnabled() bool {
+	return c != nil && c.Adversary != nil && c.Adversary.Enabled
+}
+
+func (c *Config) BtwContextMessages() int {
+	if !c.BtwEnabled() {
+		return 0
+	}
+	return c.Btw.ContextMessages
+}
+
 type AdversaryConfig struct {
 	Enabled           bool          `yaml:"enabled"`
 	Model             *ModelRef     `yaml:"model,omitempty"`
@@ -242,8 +258,13 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse agent config %q: %w", absPath, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("failed to parse agent config %q: expected a single YAML document", absPath)
 	}
 
 	cfg.baseDir = filepath.Dir(absPath)
@@ -327,8 +348,8 @@ func validateScalarShape(cfg *Config, res *ValidationResult) {
 		res.addError("model", "model block requires both provider and model_id")
 	}
 	if cfg.Btw != nil && cfg.Btw.Enabled {
-		if cfg.Btw.ContextMessages < 0 {
-			res.addError("btw.context_messages", "must be non-negative")
+		if cfg.Btw.ContextMessages <= 0 {
+			res.addError("btw.context_messages", "must be positive")
 		}
 	}
 	if cfg.Adversary != nil && cfg.Adversary.Enabled {

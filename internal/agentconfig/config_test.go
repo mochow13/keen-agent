@@ -211,6 +211,22 @@ skills_dirs:
 	}
 }
 
+func TestLoad_RejectsBtwModel(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfig(t, dir, `name: test
+btw:
+  enabled: true
+  context_messages: 1
+  model:
+    provider: anthropic
+    model_id: test-model
+`)
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected btw.model to be rejected")
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	dir := t.TempDir()
 	path := writeConfig(t, dir, "name: minimal\n")

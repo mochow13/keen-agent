@@ -394,7 +394,7 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 			m.textarea, textCmd = m.textarea.Update(keyMsg)
 			input := m.textarea.Value()
 			if !m.refreshFileSuggestions(input) && strings.HasPrefix(input, "/") {
-				m.suggestion.RefreshWithSkills(input, m.skillSuggestions())
+				m.refreshCommandSuggestions(input)
 			}
 			m.adjustTextareaHeight()
 			return *m, tea.Batch(cmd, textCmd)
@@ -509,10 +509,14 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 	m.textarea, cmd = m.textarea.Update(keyMsg)
 	input := m.textarea.Value()
 	if !m.refreshFileSuggestions(input) && strings.HasPrefix(input, "/") {
-		m.suggestion.RefreshWithSkills(input, m.skillSuggestions())
+		m.refreshCommandSuggestions(input)
 	}
 	m.adjustTextareaHeight()
 	return *m, cmd
+}
+
+func (m *replModel) refreshCommandSuggestions(input string) {
+	m.suggestion.RefreshWithSkillsAndHelpers(input, m.skillSuggestions(), m.btwEnabled(), m.adversaryEnabled())
 }
 
 func (m *replModel) skillSuggestions() []replwidgets.SuggestionItem {

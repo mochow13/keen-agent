@@ -766,8 +766,8 @@ func (m replModel) View() tea.View {
 
 		inputValue := m.textarea.Value()
 		shellMode := strings.HasPrefix(inputValue, "!")
-		btwMode := inputValue == replcommands.Btw || strings.HasPrefix(inputValue, replcommands.Btw+" ")
-		adversaryMode := inputValue == replcommands.Adversary || strings.HasPrefix(inputValue, replcommands.Adversary+" ")
+		btwMode := m.btwEnabled() && (inputValue == replcommands.Btw || strings.HasPrefix(inputValue, replcommands.Btw+" "))
+		adversaryMode := m.adversaryEnabled() && (inputValue == replcommands.Adversary || strings.HasPrefix(inputValue, replcommands.Adversary+" "))
 
 		styles := m.textarea.Styles()
 		switch {

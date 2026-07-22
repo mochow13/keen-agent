@@ -608,6 +608,7 @@ func TestAppState_StreamBtwBuildsCorrectMessages(t *testing.T) {
 	}
 
 	state := New(client, t.TempDir())
+	state.SetAgentConfig(&agentconfig.Config{Btw: &agentconfig.BtwConfig{Enabled: true, ContextMessages: 10}})
 	state.AddMessage(llm.RoleUser, "fix the bug")
 	state.AddMessage(llm.RoleAssistant, "done")
 
@@ -644,6 +645,41 @@ func TestAppState_StreamBtwBuildsCorrectMessages(t *testing.T) {
 	last := capturedMessages[len(capturedMessages)-1]
 	if last.Role != llm.RoleUser || last.Content != "what is the bug about?" {
 		t.Fatalf("expected user question as last message, got %#v", last)
+	}
+}
+
+func TestAppState_StreamBtwRejectsDisabledHelper(t *testing.T) {
+	state := New(&mockLLMClient{}, t.TempDir())
+
+	stream, err := state.StreamBtw(context.Background(), "question")
+	if err == nil || !strings.Contains(err.Error(), "not enabled") {
+		t.Fatalf("StreamBtw() error = %v, want disabled-helper error", err)
+	}
+	if stream != nil {
+		t.Fatal("expected no stream for disabled helper")
+	}
+}
+
+func TestAppState_StreamBtwUsesConfiguredContextWindow(t *testing.T) {
+	var captured []llm.Message
+	client := &mockLLMClient{streamChatFunc: func(_ context.Context, messages []llm.Message, _ *tools.Registry) (<-chan llm.StreamEvent, error) {
+		captured = append([]llm.Message(nil), messages...)
+		ch := make(chan llm.StreamEvent)
+		close(ch)
+		return ch, nil
+	}}
+	state := New(client, t.TempDir())
+	state.SetAgentConfig(&agentconfig.Config{Btw: &agentconfig.BtwConfig{Enabled: true, ContextMessages: 1}})
+	state.AddMessage(llm.RoleUser, "first")
+	state.AddMessage(llm.RoleAssistant, "second")
+	state.AddMessage(llm.RoleUser, "third")
+	state.AddMessage(llm.RoleAssistant, "fourth")
+
+	if _, err := state.StreamBtw(context.Background(), "question"); err != nil {
+		t.Fatalf("StreamBtw() returned error: %v", err)
+	}
+	if len(captured) != 3 || captured[1].Content != "fourth" {
+		t.Fatalf("StreamBtw() messages = %#v, want only final context message", captured)
 	}
 }
 
@@ -726,6 +762,7 @@ func TestBtwContext(t *testing.T) {
 
 func TestAppState_StreamBtwNilClient(t *testing.T) {
 	state := New(nil, t.TempDir())
+	state.SetAgentConfig(&agentconfig.Config{Btw: &agentconfig.BtwConfig{Enabled: true, ContextMessages: 10}})
 	state.AddMessage(llm.RoleUser, "hello")
 
 	eventCh, err := state.StreamBtw(context.Background(), "question")
@@ -740,6 +777,7 @@ func TestAppState_StreamBtwNilClient(t *testing.T) {
 func TestAppState_StreamBtwDoesNotModifyMessages(t *testing.T) {
 	client := &mockLLMClient{}
 	state := New(client, t.TempDir())
+	state.SetAgentConfig(&agentconfig.Config{Btw: &agentconfig.BtwConfig{Enabled: true, ContextMessages: 10}})
 	state.AddMessage(llm.RoleUser, "original")
 
 	_, _ = state.StreamBtw(context.Background(), "side question")

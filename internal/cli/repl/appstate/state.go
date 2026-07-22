@@ -230,10 +230,14 @@ func (s *AppState) StreamCompact(ctx context.Context, cfg *config.ResolvedConfig
 }
 
 func (s *AppState) StreamBtw(ctx context.Context, question string, opts ...llm.StreamOptions) (<-chan llm.StreamEvent, error) {
+	if !s.agentCfg.BtwEnabled() {
+		return nil, fmt.Errorf("btw helper is not enabled")
+	}
 	if s.llmClient == nil {
 		return nil, nil
 	}
-	history := btwContext(s.messages, 10)
+	contextMessages := s.agentCfg.BtwContextMessages()
+	history := btwContext(s.messages, contextMessages)
 	messages := make([]llm.Message, 0, 2+len(history))
 	messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: llm.BuildBtwPrompt(s.workingDir, s.agentCfg)})
 	messages = append(messages, history...)
@@ -246,6 +250,9 @@ func (s *AppState) StreamBtw(ctx context.Context, question string, opts ...llm.S
 }
 
 func (s *AppState) StreamAdversary(ctx context.Context, focus string) (<-chan llm.StreamEvent, error) {
+	if !s.agentCfg.AdversaryEnabled() {
+		return nil, fmt.Errorf("adversary helper is not enabled")
+	}
 	if s.adversaryClient == nil {
 		return nil, nil
 	}

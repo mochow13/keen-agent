@@ -834,16 +834,16 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
 
 ### P0 — Remove inherited coding-agent assumptions
 
-- [ ] **Make `btw` and `adversary` truly opt-in generic helpers.**
-  - Omitted helper configuration must default to disabled. Hide or reject their
-    commands, suggestions, and handler paths unless `enabled: true`.
-  - Replace the hard-coded `btw` context window with `context_messages`; support
-    its documented optional model override and inherit the resolved main model
-    only when omitted.
-  - Guard all adversary access against absent configuration before dereferencing
-    it. Apply the documented optional adversary model override.
-  - Acceptance: no helper commands are usable for an agent with no helper config;
-    enabled helpers use their configured prompt, context window, and model.
+- [x] **Make `btw` and `adversary` truly opt-in generic helpers.**
+  - Omitted helper configuration defaults to disabled; disabled helpers are hidden
+    from suggestions and help, rejected by handlers, and do not activate helper UI.
+  - `btw.context_messages` controls the one-shot history window, and `/btw`
+    always uses the main session model.
+  - All adversary configuration access is nil-safe. `/adversary model` remains
+    available to select and persist a per-user critic model, which takes
+    precedence over an agent-configured adversary model for that user.
+  - Acceptance: focused coverage verifies disabled helper rejection, hidden helper
+    suggestions, configured `btw` context, and enabled helper command paths.
 
 - [x] **Remove implicit coding-instruction discovery from prompt composition.**
   - Prompt composition no longer automatically loads `AGENTS.md`, `CLAUDE.md`, or

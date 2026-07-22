@@ -40,8 +40,12 @@ func (s *SuggestionModel) Refresh(input string) {
 }
 
 func (s *SuggestionModel) RefreshWithSkills(input string, skills []SuggestionItem) {
+	s.RefreshWithSkillsAndHelpers(input, skills, true, true)
+}
+
+func (s *SuggestionModel) RefreshWithSkillsAndHelpers(input string, skills []SuggestionItem, btwEnabled, adversaryEnabled bool) {
 	s.mode = commandMode
-	cmds := replcommands.Filter(input)
+	cmds := replcommands.FilterAvailable(input, btwEnabled, adversaryEnabled)
 	s.items = make([]SuggestionItem, 0, len(cmds)+len(skills))
 	for _, c := range cmds {
 		s.items = append(s.items, SuggestionItem{Name: c.Name, Description: c.Description})

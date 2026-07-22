@@ -107,19 +107,43 @@ func IsKnownCommand(input string) bool {
 	return false
 }
 
+func Available(btwEnabled, adversaryEnabled bool) []SlashCommand {
+	return filterHelpers(All, btwEnabled, adversaryEnabled)
+}
+
+func AvailableSuggestions(btwEnabled, adversaryEnabled bool) []SlashCommand {
+	return filterHelpers(Suggestions, btwEnabled, adversaryEnabled)
+}
+
 func Filter(input string) []SlashCommand {
+	return FilterAvailable(input, true, true)
+}
+
+func FilterAvailable(input string, btwEnabled, adversaryEnabled bool) []SlashCommand {
 	if input == "" || !strings.HasPrefix(input, "/") {
 		return nil
 	}
 	prefix := strings.ToLower(strings.TrimPrefix(input, "/"))
 	var results []SlashCommand
-	for _, cmd := range Suggestions {
+	for _, cmd := range AvailableSuggestions(btwEnabled, adversaryEnabled) {
 		name := strings.ToLower(strings.TrimPrefix(cmd.Name, "/"))
 		if strings.HasPrefix(name, prefix) || suggestionMatchesWords(name, prefix) {
 			results = append(results, cmd)
 		}
 	}
 	return results
+}
+
+func filterHelpers(commands []SlashCommand, btwEnabled, adversaryEnabled bool) []SlashCommand {
+	filtered := make([]SlashCommand, 0, len(commands))
+	for _, command := range commands {
+		if (!btwEnabled && command.Name == Btw) ||
+			(!adversaryEnabled && (command.Name == Adversary || command.Name == AdversaryModel)) {
+			continue
+		}
+		filtered = append(filtered, command)
+	}
+	return filtered
 }
 
 func suggestionMatchesWords(name, prefix string) bool {
