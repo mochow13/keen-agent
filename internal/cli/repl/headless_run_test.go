@@ -229,6 +229,71 @@ func TestRunHeadless_WritesJSON(t *testing.T) {
 	}
 }
 
+func TestRunHeadless_PlanModeOnlyRegistersReadOnlyBuiltins(t *testing.T) {
+	workingDir := setupHeadlessTestHome(t)
+	client := &recordingHeadlessClient{events: []llm.StreamEvent{{Type: llm.StreamEventTypeDone}}}
+
+	_, err := RunHeadless(context.Background(), HeadlessRunOptions{
+		WorkingDir: workingDir,
+		Config:     headlessTestConfig(),
+		AgentCfg: &agentconfig.Config{
+			DefaultMode:   agentconfig.ModePlan,
+			MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"},
+		},
+		Client: client,
+		MCP:    headlessMCPRuntime{},
+		Prompt: "prompt",
+		Mode:   llm.ModePlan,
+	})
+	if err != nil {
+		t.Fatalf("RunHeadless() error = %v", err)
+	}
+	if len(client.registries) != 1 {
+		t.Fatalf("expected one tool registry, got %d", len(client.registries))
+	}
+	registry := client.registries[0]
+	for _, name := range []string{"read_file", "glob", "grep", "web_fetch"} {
+		if _, ok := registry.Get(name); !ok {
+			t.Fatalf("expected %s in plan-mode registry", name)
+		}
+	}
+	for _, name := range []string{"write_file", "edit_file", "bash", "call_mcp_tool", "delegate_task"} {
+		if _, ok := registry.Get(name); ok {
+			t.Fatalf("did not expect %s in plan-mode registry", name)
+		}
+	}
+}
+
+func TestRunHeadless_BuildModeOverridesConfiguredPlanMode(t *testing.T) {
+	workingDir := setupHeadlessTestHome(t)
+	client := &recordingHeadlessClient{events: []llm.StreamEvent{{Type: llm.StreamEventTypeDone}}}
+
+	_, err := RunHeadless(context.Background(), HeadlessRunOptions{
+		WorkingDir: workingDir,
+		Config:     headlessTestConfig(),
+		AgentCfg: &agentconfig.Config{
+			DefaultMode:   agentconfig.ModePlan,
+			MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"},
+			SubagentsDirs: agentconfig.StringOrArray{"subagents"},
+		},
+		Client: client,
+		MCP:    headlessMCPRuntime{},
+		Prompt: "prompt",
+		Mode:   llm.ModeBuild,
+	})
+	if err != nil {
+		t.Fatalf("RunHeadless() error = %v", err)
+	}
+	if len(client.registries) != 1 {
+		t.Fatalf("expected one tool registry, got %d", len(client.registries))
+	}
+	for _, name := range []string{"read_file", "glob", "grep", "web_fetch", "write_file", "edit_file", "bash", "call_mcp_tool", "delegate_task"} {
+		if _, ok := client.registries[0].Get(name); !ok {
+			t.Fatalf("expected %s in build-mode registry", name)
+		}
+	}
+}
+
 func TestRunHeadless_PlanModeSetsSystemPrompt(t *testing.T) {
 	workingDir := setupHeadlessTestHome(t)
 	client := &recordingHeadlessClient{events: []llm.StreamEvent{

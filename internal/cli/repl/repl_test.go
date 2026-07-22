@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
 	reploutput "github.com/mochow13/keen-agent/internal/cli/repl/output"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
@@ -331,6 +332,44 @@ func TestInitialModel_RespectsContextMode(t *testing.T) {
 	}
 	if m.appState.Mode() != llm.ModePlan {
 		t.Fatalf("expected app state mode %q, got %q", llm.ModePlan, m.appState.Mode())
+	}
+}
+
+func TestInitialModel_ConfiguredPlanModeFiltersMCPTools(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	client := &recordingHeadlessClient{events: []llm.StreamEvent{{Type: llm.StreamEventTypeDone}}}
+	agentCfg := &agentconfig.Config{
+		DefaultMode:   agentconfig.ModePlan,
+		MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"},
+	}
+	m := initialModel(&replContext{
+		version:    "test",
+		workingDir: t.TempDir(),
+		cfg:        &config.ResolvedConfig{},
+		agentCfg:   agentCfg,
+		mcp:        headlessMCPRuntime{},
+		mode:       llm.ModePlan,
+	}, client, false)
+
+	if _, err := m.appState.StreamChat(context.Background(), m.ctx.cfg); err != nil {
+		t.Fatalf("StreamChat() error = %v", err)
+	}
+	if len(client.registries) != 1 {
+		t.Fatalf("expected one streamed registry, got %d", len(client.registries))
+	}
+	registry := client.registries[0]
+	for _, name := range []string{"read_file", "glob", "grep", "web_fetch"} {
+		if _, ok := registry.Get(name); !ok {
+			t.Fatalf("expected %s in configured plan-mode registry", name)
+		}
+	}
+	for _, name := range []string{"write_file", "edit_file", "bash", "call_mcp_tool", "delegate_task"} {
+		if _, ok := registry.Get(name); ok {
+			t.Fatalf("did not expect %s in configured plan-mode registry", name)
+		}
+	}
+	if _, ok := m.appState.GetToolRegistry().Get("call_mcp_tool"); !ok {
+		t.Fatal("expected configured MCP tool in the underlying build registry")
 	}
 }
 

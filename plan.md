@@ -822,15 +822,16 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
     configured directories, and required integration tools remain registered
     despite an exclusion entry.
 
-- [ ] **Enforce plan mode through tool capabilities, not a name blacklist.**
+- [x] **Enforce plan mode through tool capabilities, not a name blacklist.**
   - [x] Add explicit read-only/capability metadata to the built-in tool contract
     in `internal/tools` and use it in the REPL registry/filtering path.
   - [x] In plan mode, expose only tools explicitly marked read-only. `bash`,
     mutating tools, delegated tasks, and opaque MCP calls are non-read-only by
     default.
   - [x] Apply `default_mode` at startup and retain `--mode` as the process override.
-  - Remaining acceptance: exercise default plan mode through both startup paths
-    with registered built-ins and an MCP runtime.
+  - Coverage exercises interactive and headless plan-mode startup with configured
+    built-ins and an MCP runtime; it also verifies build mode restores the full
+    configured registry.
 
 ### P0 — Remove inherited coding-agent assumptions
 
