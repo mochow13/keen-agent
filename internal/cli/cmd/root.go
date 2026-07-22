@@ -188,7 +188,7 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, closeMCP, mcpErr := startMCPRuntime(context.Background(), agentCfg)
+			mcpManager, closeMCP, mcpErr := startMCPRuntime(context.Background(), agentCfg)
 			defer closeMCP()
 			if mcpErr != nil {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "MCP unavailable: %v\n", mcpErr)
@@ -199,6 +199,7 @@ func newRunCommand() *cobra.Command {
 				Config:     resolvedCfg,
 				AgentCfg:   agentCfg,
 				Client:     client,
+				MCP:        mcpManager,
 				SessionID:  sessionID,
 				Prompt:     prompt,
 				Format:     format,

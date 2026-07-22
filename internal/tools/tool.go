@@ -17,6 +17,16 @@ type InputValidator interface {
 	ValidateInput(ctx context.Context, input any) error
 }
 
+// ReadOnlyTool marks tools that are safe to expose in plan mode.
+type ReadOnlyTool interface {
+	ReadOnly() bool
+}
+
+func IsReadOnly(tool Tool) bool {
+	readOnly, ok := tool.(ReadOnlyTool)
+	return ok && readOnly.ReadOnly()
+}
+
 func ValidateInput(ctx context.Context, tool Tool, input any) error {
 	validator, ok := tool.(InputValidator)
 	if !ok {
@@ -88,6 +98,16 @@ func (r *Registry) Without(names ...string) *Registry {
 			continue
 		}
 		filtered.tools[name] = tool
+	}
+	return filtered
+}
+
+func (r *Registry) ReadOnly() *Registry {
+	filtered := NewRegistry()
+	for name, tool := range r.tools {
+		if IsReadOnly(tool) {
+			filtered.tools[name] = tool
+		}
 	}
 	return filtered
 }

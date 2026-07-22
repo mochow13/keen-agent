@@ -13,6 +13,7 @@ import (
 	repltooling "github.com/mochow13/keen-agent/internal/cli/repl/tooling"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/llm"
+	keenmcp "github.com/mochow13/keen-agent/internal/mcp"
 	"github.com/mochow13/keen-agent/internal/session"
 )
 
@@ -26,6 +27,7 @@ type HeadlessRunOptions struct {
 	Config     *config.ResolvedConfig
 	AgentCfg   *agentconfig.Config
 	Client     llm.LLMClient
+	MCP        keenmcp.Runtime
 	SessionID  string
 	Prompt     string
 	Format     string
@@ -69,7 +71,7 @@ func RunHeadless(ctx context.Context, opts HeadlessRunOptions) (*HeadlessRunResu
 	appState.SetMode(opts.Mode)
 	permissionRequester := replpermissions.NewAutoApproveRequester()
 	diffEmitter := repltooling.NewDiffEmitter()
-	repltooling.SetupToolRegistry(opts.WorkingDir, appState, permissionRequester, diffEmitter, nil, opts.Config, opts.AgentCfg)
+	repltooling.SetupToolRegistry(opts.WorkingDir, appState, permissionRequester, diffEmitter, opts.MCP, opts.Config, opts.AgentCfg)
 
 	var agentSlug string
 	if opts.AgentCfg != nil {

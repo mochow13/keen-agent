@@ -21,10 +21,13 @@ type mockLLMClient struct {
 }
 
 type dummyTool struct {
-	name string
+	name     string
+	readOnly bool
 }
 
 func (d dummyTool) Name() string { return d.name }
+
+func (d dummyTool) ReadOnly() bool { return d.readOnly }
 
 func (d dummyTool) Description() string { return "dummy" }
 
@@ -62,7 +65,7 @@ func TestNewAppState(t *testing.T) {
 
 func setTestAgentConfig(state *AppState, work string) {
 	cfg := &agentconfig.Config{
-		SkillsDirs: []string{filepath.Join(work, ".agents", "skills")},
+		SkillsDirs:    []string{filepath.Join(work, ".agents", "skills")},
 		SubagentsDirs: []string{filepath.Join(work, ".agents", "agents")},
 	}
 	state.SetAgentConfig(cfg)
@@ -179,6 +182,42 @@ func TestAppState_ReloadSkillsCachesMetadataOnly(t *testing.T) {
 	}
 	if strings.Contains(state.SkillsCatalog(), "Secret instruction body") {
 		t.Fatal("expected cached catalog to exclude instruction body")
+	}
+}
+
+func TestAppState_SetAgentConfigReloadsConfiguredResources(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+
+	skillDir := filepath.Join(work, "configured-skills", "demo")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: Demo skill\n---\nBody"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	subagentDir := filepath.Join(work, "configured-subagents")
+	if err := os.MkdirAll(subagentDir, 0755); err != nil {
+		t.Fatalf("mkdir subagent dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subagentDir, "researcher.md"), []byte("---\nname: researcher\ndescription: Researches a topic\n---\nPrompt"), 0644); err != nil {
+		t.Fatalf("write subagent: %v", err)
+	}
+
+	state := New(nil, work)
+	state.SetAgentConfig(&agentconfig.Config{
+		SkillsDirs:    agentconfig.StringOrArray{filepath.Join(work, "configured-skills")},
+		SubagentsDirs: agentconfig.StringOrArray{subagentDir},
+	})
+
+	if _, ok := state.FindEnabledSkill("demo"); !ok {
+		t.Fatal("expected skill configured after AppState construction to be discovered")
+	}
+	profiles := state.GetSubagents().Profiles
+	if len(profiles) != 1 || profiles[0].Name != "researcher" {
+		t.Fatalf("configured subagents = %#v, want researcher", profiles)
 	}
 }
 
@@ -320,7 +359,7 @@ func TestAppState_StreamChat_NilClient(t *testing.T) {
 	}
 }
 
-func TestAppState_StreamChatPlanModeUsesPlanPromptAndRemovesWriteTools(t *testing.T) {
+func TestAppState_StreamChatPlanModeUsesPlanPromptAndOnlyReadOnlyTools(t *testing.T) {
 	var capturedMessages []llm.Message
 	var capturedRegistry *tools.Registry
 	client := &mockLLMClient{
@@ -333,17 +372,18 @@ func TestAppState_StreamChatPlanModeUsesPlanPromptAndRemovesWriteTools(t *testin
 		},
 	}
 	state := New(client, t.TempDir())
-	if err := state.RegisterTool(dummyTool{name: "read_file"}); err != nil {
-		t.Fatalf("register read_file: %v", err)
-	}
-	if err := state.RegisterTool(dummyTool{name: "write_file"}); err != nil {
-		t.Fatalf("register write_file: %v", err)
-	}
-	if err := state.RegisterTool(dummyTool{name: "edit_file"}); err != nil {
-		t.Fatalf("register edit_file: %v", err)
-	}
-	if err := state.RegisterTool(dummyTool{name: "bash"}); err != nil {
-		t.Fatalf("register bash: %v", err)
+	for _, tool := range []dummyTool{
+		{name: "read_file", readOnly: true},
+		{name: "web_fetch", readOnly: true},
+		{name: "write_file"},
+		{name: "edit_file"},
+		{name: "bash"},
+		{name: "call_mcp_tool"},
+		{name: "delegate_task"},
+	} {
+		if err := state.RegisterTool(tool); err != nil {
+			t.Fatalf("register %s: %v", tool.name, err)
+		}
 	}
 	state.SetMode(llm.ModePlan)
 
@@ -354,21 +394,18 @@ func TestAppState_StreamChatPlanModeUsesPlanPromptAndRemovesWriteTools(t *testin
 	if len(capturedMessages) == 0 || !strings.Contains(capturedMessages[0].Content, "# Active mode: plan") {
 		t.Fatalf("expected plan system prompt, got %#v", capturedMessages)
 	}
-	for _, name := range []string{"read_file", "bash"} {
+	for _, name := range []string{"read_file", "web_fetch"} {
 		if _, ok := capturedRegistry.Get(name); !ok {
 			t.Fatalf("expected %s to remain in the plan mode registry", name)
 		}
 	}
-	for _, name := range []string{"write_file", "edit_file"} {
+	for _, name := range []string{"write_file", "edit_file", "bash", "call_mcp_tool", "delegate_task"} {
 		if _, ok := capturedRegistry.Get(name); ok {
 			t.Fatalf("expected %s to be removed from the plan mode registry", name)
 		}
 	}
-	if _, ok := state.GetToolRegistry().Get("write_file"); !ok {
-		t.Fatal("expected original registry to keep write_file")
-	}
-	if _, ok := state.GetToolRegistry().Get("edit_file"); !ok {
-		t.Fatal("expected original registry to keep edit_file")
+	if _, ok := state.GetToolRegistry().Get("bash"); !ok {
+		t.Fatal("expected original registry to keep bash")
 	}
 }
 

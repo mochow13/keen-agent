@@ -268,17 +268,17 @@ func resolvePersona(cfg *agentconfig.Config) string {
 	return strings.Join(parts, "\n\n")
 }
 
-func resolveProjectInstructions(workingDir string, cfg *agentconfig.Config) string {
+func resolveProjectInstructions(_ string, cfg *agentconfig.Config) string {
 	if cfg == nil {
-		return projectInstructions(workingDir)
+		return ""
 	}
 	p := cfg.ResolvedProjectInstructions()
 	if p == "" {
-		return projectInstructions(workingDir)
+		return ""
 	}
 	content := readFileContent(p)
 	if content == "" {
-		return projectInstructions(workingDir)
+		return ""
 	}
 	if len(content) > maxInstructionsSize {
 		content = content[:maxInstructionsSize] + fmt.Sprintf("\n[truncated — full file at %s]", p)

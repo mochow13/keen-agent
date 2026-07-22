@@ -26,6 +26,8 @@ func (t *WebFetchTool) Name() string {
 	return "web_fetch"
 }
 
+func (t *WebFetchTool) ReadOnly() bool { return true }
+
 func (t *WebFetchTool) Description() string {
 	return `Fetch content from a URL and return it as text.
 

@@ -33,6 +33,8 @@ func (t *ReadFileTool) Name() string {
 	return "read_file"
 }
 
+func (t *ReadFileTool) ReadOnly() bool { return true }
+
 func (t *ReadFileTool) Description() string {
 	return `Read a UTF-8 text file after filesystem policy + user permission checks.
 

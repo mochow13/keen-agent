@@ -9,20 +9,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mochow13/keen-agent/internal/agentconfig"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/llm"
+	"github.com/mochow13/keen-agent/internal/mcp"
 	"github.com/mochow13/keen-agent/internal/session"
 	"github.com/mochow13/keen-agent/internal/tools"
 )
 
 type recordingHeadlessClient struct {
-	events   []llm.StreamEvent
-	messages [][]llm.Message
-	opts     [][]llm.StreamOptions
+	events     []llm.StreamEvent
+	messages   [][]llm.Message
+	registries []*tools.Registry
+	opts       [][]llm.StreamOptions
 }
 
 func (c *recordingHeadlessClient) StreamChat(ctx context.Context, messages []llm.Message, toolRegistry *tools.Registry, opts ...llm.StreamOptions) (<-chan llm.StreamEvent, error) {
 	c.messages = append(c.messages, llm.CloneMessages(messages))
+	c.registries = append(c.registries, toolRegistry)
 	c.opts = append(c.opts, append([]llm.StreamOptions(nil), opts...))
 	ch := make(chan llm.StreamEvent, len(c.events))
 	go func() {
@@ -81,6 +85,44 @@ func TestRunHeadless_CreatesSessionAndWritesText(t *testing.T) {
 	}
 	if events[2].AssistantTurn == nil || events[2].AssistantTurn.Message != "hello" {
 		t.Fatalf("unexpected assistant event: %#v", events[2].AssistantTurn)
+	}
+}
+
+type headlessMCPRuntime struct{}
+
+func (headlessMCPRuntime) Start(context.Context) error           { return nil }
+func (headlessMCPRuntime) Close() error                          { return nil }
+func (headlessMCPRuntime) Servers() []mcp.ServerStatus           { return nil }
+func (headlessMCPRuntime) Status(string) mcp.ServerStatus        { return mcp.ServerStatus{} }
+func (headlessMCPRuntime) WaitInitialScan(context.Context) error { return nil }
+func (headlessMCPRuntime) ListTools(context.Context, string) ([]mcp.Tool, error) {
+	return nil, nil
+}
+func (headlessMCPRuntime) CallTool(context.Context, string, string, map[string]any) (*mcp.ToolResult, error) {
+	return &mcp.ToolResult{}, nil
+}
+func (headlessMCPRuntime) Refresh(context.Context, string, ...mcp.RefreshOption) error { return nil }
+
+func TestRunHeadless_RegistersMCPToolWhenEnabled(t *testing.T) {
+	workingDir := setupHeadlessTestHome(t)
+	client := &recordingHeadlessClient{events: []llm.StreamEvent{{Type: llm.StreamEventTypeDone}}}
+
+	_, err := RunHeadless(context.Background(), HeadlessRunOptions{
+		WorkingDir: workingDir,
+		Config:     headlessTestConfig(),
+		AgentCfg:   &agentconfig.Config{MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"}},
+		Client:     client,
+		MCP:        headlessMCPRuntime{},
+		Prompt:     "prompt",
+	})
+	if err != nil {
+		t.Fatalf("RunHeadless() error = %v", err)
+	}
+	if len(client.registries) != 1 {
+		t.Fatalf("expected one tool registry, got %d", len(client.registries))
+	}
+	if _, ok := client.registries[0].Get("call_mcp_tool"); !ok {
+		t.Fatal("expected configured MCP tool to be registered for headless run")
 	}
 }
 

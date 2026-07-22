@@ -30,68 +30,23 @@ func TestBuild_ContainsWorkingDir(t *testing.T) {
 	}
 }
 
-func TestBuild_AgentsMd_Found(t *testing.T) {
+func TestBuild_DoesNotDiscoverImplicitInstructionFiles(t *testing.T) {
 	dir := t.TempDir()
-	content := "## My Project\nSome instructions here."
-	os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(content), 0644)
+	for name, content := range map[string]string{
+		"AGENTS.md": "agent instructions",
+		"CLAUDE.md": "claude instructions",
+		"GEMINI.md": "gemini instructions",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
 
 	result := buildDefault(dir, ModeBuild)
-	if !strings.Contains(result, "# Project Instructions") {
-		t.Error("expected project instructions section")
-	}
-	if !strings.Contains(result, "My Project") {
-		t.Error("expected AGENTS.md content in output")
-	}
-}
-
-func TestBuild_AgentsMd_WalkUp(t *testing.T) {
-	parent := t.TempDir()
-	child := filepath.Join(parent, "subdir")
-	os.MkdirAll(child, 0755)
-	os.WriteFile(filepath.Join(parent, "AGENTS.md"), []byte("parent instructions"), 0644)
-
-	result := buildDefault(child, ModeBuild)
-	if !strings.Contains(result, "parent instructions") {
-		t.Error("expected AGENTS.md from parent directory")
-	}
-}
-
-func TestBuild_ClaudeMd_Fallback(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("claude instructions"), 0644)
-
-	result := buildDefault(dir, ModeBuild)
-	if !strings.Contains(result, "claude instructions") {
-		t.Error("expected CLAUDE.md content as fallback")
-	}
-}
-
-func TestBuild_NoInstructionFile(t *testing.T) {
-	dir := t.TempDir()
-	result := buildDefault(dir, ModeBuild)
-	if strings.Contains(result, "# Project Instructions") {
-		t.Error("expected no project instructions section when no file exists")
-	}
-}
-
-func TestBuild_AgentsMd_Truncation(t *testing.T) {
-	dir := t.TempDir()
-	content := strings.Repeat("x", 10*1024)
-	os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(content), 0644)
-
-	result := buildDefault(dir, ModeBuild)
-	if !strings.Contains(result, "[truncated") {
-		t.Error("expected truncation note for large AGENTS.md")
-	}
-}
-
-func TestBuild_AgentsMd_Empty(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(""), 0644)
-
-	result := buildDefault(dir, ModeBuild)
-	if strings.Contains(result, "# Project Instructions") {
-		t.Error("expected no project instructions for empty AGENTS.md")
+	for _, unexpected := range []string{"# Project Instructions", "agent instructions", "claude instructions", "gemini instructions"} {
+		if strings.Contains(result, unexpected) {
+			t.Fatalf("unexpected implicit instruction %q in prompt", unexpected)
+		}
 	}
 }
 

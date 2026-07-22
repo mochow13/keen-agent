@@ -28,6 +28,8 @@ func (t *GlobTool) Name() string {
 	return "glob"
 }
 
+func (t *GlobTool) ReadOnly() bool { return true }
+
 func (t *GlobTool) Description() string {
 	return `Search for files matching a glob pattern after filesystem policy + user permission checks.
 

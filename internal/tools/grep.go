@@ -45,6 +45,8 @@ func (t *GrepTool) Name() string {
 	return "grep"
 }
 
+func (t *GrepTool) ReadOnly() bool { return true }
+
 func (t *GrepTool) Description() string {
 	return `Search for text patterns in files recursively after filesystem policy + user permission checks.
 
