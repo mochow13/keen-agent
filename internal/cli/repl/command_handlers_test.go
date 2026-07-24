@@ -425,7 +425,7 @@ func TestHandleMCPStartupStatusGeneratesConnectedSkillsWithoutChangingStatus(t *
 		"deepwiki": {{Name: "ask", Description: "Ask DeepWiki", InputSchema: map[string]any{"type": "object"}}},
 	}}
 
-	m.handleMCPStartupStatus(mcpStartupStatusMsg{Statuses: []keenmcp.ServerStatus{{Name: "deepwiki", State: keenmcp.StateConnected, Description: "Ask questions about DeepWiki."}}})
+	m.syncMCPSkills([]keenmcp.ServerStatus{{Name: "deepwiki", State: keenmcp.StateConnected, Description: "Ask questions about DeepWiki."}})
 
 	if _, ok := skills.Find(m.appState.GetSkills().Skills, "mcp:deepwiki"); !ok {
 		t.Fatalf("expected mcp:deepwiki skill to be reloaded")
@@ -455,7 +455,7 @@ func TestHandleMCPStartupStatusDisablesFailedSkills(t *testing.T) {
 	}
 	m.appState.ReloadSkills()
 
-	m.handleMCPStartupStatus(mcpStartupStatusMsg{Statuses: []keenmcp.ServerStatus{{Name: "posthog", State: keenmcp.StateAuthRequired, LastError: "auth required"}}})
+	m.syncMCPSkills([]keenmcp.ServerStatus{{Name: "posthog", State: keenmcp.StateAuthRequired, LastError: "auth required"}})
 
 	if m.appState.GetSkillsConfig().Enabled("mcp:posthog") {
 		t.Fatalf("expected mcp:posthog skill to be disabled")
@@ -493,7 +493,7 @@ func TestHandleMCPStartupStatusRemovesUnconfiguredSkillStatuses(t *testing.T) {
 	}
 	m.appState.ReloadSkills()
 
-	m.handleMCPStartupStatus(mcpStartupStatusMsg{Statuses: []keenmcp.ServerStatus{{Name: "context7", State: keenmcp.StateConnected}}})
+	m.syncMCPSkills([]keenmcp.ServerStatus{{Name: "context7", State: keenmcp.StateConnected}})
 
 	cfg := m.appState.GetSkillsConfig()
 	if _, ok := cfg.IsEnabled["mcp:deepwiki"]; ok {
@@ -510,46 +510,6 @@ func TestHandleMCPStartupStatusRemovesUnconfiguredSkillStatuses(t *testing.T) {
 	}
 	if _, ok := skills.Find(m.appState.GetSkills().Skills, "mcp:context7"); !ok {
 		t.Fatalf("expected configured mcp:context7 skill to be generated")
-	}
-}
-
-func TestHandleMCPStartupStatusShowsFailures(t *testing.T) {
-	m := newTestModel()
-	m.width = 50
-	m.viewport.SetWidth(50)
-	m.output.SetWidth(50)
-
-	m.handleMCPStartupStatus(mcpStartupStatusMsg{Statuses: []keenmcp.ServerStatus{
-		{Name: "deepwiki", State: keenmcp.StateConnected},
-		{Name: "posthog", State: keenmcp.StateAuthRequired, LastError: "mcp authentication required because the stored token is missing or expired"},
-	}})
-
-	out := ansi.Strip(m.output.Join())
-	if strings.Contains(out, "deepwiki") {
-		t.Fatalf("output = %q, did not expect connected server notice", out)
-	}
-	compactOut := strings.Join(strings.Fields(out), " ")
-	if !strings.Contains(compactOut, "/mcp connect posthog") {
-		t.Fatalf("output = %q, want connect hint", out)
-	}
-	for _, line := range strings.Split(out, "\n") {
-		if lipgloss.Width(line) > 46 {
-			t.Fatalf("MCP startup notice exceeds content width (%d > 46): %q", lipgloss.Width(line), line)
-		}
-	}
-}
-
-func TestHandleMCPStartupStatusShowsWaitError(t *testing.T) {
-	m := newTestModel()
-	m.width = 50
-	m.viewport.SetWidth(50)
-	m.output.SetWidth(50)
-
-	m.handleMCPStartupStatus(mcpStartupStatusMsg{Err: context.DeadlineExceeded})
-
-	out := ansi.Strip(m.output.Join())
-	if !strings.Contains(out, "timed out") {
-		t.Fatalf("output = %q, want timeout notice", out)
 	}
 }
 

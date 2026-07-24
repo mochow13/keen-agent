@@ -192,8 +192,10 @@ func TestApplyRunOverrides(t *testing.T) {
 type fakeMCPRuntime struct {
 	startErr error
 	closeErr error
+	waitErr  error
 	starts   int
 	closes   int
+	statuses []keenmcp.ServerStatus
 }
 
 func (f *fakeMCPRuntime) Start(context.Context) error {
@@ -207,15 +209,20 @@ func (f *fakeMCPRuntime) Close() error {
 }
 
 func (f *fakeMCPRuntime) Servers() []keenmcp.ServerStatus {
-	return nil
+	return f.statuses
 }
 
 func (f *fakeMCPRuntime) Status(server string) keenmcp.ServerStatus {
+	for _, status := range f.statuses {
+		if status.Name == server {
+			return status
+		}
+	}
 	return keenmcp.ServerStatus{Name: server}
 }
 
 func (f *fakeMCPRuntime) WaitInitialScan(context.Context) error {
-	return nil
+	return f.waitErr
 }
 
 func (f *fakeMCPRuntime) ListTools(context.Context, string) ([]keenmcp.Tool, error) {

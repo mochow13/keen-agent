@@ -681,13 +681,13 @@ before reporting so users see the full picture at once.
   - Callable names must be unique across built-in tools and MCP tools.
   - Subagent names must be unique across discovered subagent profiles (first directory wins, later duplicates are errors).
   - Mode prompt overlays reference only valid modes.
-6. **Runtime-readiness checks (warning only)**
-  - If `model` is provided, warn when `~/.keen-agent/configs.json` is missing, the provider/model entry is missing, or required credentials are absent.
-  - If `adversary` is enabled with a helper `model`, apply the same credential/model warnings.
-  - If `mcp_config_dirs` is specified, warn when referenced MCP servers cannot be reached during validation (do not fail; servers may start later).
+6. **Validation runtime boundary**
+   - Validation does not inspect `~/.keen-agent/configs.json`, credentials, or provider availability.
+   - Provider/model readiness is resolved when the main agent or helper is invoked.
+   - MCP servers start asynchronously; users inspect status with `/mcp status` and receive errors when an MCP tool is called.
 7. **Result**
-  - Any fatal error → validation fails; `keen-agent validate` exits non-zero and the TUI refuses to start.
-  - Only warnings → validation succeeds; warnings are printed once at startup and optionally via `/diagnostics`.
+   - Any fatal error → validation fails; `keen-agent validate` exits non-zero and the TUI refuses to start.
+   - Otherwise, validation succeeds without contacting external services.
 
 ### Validation checklist
 
@@ -700,14 +700,12 @@ before reporting so users see the full picture at once.
 - `subagents_dirs` entries exist (if specified); each `.md` file has valid YAML frontmatter with required `name` and `description` fields
 - `default_mode` is `plan` or `build`; `modes` only contains `plan`/`build`, and each `system_prompt_files` entry exists if specified
 - `btw` config is valid when enabled (`context_messages` positive if set, prompt file exists if specified)
-- `adversary` config is valid when enabled (prompt file exists if specified, model resolves if specified)
-- No duplicate callable names across built-in tools and MCP tools
+- `adversary` config is valid when enabled (prompt file exists if specified, model block is complete if specified)
+- No duplicate callable names in the runtime tool registry; MCP server tools remain behind `call_mcp_tool`.
 - No duplicate subagent names across discovered subagent profiles
 - `builtin_tools.exclude` does not include non-excludable core tools such as `call_mcp_tool` or `delegate_task`
 - `model` is optional; when omitted the user can select one at runtime with the `/model` command
-- If `model` is provided, Keen Agent checks `~/.keen-agent/configs.json`
-  - If the file is missing, or the specified provider/model entry is missing, the agent still starts but prints a warning
-  - If the resolved provider requires credentials and they are missing from `~/.keen-agent/configs.json` (API-key providers) or `~/.keen-agent/auth.json` (OAuth providers), the agent still starts but prints a warning
+- Provider credentials and MCP connectivity are checked when the selected model or MCP tool is used.
 - MCP OAuth credentials, when needed, are stored in `~/.keen-agent/auth.json`
 
 ---
@@ -875,17 +873,19 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
   - Acceptance: configured-directory precedence, collision behavior, and
     absent-directory behavior are covered by tests.
 
-- [ ] **Finish validation, diagnostics, and runtime-readiness warnings.**
+- [x] **Finish validation and runtime diagnostics.**
   - [x] Keep structural, scalar, file, content, and cross-reference failures fatal.
   - [x] Make `keen-agent validate` collect and report all applicable fatal errors.
   - [x] Add fatal duplicate checks for discovered subagent names.
-  - [ ] Add fatal duplicate checks for callable names.
-  - [ ] Add non-fatal warnings for unresolved configured model/provider credentials
-    and unavailable MCP servers. Print them once at startup and expose them via
-    `/diagnostics` if that command is retained/added.
-  - [ ] Apply equivalent model readiness checks to enabled helpers, including `btw`.
-  - [ ] Acceptance: validation returns all applicable fatal errors and warnings;
-    warning-only `keen-agent validate` exits zero.
+  - [x] Keep callable names unique through the runtime registry's duplicate rejection;
+    MCP server tools remain behind the single `call_mcp_tool` dispatcher and do not
+    enter the top-level callable namespace.
+  - [x] Keep `keen-agent validate` fast and deterministic: it does not resolve
+    provider credentials or connect to MCP servers.
+  - [x] Resolve model/provider readiness at normal startup and report MCP
+    availability only when an MCP tool is used or inspected with `/mcp status`.
+  - [x] Acceptance: validation returns every applicable fatal error without
+    contacting external services.
 
 ### P1 — Selective keen-code reliability ports
 

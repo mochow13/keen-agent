@@ -237,84 +237,99 @@ func loadRootRuntime() (*providers.Registry, *config.Loader, *config.GlobalConfi
 }
 
 func resolveFromActiveProvider(globalCfg *config.GlobalConfig, registry *providers.Registry) (*config.ResolvedConfig, bool, error) {
-	if globalCfg.ActiveProvider == "" {
+	provider := globalCfg.ActiveProvider
+	if provider == "" {
 		return &config.ResolvedConfig{}, true, nil
 	}
+	if _, ok := registry.GetProvider(provider); !ok {
+		return nil, false, fmt.Errorf("configured provider %q not found in registry", provider)
+	}
 
-	_, ok := registry.GetProvider(globalCfg.ActiveProvider)
+	providerCfg, ok := globalCfg.GetProviderConfig(provider)
 	if !ok {
-		return nil, false, fmt.Errorf("configured provider %q not found in registry", globalCfg.ActiveProvider)
+		return nil, false, fmt.Errorf("failed to get provider config for %q", provider)
 	}
-	providerCfg, ok := globalCfg.GetProviderConfig(globalCfg.ActiveProvider)
-	if !ok {
-		return nil, false, fmt.Errorf("failed to get provider config for %q", globalCfg.ActiveProvider)
-	}
-	apiKey, err := config.ResolveProviderAPIKey(globalCfg.ActiveProvider, providerCfg)
+	apiKey, err := config.ResolveProviderAPIKey(provider, providerCfg)
 	if err != nil {
 		return nil, false, err
 	}
-	activeModel := globalCfg.ActiveModel
-	if activeModel == "" && len(providerCfg.Models) > 0 {
-		activeModel = providerCfg.Models[0]
+
+	modelID := globalCfg.ActiveModel
+	if modelID == "" && len(providerCfg.Models) > 0 {
+		modelID = providerCfg.Models[0]
 	}
-	resolvedCfg := &config.ResolvedConfig{
-		Provider:       globalCfg.ActiveProvider,
-		Model:          activeModel,
+	return newResolvedConfig(globalCfg, provider, modelID, providerCfg, apiKey), oauthNeedsSetup(provider), nil
+}
+
+func resolveSessionConfig(globalCfg *config.GlobalConfig, registry *providers.Registry, agentCfg *agentconfig.Config) (*config.ResolvedConfig, bool, string, error) {
+	resolvedCfg, needsSetup, warning := resolveAgentModel(globalCfg, registry, agentCfg)
+	if resolvedCfg != nil {
+		return resolvedCfg, needsSetup, "", nil
+	}
+	return resolveActiveModelFallback(globalCfg, registry, warning)
+}
+
+func resolveAgentModel(globalCfg *config.GlobalConfig, registry *providers.Registry, agentCfg *agentconfig.Config) (*config.ResolvedConfig, bool, string) {
+	if agentCfg == nil || !agentCfg.Model.IsSet() {
+		return nil, false, ""
+	}
+	if !agentCfg.Model.IsComplete() {
+		return nil, false, "Agent config model block is incomplete (requires both provider and model_id)."
+	}
+
+	provider := agentCfg.Model.Provider
+	modelID := agentCfg.Model.ModelID
+	providerCfg, ok := globalCfg.GetProviderConfig(provider)
+	if !ok || !slices.Contains(providerCfg.Models, modelID) {
+		return nil, false, fmt.Sprintf("Configured model %s/%s is not available in ~/.keen-agent/configs.json.", provider, modelID)
+	}
+	if _, ok := registry.GetProvider(provider); !ok {
+		return nil, false, fmt.Sprintf("Configured provider %q is not available in the provider registry.", provider)
+	}
+
+	apiKey, err := config.ResolveProviderAPIKey(provider, providerCfg)
+	if err != nil {
+		return nil, false, fmt.Sprintf("Configured model %s/%s is not ready: %v", provider, modelID, err)
+	}
+	return newResolvedConfig(globalCfg, provider, modelID, providerCfg, apiKey), oauthNeedsSetup(provider), ""
+}
+
+func resolveActiveModelFallback(globalCfg *config.GlobalConfig, registry *providers.Registry, warning string) (*config.ResolvedConfig, bool, string, error) {
+	resolvedCfg, needsSetup, err := resolveFromActiveProvider(globalCfg, registry)
+	if err != nil {
+		return &config.ResolvedConfig{}, false, appendWarning(warning, "Active model is not ready: "+err.Error()), nil
+	}
+	if warning == "" {
+		return resolvedCfg, needsSetup, "", nil
+	}
+	if resolvedCfg.Provider == "" || resolvedCfg.Model == "" {
+		return resolvedCfg, needsSetup, warning + " No active model is selected. Use /model to choose one.", nil
+	}
+	return resolvedCfg, needsSetup, fmt.Sprintf("%s\nUsing active model %s/%s instead. Use /model to choose a different model.", warning, resolvedCfg.Provider, resolvedCfg.Model), nil
+}
+
+func newResolvedConfig(globalCfg *config.GlobalConfig, provider string, modelID string, providerCfg config.ProviderConfig, apiKey string) *config.ResolvedConfig {
+	return &config.ResolvedConfig{
+		Provider:       provider,
+		Model:          modelID,
 		APIKey:         apiKey,
 		APIKeyHelper:   providerCfg.APIKeyHelper,
 		ThinkingEffort: globalCfg.ThinkingEffort,
 		BaseURL:        providerCfg.BaseURL,
-		AuthMode:       config.AuthModeForProvider(globalCfg.ActiveProvider),
+		AuthMode:       config.AuthModeForProvider(provider),
 		Headers:        providerCfg.Headers,
 	}
-	needsSetup := resolvedCfg.AuthMode == config.AuthModeOAuth && !keenauth.NewOAuthManager(nil).HasCredential(globalCfg.ActiveProvider)
-	return resolvedCfg, needsSetup, nil
 }
 
-func resolveSessionConfig(globalCfg *config.GlobalConfig, registry *providers.Registry, agentCfg *agentconfig.Config) (*config.ResolvedConfig, bool, string, error) {
-	var warning string
+func oauthNeedsSetup(provider string) bool {
+	return config.AuthModeForProvider(provider) == config.AuthModeOAuth && !keenauth.NewOAuthManager(nil).HasCredential(provider)
+}
 
-	if agentCfg != nil && agentCfg.Model.IsComplete() {
-		provider := agentCfg.Model.Provider
-		modelID := agentCfg.Model.ModelID
-		providerCfg, ok := globalCfg.GetProviderConfig(provider)
-		if ok && slices.Contains(providerCfg.Models, modelID) {
-			_, ok := registry.GetProvider(provider)
-			if !ok {
-				return nil, false, "", fmt.Errorf("configured provider %q not found in registry", provider)
-			}
-			apiKey, err := config.ResolveProviderAPIKey(provider, providerCfg)
-			if err != nil {
-				return nil, false, "", err
-			}
-			resolvedCfg := &config.ResolvedConfig{
-				Provider:       provider,
-				Model:          modelID,
-				APIKey:         apiKey,
-				APIKeyHelper:   providerCfg.APIKeyHelper,
-				ThinkingEffort: globalCfg.ThinkingEffort,
-				BaseURL:        providerCfg.BaseURL,
-				AuthMode:       config.AuthModeForProvider(provider),
-				Headers:        providerCfg.Headers,
-			}
-			needsSetup := resolvedCfg.AuthMode == config.AuthModeOAuth && !keenauth.NewOAuthManager(nil).HasCredential(provider)
-			return resolvedCfg, needsSetup, "", nil
-		}
-		warning = fmt.Sprintf("Configured model %s/%s is not available in ~/.keen-agent/configs.json.", provider, modelID)
-	} else if agentCfg != nil && agentCfg.Model.IsSet() {
-		warning = "Agent config model block is incomplete (requires both provider and model_id)."
+func appendWarning(warning string, message string) string {
+	if warning == "" {
+		return message
 	}
-
-	resolvedCfg, needsSetup, err := resolveFromActiveProvider(globalCfg, registry)
-	if err != nil {
-		return nil, false, "", err
-	}
-	if warning != "" && resolvedCfg.Provider != "" && resolvedCfg.Model != "" {
-		warning = fmt.Sprintf("%s\n  Using active model %s/%s instead. Use /model to choose a different model.", warning, resolvedCfg.Provider, resolvedCfg.Model)
-	} else if warning != "" {
-		warning = warning + " No active model is selected. Use /model to choose one."
-	}
-	return resolvedCfg, needsSetup, warning, nil
+	return warning + "\n" + message
 }
 
 func applyRunOverrides(globalCfg *config.GlobalConfig, resolvedCfg *config.ResolvedConfig, providerID string, modelID string) error {
@@ -406,15 +421,7 @@ func newValidateCommand() *cobra.Command {
 				}
 				return fmt.Errorf("agent config %q is invalid", path)
 			}
-
-			if len(res.Warnings) > 0 {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Warnings:")
-				for _, issue := range res.Warnings {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s\n", issue.Path, issue.Message)
-				}
-			} else {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "agent config %q is valid\n", path)
-			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "agent config %q is valid\n", path)
 			return nil
 		},
 	}
