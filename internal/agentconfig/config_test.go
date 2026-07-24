@@ -510,6 +510,32 @@ subagents_dirs:
 	}
 }
 
+func TestValidate_CollectsDuplicateSubagentNames(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first")
+	second := filepath.Join(dir, "second")
+	writeFile(t, filepath.Join(first, "one.md"), "---\nname: reviewer\ndescription: First reviewer.\n---\n")
+	writeFile(t, filepath.Join(second, "two.md"), "---\nname: reviewer\ndescription: Second reviewer.\n---\n")
+
+	cfg, err := Load(writeConfig(t, dir, `name: duplicate-subagents
+system_prompt: hi
+subagents_dirs:
+  - ./first
+  - ./second
+`))
+	if err != nil {
+		t.Fatalf("load error: %v", err)
+	}
+
+	res := Validate(cfg)
+	if res.OK() || len(res.Errors) != 1 {
+		t.Fatalf("errors = %+v, want one duplicate-name error", res.Errors)
+	}
+	if res.Errors[0].Path != "subagents_dirs[1].two.md.name" || !contains(res.Errors[0].Message, "duplicate subagent name") {
+		t.Fatalf("unexpected error: %+v", res.Errors[0])
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
 }

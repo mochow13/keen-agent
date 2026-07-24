@@ -372,6 +372,7 @@ func validateFileExistence(cfg *Config, res *ValidationResult) {
 }
 
 func validateContent(cfg *Config, res *ValidationResult) {
+	names := map[string]string{}
 	for i, dir := range cfg.ResolvedSubagentsDirs() {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -382,28 +383,35 @@ func validateContent(cfg *Config, res *ValidationResult) {
 				continue
 			}
 			path := filepath.Join(dir, e.Name())
-			if err := validateSubagentFrontmatter(path, fmt.Sprintf("subagents_dirs[%d].%s", i, e.Name()), res); err != nil {
+			errPath := fmt.Sprintf("subagents_dirs[%d].%s", i, e.Name())
+			name, err := validateSubagentFrontmatter(path, errPath, res)
+			if err != nil || name == "" {
 				continue
 			}
+			if first, exists := names[name]; exists {
+				res.addError(errPath+".name", fmt.Sprintf("duplicate subagent name %q; already used by %s", name, first))
+				continue
+			}
+			names[name] = errPath
 		}
 	}
 }
 
-func validateSubagentFrontmatter(path, errPath string, res *ValidationResult) error {
+func validateSubagentFrontmatter(path, errPath string, res *ValidationResult) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		res.addError(errPath, fmt.Sprintf("failed to read: %v", err))
-		return err
+		return "", err
 	}
 	content := string(data)
 	if !strings.HasPrefix(content, "---") {
 		res.addError(errPath, "missing YAML frontmatter")
-		return fmt.Errorf("missing frontmatter")
+		return "", fmt.Errorf("missing frontmatter")
 	}
 	parts := strings.SplitN(content, "---", 3)
 	if len(parts) < 3 {
 		res.addError(errPath, "invalid YAML frontmatter")
-		return fmt.Errorf("invalid frontmatter")
+		return "", fmt.Errorf("invalid frontmatter")
 	}
 	var front struct {
 		Name        string `yaml:"name"`
@@ -411,15 +419,16 @@ func validateSubagentFrontmatter(path, errPath string, res *ValidationResult) er
 	}
 	if err := yaml.Unmarshal([]byte(parts[1]), &front); err != nil {
 		res.addError(errPath, fmt.Sprintf("invalid YAML frontmatter: %v", err))
-		return err
+		return "", err
 	}
-	if strings.TrimSpace(front.Name) == "" {
+	name := strings.TrimSpace(front.Name)
+	if name == "" {
 		res.addError(errPath+".name", "required field missing")
 	}
 	if strings.TrimSpace(front.Description) == "" {
 		res.addError(errPath+".description", "required field missing")
 	}
-	return nil
+	return name, nil
 }
 
 func validateCrossReferences(cfg *Config, res *ValidationResult) {

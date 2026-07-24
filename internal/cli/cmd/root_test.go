@@ -401,6 +401,29 @@ func TestValidateCommand_InvalidConfig(t *testing.T) {
 	}
 }
 
+func TestValidateCommand_ReportsAllFatalErrors(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "agent.yaml")
+	if err := os.WriteFile(path, []byte("name: \"\"\ndefault_mode: invalid\n"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	cmd := NewRootCommand("0.1.0")
+	cmd.SetArgs([]string{"validate", "--agent", path})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected invalid config error")
+	}
+
+	for _, want := range []string{"Error: system_prompt:", "Error: default_mode:"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("expected %q in output %q", want, out.String())
+		}
+	}
+}
+
 func TestResolveModeOverride(t *testing.T) {
 	cfg := &agentconfig.Config{DefaultMode: agentconfig.ModePlan}
 

@@ -876,13 +876,15 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
     absent-directory behavior are covered by tests.
 
 - [ ] **Finish validation, diagnostics, and runtime-readiness warnings.**
-  - Keep structural, scalar, file, content, and cross-reference failures fatal.
-  - Add fatal duplicate checks for callable names and discovered subagent names.
-  - Add non-fatal warnings for unresolved configured model/provider credentials
+  - [x] Keep structural, scalar, file, content, and cross-reference failures fatal.
+  - [x] Make `keen-agent validate` collect and report all applicable fatal errors.
+  - [x] Add fatal duplicate checks for discovered subagent names.
+  - [ ] Add fatal duplicate checks for callable names.
+  - [ ] Add non-fatal warnings for unresolved configured model/provider credentials
     and unavailable MCP servers. Print them once at startup and expose them via
     `/diagnostics` if that command is retained/added.
-  - Apply equivalent model readiness checks to enabled helpers, including `btw`.
-  - Acceptance: validation returns all applicable fatal errors and warnings;
+  - [ ] Apply equivalent model readiness checks to enabled helpers, including `btw`.
+  - [ ] Acceptance: validation returns all applicable fatal errors and warnings;
     warning-only `keen-agent validate` exits zero.
 
 ### P1 — Selective keen-code reliability ports
