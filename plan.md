@@ -903,9 +903,10 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
 - [ ] **Port reusable output and continuation improvements selectively.**
   - Adapt richer tool status rendering: friendly names, safe input/result
     truncation, duration, and artifact/result metadata where available.
-  - Evaluate retaining bounded, sanitized tool inputs in turn memory and deriving
-    outcomes from results. Preserve existing secret-sensitive sanitization; do not
-    store credentials or unbounded tool payloads.
+  - [x] Retain bounded, sanitized tool inputs in turn memory and derive compact
+    outcomes from results. Replay retained inputs as provider-native historical
+    calls across supported LLM clients; preserve secret-sensitive sanitization and
+    omit credentials and unbounded tool payloads.
   - Acceptance: output remains readable for generic tools, and memory tests prove
     secrets and oversized values are omitted/truncated.
 

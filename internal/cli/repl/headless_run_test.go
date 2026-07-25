@@ -195,7 +195,7 @@ func TestRunHeadless_PersistsHistoricalToolActivity(t *testing.T) {
 		t.Fatalf("expected historical tool activity, got %#v", memory)
 	}
 	activity := memory.ToolActivity[0]
-	if activity.Tool != "read_file" || activity.Target != "a.go" || activity.TextOffset != len("Let me inspect.") {
+	if activity.Tool != "read_file" || activity.Input["path"] != "a.go" || activity.TextOffset != len("Let me inspect.") {
 		t.Fatalf("unexpected historical tool activity %#v", activity)
 	}
 }

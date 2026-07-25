@@ -103,10 +103,10 @@ func toOpenAIResponseInput(messages []Message) []responses.ResponseInputItemUnio
 					result = append(result, responses.ResponseInputItemParamOfMessage(step.Text, responses.EasyInputMessageRoleAssistant))
 				}
 				for _, invocation := range step.Activities {
-					result = append(result, responses.ResponseInputItemParamOfFunctionCall(`{}`, invocation.ID, invocation.Tool))
+					result = append(result, responses.ResponseInputItemParamOfFunctionCall(historicalToolArguments(invocation.Input), invocation.ID, invocation.Tool))
 				}
 				for _, invocation := range step.Activities {
-					result = append(result, responses.ResponseInputItemParamOfFunctionCallOutput(invocation.ID, historicalToolResult(invocation.Status)))
+					result = append(result, responses.ResponseInputItemParamOfFunctionCallOutput(invocation.ID, historicalToolResult(invocation)))
 				}
 			}
 		}

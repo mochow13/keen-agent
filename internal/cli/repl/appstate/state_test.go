@@ -117,20 +117,22 @@ func TestAppState_GetMessages_ReturnsCopy(t *testing.T) {
 	state.AppendMessage(llm.Message{
 		Role:    llm.RoleAssistant,
 		Content: "Original",
-		TurnMemory: &llm.TurnMemory{
-			FilesChanged: []string{"a.go"},
-		},
+		TurnMemory: &llm.TurnMemory{ToolActivity: []llm.HistoricalToolActivity{{
+			Tool:   "read_file",
+			Input:  map[string]any{"path": "a.go"},
+			Status: "success",
+		}}},
 	})
 
 	messages := state.GetMessages()
 	messages[0].Content = "Modified"
-	messages[0].TurnMemory.FilesChanged[0] = "b.go"
+	messages[0].TurnMemory.ToolActivity[0].Input["path"] = "b.go"
 
 	original := state.GetMessages()
 	if original[0].Content != "Original" {
 		t.Error("GetMessages should return a copy, but original was modified")
 	}
-	if original[0].TurnMemory.FilesChanged[0] != "a.go" {
+	if original[0].TurnMemory.ToolActivity[0].Input["path"] != "a.go" {
 		t.Error("GetMessages should deep-clone turn memory, but original was modified")
 	}
 }

@@ -734,23 +734,21 @@ func TestOpenAICompatibleClient_OpenCodeGoMiMoOmitsThinkingConfig(t *testing.T) 
 	}
 }
 
-func TestToOpenAIMessages_RendersTurnMemoryForAssistant(t *testing.T) {
-	messages := toOpenAIMessages([]Message{
-		{
-			Role:    RoleAssistant,
-			Content: "done",
-			TurnMemory: &TurnMemory{
-				FilesChanged: []string{"a.go"},
-			},
-		},
-	})
+func TestToOpenAIMessages_ReplaysHistoricalToolInput(t *testing.T) {
+	messages := toOpenAIMessages([]Message{{
+		Role:    RoleAssistant,
+		Content: "done",
+		TurnMemory: &TurnMemory{ToolActivity: []HistoricalToolActivity{{
+			Tool: "read_file", Input: map[string]any{"path": "a.go"}, Status: "success",
+		}}},
+	}})
 
 	body, err := json.Marshal(messages)
 	if err != nil {
 		t.Fatalf("marshal messages: %v", err)
 	}
-	if !strings.Contains(string(body), "Tool memory:") || !strings.Contains(string(body), "Files changed: a.go") {
-		t.Fatalf("expected rendered turn memory in OpenAI message payload, got %s", string(body))
+	if !strings.Contains(string(body), `"arguments":"{\"path\":\"a.go\"}"`) {
+		t.Fatalf("expected historical tool input in OpenAI message payload, got %s", string(body))
 	}
 }
 

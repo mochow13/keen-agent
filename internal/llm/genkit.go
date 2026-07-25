@@ -98,7 +98,7 @@ func toGenkitMessages(messages []Message) []*ai.Message {
 				parts = append(parts, ai.NewToolRequestPart(&ai.ToolRequest{
 					Name:  invocation.Tool,
 					Ref:   invocation.ID,
-					Input: map[string]any{},
+					Input: cloneHistoricalToolInput(invocation.Input),
 				}))
 			}
 			if len(parts) > 0 {
@@ -110,7 +110,7 @@ func toGenkitMessages(messages []Message) []*ai.Message {
 					responses = append(responses, ai.NewToolResponsePart(&ai.ToolResponse{
 						Name:   invocation.Tool,
 						Ref:    invocation.ID,
-						Output: historicalToolResult(invocation.Status),
+						Output: historicalToolResult(invocation),
 					}))
 				}
 				aiMessages = append(aiMessages, &ai.Message{Role: ai.RoleTool, Content: responses})

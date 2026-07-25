@@ -230,7 +230,6 @@ func (m *replModel) handleToolStart(toolCall *llm.ToolCall) (replModel, tea.Cmd)
 
 func (m *replModel) handleToolEnd(toolCall *llm.ToolCall) (replModel, tea.Cmd) {
 	m.flushStreamRender()
-	m.recordToolMemory(toolCall)
 	if toolCall.Name == "bash" {
 		m.streamHandler.HandleBashEnd(toolCall)
 	} else {

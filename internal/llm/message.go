@@ -1,6 +1,9 @@
 package llm
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Role string
 
@@ -17,22 +20,15 @@ type Message struct {
 }
 
 type TurnMemory struct {
-	FilesChanged []string                 `json:"files_changed,omitempty"`
-	FailedBash   []FailedBashCommand      `json:"failed_bash,omitempty"`
 	ToolActivity []HistoricalToolActivity `json:"tool_activity,omitempty"`
 }
 
 type HistoricalToolActivity struct {
-	TextOffset int    `json:"text_offset"`
-	Tool       string `json:"tool"`
-	Status     string `json:"status"`
-	Target     string `json:"target,omitempty"`
-	Server     string `json:"server,omitempty"`
-}
-
-type FailedBashCommand struct {
-	Command  string `json:"command"`
-	ExitCode int    `json:"exit_code"`
+	TextOffset int            `json:"text_offset"`
+	Tool       string         `json:"tool"`
+	Input      map[string]any `json:"input,omitempty"`
+	Status     string         `json:"status"`
+	ExitCode   *int           `json:"exit_code,omitempty"`
 }
 
 func CloneMessage(message Message) Message {
@@ -55,20 +51,34 @@ func CloneTurnMemory(memory *TurnMemory) *TurnMemory {
 	}
 
 	cloned := &TurnMemory{}
-	if len(memory.FilesChanged) > 0 {
-		cloned.FilesChanged = append([]string(nil), memory.FilesChanged...)
-	}
-	if len(memory.FailedBash) > 0 {
-		cloned.FailedBash = append([]FailedBashCommand(nil), memory.FailedBash...)
-	}
 	if len(memory.ToolActivity) > 0 {
-		cloned.ToolActivity = append([]HistoricalToolActivity(nil), memory.ToolActivity...)
+		cloned.ToolActivity = make([]HistoricalToolActivity, len(memory.ToolActivity))
+		for i, activity := range memory.ToolActivity {
+			cloned.ToolActivity[i] = activity
+			cloned.ToolActivity[i].Input = cloneHistoricalToolInput(activity.Input)
+		}
+	}
+	return cloned
+}
+
+func cloneHistoricalToolInput(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return map[string]any{}
+	}
+
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return map[string]any{}
+	}
+	var cloned map[string]any
+	if err := json.Unmarshal(encoded, &cloned); err != nil {
+		return map[string]any{}
 	}
 	return cloned
 }
 
 func (m *TurnMemory) IsEmpty() bool {
-	return m == nil || (len(m.FilesChanged) == 0 && len(m.FailedBash) == 0 && len(m.ToolActivity) == 0)
+	return m == nil || len(m.ToolActivity) == 0
 }
 
 type StreamEventType string

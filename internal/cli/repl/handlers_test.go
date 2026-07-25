@@ -623,10 +623,6 @@ func TestHandleLLMError_MaterializesMessageAndTurnMemory(t *testing.T) {
 		output:        reploutput.NewOutputBuilder(80, ""),
 	}
 	m.startAssistantTurnMemory()
-	m.recordToolMemory(&llm.ToolCall{
-		Name:   "write_file",
-		Output: map[string]any{"path": workingDir + "/foo.go"},
-	})
 
 	updated, _ := m.handleLLMError(errors.New("rate limit"))
 
@@ -641,11 +637,8 @@ func TestHandleLLMError_MaterializesMessageAndTurnMemory(t *testing.T) {
 	if msg.Content != "partial response" {
 		t.Errorf("expected partial response content, got %q", msg.Content)
 	}
-	if msg.TurnMemory == nil {
-		t.Fatal("expected TurnMemory to be preserved, got nil")
-	}
-	if len(msg.TurnMemory.FilesChanged) != 1 {
-		t.Fatalf("expected 1 changed file, got %#v", msg.TurnMemory.FilesChanged)
+	if msg.TurnMemory != nil {
+		t.Fatalf("expected no turn memory without surviving tool activity, got %#v", msg.TurnMemory)
 	}
 }
 

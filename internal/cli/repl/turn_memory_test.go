@@ -9,58 +9,6 @@ import (
 	"github.com/mochow13/keen-agent/internal/llm"
 )
 
-func TestTurnMemoryAccumulator_DeduplicatesChangedFiles(t *testing.T) {
-	acc := newTurnMemoryAccumulator()
-
-	acc.RecordToolEnd(&llm.ToolCall{
-		Name:   "write_file",
-		Output: map[string]any{"path": "a.go"},
-	})
-	acc.RecordToolEnd(&llm.ToolCall{
-		Name:   "edit_file",
-		Output: map[string]any{"path": "a.go"},
-	})
-	acc.RecordToolEnd(&llm.ToolCall{
-		Name:   "edit_file",
-		Output: map[string]any{"path": "b.go"},
-	})
-
-	memory := acc.Build()
-	if memory == nil {
-		t.Fatal("expected turn memory")
-	}
-	if len(memory.FilesChanged) != 2 {
-		t.Fatalf("expected 2 changed files, got %#v", memory.FilesChanged)
-	}
-	if memory.FilesChanged[0] != "a.go" || memory.FilesChanged[1] != "b.go" {
-		t.Fatalf("expected stable file ordering, got %#v", memory.FilesChanged)
-	}
-}
-
-func TestTurnMemoryAccumulator_RecordsFailedBashOnly(t *testing.T) {
-	acc := newTurnMemoryAccumulator()
-
-	acc.RecordToolEnd(&llm.ToolCall{
-		Name:   "bash",
-		Output: map[string]any{"command": "go test ./...", "exit_code": 1},
-	})
-	acc.RecordToolEnd(&llm.ToolCall{
-		Name:   "bash",
-		Output: map[string]any{"command": "go build ./...", "exit_code": 0},
-	})
-
-	memory := acc.Build()
-	if memory == nil {
-		t.Fatal("expected turn memory")
-	}
-	if len(memory.FailedBash) != 1 {
-		t.Fatalf("expected one failed bash command, got %#v", memory.FailedBash)
-	}
-	if memory.FailedBash[0].Command != "go test ./..." || memory.FailedBash[0].ExitCode != 1 {
-		t.Fatalf("unexpected failed bash entry %#v", memory.FailedBash[0])
-	}
-}
-
 func TestHandleLLMDone_AttachesTurnMemoryToAssistantMessage(t *testing.T) {
 	workingDir := t.TempDir()
 	sh := NewStreamHandler(nil)
@@ -78,15 +26,6 @@ func TestHandleLLMDone_AttachesTurnMemoryToAssistantMessage(t *testing.T) {
 		output:        reploutput.NewOutputBuilder(80, ""),
 	}
 	m.startAssistantTurnMemory()
-	relativeFile := filepath.Join("nested", "a.go")
-	m.recordToolMemory(&llm.ToolCall{
-		Name:   "edit_file",
-		Output: map[string]any{"path": filepath.Join(workingDir, relativeFile)},
-	})
-	m.recordToolMemory(&llm.ToolCall{
-		Name:   "bash",
-		Output: map[string]any{"command": "go test ./...", "exit_code": 1},
-	})
 
 	updated, _ := m.handleLLMDone()
 
@@ -97,36 +36,8 @@ func TestHandleLLMDone_AttachesTurnMemoryToAssistantMessage(t *testing.T) {
 	if messages[0].TurnMemory == nil {
 		t.Fatal("expected assistant turn memory")
 	}
-	if len(messages[0].TurnMemory.FilesChanged) != 1 || messages[0].TurnMemory.FilesChanged[0] != relativeFile {
-		t.Fatalf("unexpected files changed %#v", messages[0].TurnMemory.FilesChanged)
-	}
-	if len(messages[0].TurnMemory.FailedBash) != 1 {
-		t.Fatalf("unexpected failed bash entries %#v", messages[0].TurnMemory.FailedBash)
-	}
-	if len(messages[0].TurnMemory.ToolActivity) != 1 || messages[0].TurnMemory.ToolActivity[0].TextOffset != len("working") {
+	if len(messages[0].TurnMemory.ToolActivity) != 1 || messages[0].TurnMemory.ToolActivity[0].TextOffset != len("working") || messages[0].TurnMemory.ToolActivity[0].Input["path"] != filepath.Join("nested", "a.go") {
 		t.Fatalf("unexpected tool activity %#v", messages[0].TurnMemory.ToolActivity)
-	}
-}
-
-func TestRecordToolMemory_UsesRelativePathFromWorkingDir(t *testing.T) {
-	workingDir := t.TempDir()
-	m := replModel{
-		appState: replappstate.New(nil, workingDir),
-	}
-	m.startAssistantTurnMemory()
-
-	targetPath := filepath.Join(workingDir, "dir", "file.go")
-	m.recordToolMemory(&llm.ToolCall{
-		Name:   "write_file",
-		Output: map[string]any{"path": targetPath},
-	})
-
-	memory := m.consumeTurnMemory()
-	if memory == nil || len(memory.FilesChanged) != 1 {
-		t.Fatalf("expected one changed file, got %#v", memory)
-	}
-	if memory.FilesChanged[0] != filepath.Join("dir", "file.go") {
-		t.Fatalf("expected relative changed file path, got %#v", memory.FilesChanged)
 	}
 }
 
@@ -145,16 +56,16 @@ func TestCollectHistoricalToolActivity_RecordsOffsetsTargetsAndStatus(t *testing
 	if len(got) != 4 {
 		t.Fatalf("expected four activities, got %#v", got)
 	}
-	if got[0].TextOffset != 0 || got[0].Target != "**/*.go" {
+	if got[0].TextOffset != 0 || got[0].Input["pattern"] != "**/*.go" {
 		t.Fatalf("unexpected glob activity %#v", got[0])
 	}
-	if got[1].TextOffset != len("Inspecting. ") || got[1].Target != "a.go" || got[1].Status != "success" {
+	if got[1].TextOffset != len("Inspecting. ") || got[1].Input["path"] != "a.go" || got[1].Status != "success" {
 		t.Fatalf("unexpected read activity %#v", got[1])
 	}
 	if got[2].TextOffset != got[1].TextOffset || got[2].Status != "error" {
 		t.Fatalf("unexpected edit activity %#v", got[2])
 	}
-	if got[3].TextOffset != len("Inspecting. Done.") || got[3].Target != "go test ./..." {
+	if got[3].TextOffset != len("Inspecting. Done.") || got[3].Input["command"] != "go test ./..." {
 		t.Fatalf("unexpected bash activity %#v", got[3])
 	}
 }
@@ -181,7 +92,7 @@ func TestCollectHistoricalToolActivity_ExtractsMCPWithoutArguments(t *testing.T)
 	if len(got) != 1 {
 		t.Fatalf("expected one activity, got %#v", got)
 	}
-	if got[0].Server != "context7" || got[0].Tool != "query-docs" || got[0].Target != "" {
+	if got[0].Tool != "call_mcp_tool" || got[0].Input["server"] != "context7" || got[0].Input["tool"] != "query-docs" || len(got[0].Input) != 2 {
 		t.Fatalf("unexpected MCP activity %#v", got[0])
 	}
 }
@@ -190,14 +101,11 @@ func TestRebuildTurnMemoryFromSegments_DropsAbandonedOutcomes(t *testing.T) {
 	workingDir := t.TempDir()
 	m := replModel{appState: replappstate.New(nil, workingDir)}
 	m.startAssistantTurnMemory()
-	m.recordToolMemory(
-		&llm.ToolCall{Name: "edit_file", Input: map[string]any{"path": "abandoned.go"}})
-
 	m.rebuildTurnMemoryFromSegments([]streamSegment{
 		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "write_file", Input: map[string]any{"path": "kept.go"}}},
 	})
 	memory := m.consumeTurnMemory()
-	if memory == nil || len(memory.FilesChanged) != 1 || memory.FilesChanged[0] != "kept.go" {
+	if memory == nil || len(memory.ToolActivity) != 1 || memory.ToolActivity[0].Input["path"] != "kept.go" {
 		t.Fatalf("expected only surviving outcome, got %#v", memory)
 	}
 }
@@ -209,10 +117,10 @@ func TestCollectHistoricalToolActivity_SanitizesTargets(t *testing.T) {
 	}
 
 	got := collectHistoricalToolActivity(segments, "")
-	if got[0].Target != "https://example.com/docs" {
+	if got[0].Input["url"] != "https://example.com/docs" {
 		t.Fatalf("expected sanitized URL, got %#v", got[0])
 	}
-	if got[1].Target != "" {
-		t.Fatalf("expected sensitive command target to be omitted, got %#v", got[1])
+	if len(got[1].Input) != 0 {
+		t.Fatalf("expected sensitive command input to be omitted, got %#v", got[1])
 	}
 }

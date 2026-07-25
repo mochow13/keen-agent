@@ -126,7 +126,6 @@ func RunHeadless(ctx context.Context, opts HeadlessRunOptions) (*HeadlessRunResu
 			case llm.StreamEventTypeToolStart:
 				handleHeadlessToolStart(handler, event.ToolCall)
 			case llm.StreamEventTypeToolEnd:
-				turnMemory.RecordToolEnd(cloneToolCallWithRelativePath(event.ToolCall, opts.WorkingDir))
 				handleHeadlessToolEnd(handler, event.ToolCall)
 			case llm.StreamEventTypeUsage:
 				lastUsage = event.Usage
@@ -185,12 +184,7 @@ func handleHeadlessToolEnd(handler *StreamHandler, toolCall *llm.ToolCall) {
 
 func rebuildHeadlessTurnMemory(segments []streamSegment, workingDir string) *turnMemoryAccumulator {
 	memory := newTurnMemoryAccumulator()
-	for _, segment := range segments {
-		if segment.toolCall == nil || (segment.kind != segmentToolEnd && segment.kind != segmentBash) {
-			continue
-		}
-		memory.RecordToolEnd(cloneToolCallWithRelativePath(segment.toolCall, workingDir))
-	}
+	memory.RecordToolActivity(segments, workingDir)
 	return memory
 }
 

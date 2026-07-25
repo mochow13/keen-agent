@@ -270,22 +270,24 @@ func TestGenkitClient_StreamChat_MultipleMessages(t *testing.T) {
 	}
 }
 
-func TestToGenkitMessages_RendersTurnMemoryForAssistant(t *testing.T) {
-	messages := toGenkitMessages([]Message{
-		{
-			Role:    RoleAssistant,
-			Content: "done",
-			TurnMemory: &TurnMemory{
-				FilesChanged: []string{"a.go"},
-			},
-		},
-	})
+func TestToGenkitMessages_ReplaysHistoricalToolInput(t *testing.T) {
+	messages := toGenkitMessages([]Message{{
+		Role:    RoleAssistant,
+		Content: "done",
+		TurnMemory: &TurnMemory{ToolActivity: []HistoricalToolActivity{{
+			Tool: "read_file", Input: map[string]any{"path": "a.go"}, Status: "success",
+		}}},
+	}})
 
-	if len(messages) != 1 || len(messages[0].Content) != 1 {
+	if len(messages) != 3 || messages[0].Content[0].ToolRequest == nil {
 		t.Fatalf("unexpected genkit messages %#v", messages)
 	}
-	if !strings.Contains(messages[0].Content[0].Text, "Tool memory:") || !strings.Contains(messages[0].Content[0].Text, "Files changed: a.go") {
-		t.Fatalf("expected rendered turn memory in Genkit payload, got %q", messages[0].Content[0].Text)
+	input, ok := messages[0].Content[0].ToolRequest.Input.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map tool input, got %#v", messages[0].Content[0].ToolRequest.Input)
+	}
+	if got := input["path"]; got != "a.go" {
+		t.Fatalf("expected replayed path, got %#v", got)
 	}
 }
 

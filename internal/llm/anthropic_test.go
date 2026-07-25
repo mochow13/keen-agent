@@ -652,21 +652,18 @@ func TestToAnthropicMessages_SystemAndConversation(t *testing.T) {
 	}
 }
 
-func TestToAnthropicMessages_TurnMemoryRendered(t *testing.T) {
-	messages := []Message{
-		{
-			Role:    RoleAssistant,
-			Content: "done",
-			TurnMemory: &TurnMemory{
-				FilesChanged: []string{"main.go"},
-			},
-		},
-	}
+func TestToAnthropicMessages_ReplaysHistoricalToolInput(t *testing.T) {
+	messages := []Message{{
+		Role:    RoleAssistant,
+		Content: "done",
+		TurnMemory: &TurnMemory{ToolActivity: []HistoricalToolActivity{{
+			Tool: "read_file", Input: map[string]any{"path": "main.go"}, Status: "success",
+		}}},
+	}}
 
 	_, msgParams := toAnthropicMessages(messages)
-
-	if len(msgParams) != 1 {
-		t.Fatalf("expected 1 message param, got %d", len(msgParams))
+	if len(msgParams) != 3 {
+		t.Fatalf("expected assistant, tool result, and trailing assistant messages, got %d", len(msgParams))
 	}
 }
 

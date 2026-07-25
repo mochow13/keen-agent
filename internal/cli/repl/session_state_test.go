@@ -45,9 +45,10 @@ func TestBuildAssistantTurnEvent_MixedTranscript(t *testing.T) {
 	event := buildAssistantTurnEvent(segments, llm.Message{
 		Role:    llm.RoleAssistant,
 		Content: "final answer",
-		TurnMemory: &llm.TurnMemory{
-			FilesChanged: []string{"a.go"},
-		},
+		TurnMemory: &llm.TurnMemory{ToolActivity: []llm.HistoricalToolActivity{{
+			Tool:   "read_file",
+			Status: "success",
+		}}},
 	}, false, "")
 
 	if event.Kind != session.KindAssistantTurn {
@@ -59,7 +60,7 @@ func TestBuildAssistantTurnEvent_MixedTranscript(t *testing.T) {
 	if event.AssistantTurn.Message != "final answer" {
 		t.Fatalf("unexpected assistant message %q", event.AssistantTurn.Message)
 	}
-	if event.AssistantTurn.TurnMemory == nil || len(event.AssistantTurn.TurnMemory.FilesChanged) != 1 || event.AssistantTurn.TurnMemory.FilesChanged[0] != "a.go" {
+	if event.AssistantTurn.TurnMemory == nil || len(event.AssistantTurn.TurnMemory.ToolActivity) != 1 || event.AssistantTurn.TurnMemory.ToolActivity[0].Tool != "read_file" {
 		t.Fatalf("expected turn memory to be preserved, got %#v", event.AssistantTurn.TurnMemory)
 	}
 	if len(event.AssistantTurn.Transcript) != 6 {
