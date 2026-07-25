@@ -13,7 +13,7 @@ import (
 
 type ClientFactory func(*config.ResolvedConfig) (llm.LLMClient, error)
 
-const defaultTimeoutSeconds = 600
+const defaultTimeoutSeconds = 1800
 
 type ProfileProvider func() []Profile
 

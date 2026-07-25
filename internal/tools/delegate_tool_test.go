@@ -5,25 +5,58 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
-type mockSubagentRunner struct {
-	result any
-	err    error
-
-	called         bool
+type delegateCall struct {
 	agent          string
 	task           string
 	timeoutSeconds int
 }
 
+type mockSubagentRunner struct {
+	result any
+	err    error
+
+	mu     sync.Mutex
+	calls  []delegateCall
+	byTask map[string]struct {
+		result any
+		err    error
+	}
+
+	started chan struct{}
+	release chan struct{}
+}
+
 func (m *mockSubagentRunner) RunDelegate(ctx context.Context, agent, task string, timeoutSeconds int) (any, error) {
-	m.called = true
-	m.agent = agent
-	m.task = task
-	m.timeoutSeconds = timeoutSeconds
+	m.mu.Lock()
+	m.calls = append(m.calls, delegateCall{agent: agent, task: task, timeoutSeconds: timeoutSeconds})
+	m.mu.Unlock()
+	if m.started != nil {
+		m.started <- struct{}{}
+	}
+	if m.release != nil {
+		select {
+		case <-m.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if m.byTask != nil {
+		if outcome, ok := m.byTask[task]; ok {
+			return outcome.result, outcome.err
+		}
+	}
 	return m.result, m.err
+}
+
+func (m *mockSubagentRunner) recordedCalls() []delegateCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]delegateCall(nil), m.calls...)
 }
 
 func TestDelegateTool_Metadata(t *testing.T) {
@@ -32,8 +65,8 @@ func TestDelegateTool_Metadata(t *testing.T) {
 	if tool.Name() != "delegate_task" {
 		t.Fatalf("Name() = %q, want %q", tool.Name(), "delegate_task")
 	}
-	if tool.Description() == "" {
-		t.Fatal("Description() should not be empty")
+	if !strings.Contains(tool.Description(), "up to 10") || !strings.Contains(tool.Description(), "parallel") {
+		t.Fatalf("Description() = %q, want parallel limit", tool.Description())
 	}
 }
 
@@ -48,117 +81,189 @@ func TestDelegateTool_InputSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("required type = %T, want []string", schema["required"])
 	}
-	if !reflect.DeepEqual(required, []string{"agent", "task"}) {
-		t.Fatalf("required = %v, want [agent task]", required)
+	if !reflect.DeepEqual(required, []string{"tasks"}) {
+		t.Fatalf("required = %v, want [tasks]", required)
 	}
-
 	properties, ok := schema["properties"].(map[string]any)
 	if !ok {
 		t.Fatalf("properties type = %T, want map[string]any", schema["properties"])
 	}
-	for _, name := range []string{"agent", "task", "timeout_seconds"} {
-		if _, ok := properties[name]; !ok {
-			t.Fatalf("properties missing %q", name)
+	tasks, ok := properties["tasks"].(map[string]any)
+	if !ok {
+		t.Fatalf("tasks type = %T, want map[string]any", properties["tasks"])
+	}
+	if tasks["maxItems"] != 10 {
+		t.Fatalf("tasks.maxItems = %v, want 10", tasks["maxItems"])
+	}
+	items, ok := tasks["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("tasks.items type = %T, want map[string]any", tasks["items"])
+	}
+	itemProperties, ok := items["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("items.properties type = %T, want map[string]any", items["properties"])
+	}
+	for _, field := range []string{"agent", "task", "timeout_seconds"} {
+		if _, ok := itemProperties[field]; !ok {
+			t.Fatalf("items.properties missing %q", field)
 		}
 	}
-	if _, ok := properties["max_turns"]; ok {
-		t.Fatal("schema should not include max_turns")
-	}
-	if _, ok := properties["return_format"]; ok {
-		t.Fatal("schema should not include return_format")
-	}
 }
 
-func TestDelegateTool_ExecutePassesInputToRunner(t *testing.T) {
-	runner := &mockSubagentRunner{result: map[string]any{"status": "completed"}}
-	tool := NewDelegateTool(runner)
-
-	result, err := tool.Execute(context.Background(), map[string]any{
-		"agent":           "explorer",
-		"task":            "Inspect internal/tools.",
-		"timeout_seconds": 30,
-	})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if !runner.called {
-		t.Fatal("runner was not called")
-	}
-	if runner.agent != "explorer" {
-		t.Fatalf("agent = %q, want explorer", runner.agent)
-	}
-	if runner.task != "Inspect internal/tools." {
-		t.Fatalf("task = %q, want delegated task", runner.task)
-	}
-	if runner.timeoutSeconds != 30 {
-		t.Fatalf("timeoutSeconds = %d, want 30", runner.timeoutSeconds)
-	}
-	if !reflect.DeepEqual(result, runner.result) {
-		t.Fatalf("result = %#v, want %#v", result, runner.result)
-	}
-}
-
-func TestDelegateTool_ExecuteAllowsOmittedTimeout(t *testing.T) {
+func TestDelegateTool_ExecutePassesTasksToRunner(t *testing.T) {
 	runner := &mockSubagentRunner{result: "ok"}
 	tool := NewDelegateTool(runner)
 
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"agent": "explorer",
-		"task":  "Inspect docs.",
+	output, err := tool.Execute(context.Background(), map[string]any{
+		"tasks": []any{
+			map[string]any{"agent": "explorer", "task": "inspect internal/llm", "timeout_seconds": 120},
+			map[string]any{"agent": "reviewer", "task": "review README.md"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if runner.timeoutSeconds != 0 {
-		t.Fatalf("timeoutSeconds = %d, want 0", runner.timeoutSeconds)
+
+	calls := runner.recordedCalls()
+	if len(calls) != 2 {
+		t.Fatalf("recorded calls = %d, want 2", len(calls))
+	}
+	byAgent := make(map[string]delegateCall, len(calls))
+	for _, call := range calls {
+		byAgent[call.agent] = call
+	}
+	explorerCall, ok := byAgent["explorer"]
+	if !ok || explorerCall.task != "inspect internal/llm" || explorerCall.timeoutSeconds != 120 {
+		t.Fatalf("explorer call = %+v, want task inspect internal/llm with timeout 120", explorerCall)
+	}
+	reviewerCall, ok := byAgent["reviewer"]
+	if !ok || reviewerCall.task != "review README.md" || reviewerCall.timeoutSeconds != 0 {
+		t.Fatalf("reviewer call = %+v, want task review README.md with timeout 0", reviewerCall)
+	}
+
+	payload, ok := output.(map[string]any)
+	if !ok {
+		t.Fatalf("output type = %T, want map[string]any", output)
+	}
+	if payload["completed"] != 2 || payload["failed"] != 0 {
+		t.Fatalf("counts = completed %v failed %v, want 2/0", payload["completed"], payload["failed"])
+	}
+	results, ok := payload["results"].([]delegateResult)
+	if !ok {
+		t.Fatalf("results type = %T, want []delegateResult", payload["results"])
+	}
+	if results[0].Agent != "explorer" || results[1].Agent != "reviewer" {
+		t.Fatalf("results order = %+v, want input order", results)
 	}
 }
 
-func TestDelegateTool_ExecuteReturnsRunnerPartialResultOnError(t *testing.T) {
-	wantErr := errors.New("subagent failed")
+func TestDelegateTool_ExecuteRunsTasksInParallel(t *testing.T) {
 	runner := &mockSubagentRunner{
-		result: map[string]any{"status": "error"},
-		err:    wantErr,
+		result:  "ok",
+		started: make(chan struct{}, 2),
+		release: make(chan struct{}),
 	}
 	tool := NewDelegateTool(runner)
 
-	result, err := tool.Execute(context.Background(), map[string]any{
-		"agent": "explorer",
-		"task":  "Inspect docs.",
-	})
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+	done := make(chan error, 1)
+	go func() {
+		_, err := tool.Execute(context.Background(), map[string]any{
+			"tasks": []any{
+				map[string]any{"agent": "explorer", "task": "first"},
+				map[string]any{"agent": "reviewer", "task": "second"},
+			},
+		})
+		done <- err
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-runner.started:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("task %d did not start before earlier tasks finished", i+1)
+		}
 	}
-	if !reflect.DeepEqual(result, runner.result) {
-		t.Fatalf("result = %#v, want %#v", result, runner.result)
+	close(runner.release)
+	if err := <-done; err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestDelegateTool_ExecuteReturnsPerTaskErrors(t *testing.T) {
+	runner := &mockSubagentRunner{
+		byTask: map[string]struct {
+			result any
+			err    error
+		}{
+			"good": {result: "fine"},
+			"bad":  {err: errors.New("boom")},
+		},
+	}
+	tool := NewDelegateTool(runner)
+
+	output, err := tool.Execute(context.Background(), map[string]any{
+		"tasks": []any{
+			map[string]any{"agent": "explorer", "task": "good"},
+			map[string]any{"agent": "reviewer", "task": "bad"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v, want per-task errors", err)
+	}
+
+	payload, ok := output.(map[string]any)
+	if !ok {
+		t.Fatalf("output type = %T, want map[string]any", output)
+	}
+	if payload["completed"] != 1 || payload["failed"] != 1 {
+		t.Fatalf("counts = completed %v failed %v, want 1/1", payload["completed"], payload["failed"])
+	}
+	results, ok := payload["results"].([]delegateResult)
+	if !ok {
+		t.Fatalf("results type = %T, want []delegateResult", payload["results"])
+	}
+	if results[0].Error != "" || results[0].Result != "fine" {
+		t.Fatalf("first result = %+v, want success", results[0])
+	}
+	if results[1].Error != "boom" {
+		t.Fatalf("second result error = %q, want boom", results[1].Error)
+	}
+	failedByAgent, ok := payload["failed_by_agent"].(map[string]int)
+	if !ok || failedByAgent["reviewer"] != 1 {
+		t.Fatalf("failed_by_agent = %v, want reviewer:1", payload["failed_by_agent"])
 	}
 }
 
 func TestDelegateTool_ValidateInputRejectsInvalidInput(t *testing.T) {
+	tool := NewDelegateTool(&mockSubagentRunner{})
+
 	tests := []struct {
-		name    string
-		input   any
-		wantErr string
+		name  string
+		input any
+		want  string
 	}{
-		{name: "missing agent", input: map[string]any{"task": "Inspect docs."}, wantErr: `missing required "agent" parameter`},
-		{name: "missing task", input: map[string]any{"agent": "explorer"}, wantErr: `missing required "task" parameter`},
-		{name: "non-integer timeout", input: map[string]any{"agent": "explorer", "task": "Inspect docs.", "timeout_seconds": "30"}, wantErr: "cannot unmarshal"},
+		{name: "non map", input: "explorer", want: "expected map[string]any"},
+		{name: "missing tasks", input: map[string]any{}, want: "missing required \"tasks\" parameter"},
+		{name: "empty tasks", input: map[string]any{"tasks": []any{}}, want: "at least one task"},
+		{name: "missing agent", input: map[string]any{"tasks": []any{map[string]any{"task": "x"}}}, want: "tasks[0].agent"},
+		{name: "missing task", input: map[string]any{"tasks": []any{map[string]any{"agent": "explorer"}}}, want: "tasks[0].task"},
 	}
+
+	tooMany := make([]any, 11)
+	for i := range tooMany {
+		tooMany[i] = map[string]any{"agent": "explorer", "task": "x"}
+	}
+	tests = append(tests, struct {
+		name  string
+		input any
+		want  string
+	}{name: "too many tasks", input: map[string]any{"tasks": tooMany}, want: "at most 10"})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runner := &mockSubagentRunner{}
-			tool := NewDelegateTool(runner)
-
 			err := tool.ValidateInput(context.Background(), tt.input)
-			if err == nil {
-				t.Fatal("ValidateInput() expected error")
-			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("ValidateInput() error = %v, want containing %q", err, tt.wantErr)
-			}
-			if runner.called {
-				t.Fatal("runner should not be called for invalid input")
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ValidateInput() error = %v, want %q", err, tt.want)
 			}
 		})
 	}
@@ -168,13 +273,9 @@ func TestDelegateTool_ExecuteRejectsMissingRunner(t *testing.T) {
 	tool := NewDelegateTool(nil)
 
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"agent": "explorer",
-		"task":  "Inspect docs.",
+		"tasks": []any{map[string]any{"agent": "explorer", "task": "inspect"}},
 	})
-	if err == nil {
-		t.Fatal("Execute() expected error")
-	}
-	if !strings.Contains(err.Error(), "subagent runner not configured") {
-		t.Fatalf("Execute() error = %v, want runner configuration error", err)
+	if err == nil || !strings.Contains(err.Error(), "subagent runner not configured") {
+		t.Fatalf("Execute() error = %v, want runner not configured", err)
 	}
 }

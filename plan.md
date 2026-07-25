@@ -889,7 +889,7 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
 
 ### P1 — Selective keen-code reliability ports
 
-- [ ] **Port parallel delegated-task execution and the longer default timeout.**
+- [x] **Port parallel delegated-task execution and the longer default timeout.**
   - Adapt keen-code's bounded parallel delegation implementation: accept up to ten
     independent tasks, preserve input order in the result, and return per-task
     failures without dropping successful results.
