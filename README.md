@@ -112,7 +112,7 @@ mcp_config_dirs:
 
 All file and directory paths in the configuration are resolved relative to `agent.yaml`; absolute paths remain absolute. `system_prompt_files`, `skills_dirs`, `subagents_dirs`, and `mcp_config_dirs` accept either a single string or a list of strings.
 
-Every system-prompt configuration—the primary agent, each mode, `btw`, and `adversary`—supports `system_prompt`, `system_prompt_files`, or both. When both are provided, the inline prompt is followed by the referenced file contents.
+Every system-prompt configuration—the primary agent, each mode, `btw`, and `adversary`—supports `system_prompt`, `system_prompt_files`, or both. For the primary agent, Keen Agent always prepends its harness contract (identity, tool-grounding rules, tool-memory semantics, and safety rules), then appends the inline `system_prompt`, followed by the referenced `system_prompt_files` in order. The built-in style persona (tone, task workflow, tool-usage guidance) is included only when the configuration provides no prompt source of its own. Mode overlays and helper prompts are composed separately.
 
 > **Prompt source required:** the primary agent configuration must define at least one of `system_prompt` or `system_prompt_files`. Either field is sufficient and both may be used together, but they cannot both be missing. Mode overlays and helper prompts are optional; when omitted, they use their normal empty-overlay or built-in fallback behavior.
 

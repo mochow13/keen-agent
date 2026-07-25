@@ -22,6 +22,33 @@ func TestBuild_ContainsIdentity(t *testing.T) {
 	}
 }
 
+func TestBuild_BuiltInPromptsAreDomainNeutral(t *testing.T) {
+	prompts := strings.ToLower(strings.Join([]string{
+		defaultPersona,
+		buildModePrompt,
+		planModePrompt,
+		compactionPrompt,
+		defaultBtwPrompt,
+		defaultAdversaryPrompt,
+	}, "\n"))
+	for _, codingSpecific := range []string{
+		"coding agent",
+		"software engineering",
+		"codebase",
+		"code changes",
+		"bugs",
+		"refactor",
+		"go.mod",
+		"package.json",
+		"git commit",
+		"git reset",
+	} {
+		if strings.Contains(prompts, codingSpecific) {
+			t.Errorf("built-in prompts contain coding-specific instruction %q", codingSpecific)
+		}
+	}
+}
+
 func TestBuild_ContainsWorkingDir(t *testing.T) {
 	dir := t.TempDir()
 	result := buildDefault(dir, ModeBuild)
@@ -131,15 +158,28 @@ func TestBuild_ConfigPersona(t *testing.T) {
 	if !strings.Contains(result, "PostgreSQL DBA agent") {
 		t.Fatal("expected config persona in output")
 	}
-	if strings.Contains(result, "Keen Agent") {
-		t.Fatal("expected default persona to be replaced by config persona")
+	if !strings.Contains(result, "# Tool memory") || strings.Index(result, "# Tool memory") > strings.Index(result, "PostgreSQL DBA agent") {
+		t.Fatal("expected harness contract before config persona")
+	}
+	if strings.Contains(result, "# Tone and style") {
+		t.Fatal("expected default style to be replaced by config persona")
+	}
+	for _, expected := range []string{"# Tool memory", "# Safety"} {
+		if !strings.Contains(result, expected) {
+			t.Fatalf("expected harness contract section %q to be retained", expected)
+		}
+	}
+	if strings.Index(result, harnessContract) > strings.Index(result, cfg.SystemPrompt) {
+		t.Fatal("expected harness contract before inline system_prompt")
 	}
 }
 
 func TestBuild_ConfigPersonaWithFiles(t *testing.T) {
 	dir := t.TempDir()
 	promptFile := filepath.Join(dir, "extra.md")
-	os.WriteFile(promptFile, []byte("Additional context about databases."), 0644)
+	if err := os.WriteFile(promptFile, []byte("Additional context about databases."), 0644); err != nil {
+		t.Fatalf("write prompt file: %v", err)
+	}
 
 	cfg := &agentconfig.Config{
 		SystemPrompt:      "You are a DBA.",
@@ -147,11 +187,41 @@ func TestBuild_ConfigPersonaWithFiles(t *testing.T) {
 	}
 
 	result := Build(dir, "", "", ModeBuild, cfg)
-	if !strings.Contains(result, "You are a DBA.") {
-		t.Fatal("expected inline system_prompt")
+	for _, expected := range []string{harnessContract, "You are a DBA.", "Additional context about databases."} {
+		if !strings.Contains(result, expected) {
+			t.Fatalf("expected %q in prompt", expected)
+		}
 	}
-	if !strings.Contains(result, "Additional context about databases.") {
-		t.Fatal("expected system_prompt_files content")
+	if strings.Contains(result, "# Tone and style") {
+		t.Fatal("expected default style to be replaced by config persona")
+	}
+	contractIdx := strings.Index(result, harnessContract)
+	inlineIdx := strings.Index(result, "You are a DBA.")
+	fileIdx := strings.Index(result, "Additional context about databases.")
+	if contractIdx > inlineIdx || inlineIdx > fileIdx {
+		t.Fatal("expected harness contract, inline system_prompt, then system_prompt_files content")
+	}
+}
+
+func TestBuild_ConfigFilesOnlyReplaceDefaultStyle(t *testing.T) {
+	dir := t.TempDir()
+	promptFile := filepath.Join(dir, "persona.md")
+	if err := os.WriteFile(promptFile, []byte("You are a support triage agent."), 0644); err != nil {
+		t.Fatalf("write prompt file: %v", err)
+	}
+
+	cfg := &agentconfig.Config{
+		SystemPromptFiles: agentconfig.StringOrArray{promptFile},
+	}
+	result := Build(dir, "", "", ModeBuild, cfg)
+	if !strings.Contains(result, "You are a support triage agent.") {
+		t.Fatal("expected file persona in prompt")
+	}
+	if !strings.Contains(result, "# Tool memory") {
+		t.Fatal("expected harness contract to be retained")
+	}
+	if strings.Contains(result, "# Tone and style") {
+		t.Fatal("expected default style to be replaced by config persona files")
 	}
 }
 
@@ -161,6 +231,9 @@ func TestBuild_ConfigFallbackToDefault(t *testing.T) {
 	result := Build(dir, "", "", ModeBuild, cfg)
 	if !strings.Contains(result, "Keen Agent") {
 		t.Fatal("expected default persona when config has no system_prompt")
+	}
+	if !strings.Contains(result, "# Tone and style") {
+		t.Fatal("expected default style when config has no system_prompt")
 	}
 }
 
