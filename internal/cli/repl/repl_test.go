@@ -378,7 +378,7 @@ func TestInitialModel_PlanModeSetsPromptStyle(t *testing.T) {
 	m := initialModel(&replContext{version: "test", workingDir: t.TempDir(), cfg: &config.ResolvedConfig{}}, nil, false)
 	m.setMode(llm.ModePlan)
 	view := m.View().Content
-	secondarySeq := "\x1b[1;38;2;77;182;172m"
+	secondarySeq := "\x1b[1;38;2;100;159;169m"
 	if !strings.Contains(view, secondarySeq) {
 		t.Fatalf("expected plan mode prompt to use secondary color, got %q", view)
 	}
@@ -727,7 +727,7 @@ func TestRenderInputArea_UsesSecondaryStyleForPlanMode(t *testing.T) {
 	if !strings.Contains(lines[0], repltheme.ModePlanChipStyle.Render("plan")) {
 		t.Fatalf("expected plan mode chip in top rule, got %q", lines[0])
 	}
-	secondarySeq := "\x1b[38;2;77;182;172m"
+	secondarySeq := "\x1b[38;2;100;159;169m"
 	if !strings.Contains(lines[0], secondarySeq) {
 		t.Fatalf("expected plan mode rule to use secondary color, got %q", lines[0])
 	}
@@ -768,7 +768,7 @@ func TestRenderInputArea_UsesSecondaryStyleForAdversary(t *testing.T) {
 	if !strings.Contains(lines[0], repltheme.AdversaryChipStyle.Render("adversary")) {
 		t.Fatalf("expected adversary chip in top rule, got %q", lines[0])
 	}
-	secondarySeq := "\x1b[38;2;77;182;172m"
+	secondarySeq := "\x1b[38;2;100;159;169m"
 	if !strings.Contains(lines[0], secondarySeq) {
 		t.Fatalf("expected adversary rule to use secondary color, got %q", lines[0])
 	}

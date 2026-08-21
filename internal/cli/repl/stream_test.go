@@ -241,13 +241,13 @@ func TestStreamHandler_HandleDone_MixedSegmentsChronological(t *testing.T) {
 	if !strings.Contains(lines[0], "First chunk") {
 		t.Fatalf("expected first line to be first assistant chunk, got %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "read_file") || !strings.Contains(lines[1], "⚙") {
+	if !strings.Contains(lines[1], "Read") || !strings.Contains(lines[1], "●") {
 		t.Fatalf("expected second line to be tool start, got %q", lines[1])
 	}
 	if !strings.Contains(lines[2], "Second chunk") {
 		t.Fatalf("expected third line to be second assistant chunk, got %q", lines[2])
 	}
-	if !strings.Contains(lines[3], "read_file") || !strings.Contains(lines[3], "✓") {
+	if !strings.Contains(lines[3], "Read") || !strings.Contains(lines[3], "✓") {
 		t.Fatalf("expected fourth line to be tool end, got %q", lines[3])
 	}
 }
@@ -265,10 +265,10 @@ func TestStreamHandler_HandleDone_AdjacentToolStartEnd_CollapsedToOneLine(t *tes
 	if len(lines) != 1 {
 		t.Fatalf("expected 1 line for adjacent start/end, got %d: %v", len(lines), lines)
 	}
-	if !strings.Contains(lines[0], "glob") || !strings.Contains(lines[0], "✓") {
+	if !strings.Contains(lines[0], "Find") || !strings.Contains(lines[0], "✓") {
 		t.Fatalf("expected combined done line, got %q", lines[0])
 	}
-	if strings.Contains(lines[0], "⚙") {
+	if strings.Contains(lines[0], "●") {
 		t.Fatalf("expected no tool-start marker in combined line, got %q", lines[0])
 	}
 }
@@ -286,7 +286,7 @@ func TestStreamHandler_CallMCPToolNeverShowsArguments(t *testing.T) {
 	}})
 
 	view := sh.View(80)
-	if !strings.Contains(view, "call_mcp_tool") || !strings.Contains(view, "context7/query-docs") {
+	if !strings.Contains(view, "MCP") || !strings.Contains(view, "context7/query-docs") {
 		t.Fatalf("expected MCP tool summary, got %q", view)
 	}
 	if strings.Contains(view, "libraryId") || strings.Contains(view, "query:") || strings.Contains(view, "React useEffect") {
@@ -303,7 +303,7 @@ func TestStreamHandler_CallMCPToolNeverShowsArguments(t *testing.T) {
 	}, Duration: 5})
 
 	view = sh.View(80)
-	if !strings.Contains(view, "call_mcp_tool") || !strings.Contains(view, "context7/query-docs") {
+	if !strings.Contains(view, "MCP") || !strings.Contains(view, "context7/query-docs") {
 		t.Fatalf("expected completed MCP tool summary, got %q", view)
 	}
 	if strings.Contains(view, "libraryId") || strings.Contains(view, "query:") || strings.Contains(view, "React useEffect") {
@@ -312,7 +312,7 @@ func TestStreamHandler_CallMCPToolNeverShowsArguments(t *testing.T) {
 
 	lines, _ := sh.HandleDone()
 	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "call_mcp_tool") || !strings.Contains(joined, "context7/query-docs") {
+	if !strings.Contains(joined, "MCP") || !strings.Contains(joined, "context7/query-docs") {
 		t.Fatalf("expected transcript MCP tool summary, got %q", joined)
 	}
 	if strings.Contains(joined, "libraryId") || strings.Contains(joined, "query:") || strings.Contains(joined, "React useEffect") {

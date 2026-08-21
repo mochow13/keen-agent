@@ -98,38 +98,38 @@ func TestOutputBuilder_IsEmpty(t *testing.T) {
 	}
 }
 
-func TestFormatToolInput_ShowsRelativePathToWorkingDir(t *testing.T) {
+func TestFormatToolInput_ShowsBaseName(t *testing.T) {
 	workingDir := filepath.Join(string(filepath.Separator), "tmp", "project")
 	got := FormatToolInput("read_file", map[string]any{
 		"path": filepath.Join(workingDir, "internal", "cli", "repl", "output.go"),
 	}, workingDir)
 
-	if got != "path=internal/cli/repl/output.go" {
-		t.Fatalf("expected relative path display, got %q", got)
+	if got != "output.go" {
+		t.Fatalf("expected base name display, got %q", got)
 	}
 }
 
 func TestFormatToolInput_KeepsRelativePathInput(t *testing.T) {
 	got := FormatToolInput("read_file", map[string]any{"path": "internal/cli/repl/output.go"}, "/tmp/project")
 
-	if got != "path=internal/cli/repl/output.go" {
-		t.Fatalf("expected relative input path to remain unchanged, got %q", got)
+	if got != "output.go" {
+		t.Fatalf("expected base name display, got %q", got)
 	}
 }
 
-func TestFormatToolInput_WriteFileShowsOnlyRelativePath(t *testing.T) {
+func TestFormatToolInput_WriteFileShowsOnlyBaseName(t *testing.T) {
 	workingDir := filepath.Join(string(filepath.Separator), "tmp", "project")
 	got := FormatToolInput("write_file", map[string]any{
 		"path":    filepath.Join(workingDir, "README.md"),
 		"content": "ignored",
 	}, workingDir)
 
-	if got != "path=README.md" {
-		t.Fatalf("expected write_file UI to show only relative path, got %q", got)
+	if got != "README.md" {
+		t.Fatalf("expected write_file UI to show only base name, got %q", got)
 	}
 }
 
-func TestFormatToolInput_SeparatesArgumentsWithDots(t *testing.T) {
+func TestFormatToolInput_SearchRendersPatternInPath(t *testing.T) {
 	got := FormatToolInput("grep", map[string]any{
 		"include":     "*.go",
 		"output_mode": "content",
@@ -137,9 +137,9 @@ func TestFormatToolInput_SeparatesArgumentsWithDots(t *testing.T) {
 		"pattern":     "FormatToolInput",
 	}, "/tmp/project")
 
-	expected := "path=internal/cli/repl • pattern=FormatToolInput"
+	expected := "FormatToolInput in repl"
 	if got != expected {
-		t.Fatalf("expected dot-separated tool arguments, got %q", got)
+		t.Fatalf("expected pattern-in-path display, got %q", got)
 	}
 }
 
@@ -159,15 +159,15 @@ func TestFormatToolInput_CallMCPToolShowsOnlyServerAndTool(t *testing.T) {
 	}
 }
 
-func TestFormatToolInput_DelegateTaskShowsOnlyAgent(t *testing.T) {
+func TestFormatToolInput_DelegateTaskShowsTaskCount(t *testing.T) {
 	got := FormatToolInput("delegate_task", map[string]any{
 		"agent":           "explorer",
 		"task":            "Inspect internal/subagents and summarize the design.",
 		"timeout_seconds": 120,
 	}, "/tmp/project")
 
-	if got != "agent=explorer" {
-		t.Fatalf("expected delegate_task input to show only agent, got %q", got)
+	if got != "0 tasks" {
+		t.Fatalf("expected delegate_task input to show task count, got %q", got)
 	}
 }
 

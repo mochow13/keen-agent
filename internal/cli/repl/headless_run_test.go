@@ -411,7 +411,7 @@ func TestRunHeadless_ProgressStreamsChunksAndToolEnds(t *testing.T) {
 	if !strings.Contains(prog, "Inspecting") {
 		t.Fatalf("expected progress to contain chunk text, got %q", prog)
 	}
-	if !strings.Contains(prog, "read_file") {
+	if !strings.Contains(prog, "Read") {
 		t.Fatalf("expected progress to contain tool name, got %q", prog)
 	}
 	if strings.Count(prog, "\n") < 1 {
