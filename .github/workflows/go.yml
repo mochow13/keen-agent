@@ -15,7 +15,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25.7'
+        go-version: '1.25.13'
         cache: true
 
     - name: Download dependencies
@@ -30,6 +30,28 @@ jobs:
     - name: Test
       run: go test -v -race ./...
 
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.13'
+        cache: true
+
+    - name: Generate coverage report
+      run: go test -covermode=atomic -coverprofile=coverage.out ./...
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: coverage.out
+        disable_search: true
+        fail_ci_if_error: false
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -38,7 +60,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25.7'
+        go-version: '1.25.13'
         cache: true
 
     - name: Go vet
@@ -51,3 +73,12 @@ jobs:
           gofmt -l .
           exit 1
         fi
+
+  vulncheck:
+    name: Check reachable Go vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+    - uses: golang/govulncheck-action@v1
+      with:
+        go-version-input: '1.25.13'
+        go-package: ./...
