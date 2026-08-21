@@ -179,8 +179,8 @@ func TestNewClient_OpenCodeGoOpenAICompatibleModel(t *testing.T) {
 	if oaiClient.thinkingEffort != "enabled" {
 		t.Fatalf("expected thinking effort enabled, got %q", oaiClient.thinkingEffort)
 	}
-	if oaiClient.contextWindowTokenCount != 256000 {
-		t.Fatalf("expected context window 256000, got %d", oaiClient.contextWindowTokenCount)
+	if oaiClient.contextWindowTokenCount != 262144 {
+		t.Fatalf("expected context window 262144, got %d", oaiClient.contextWindowTokenCount)
 	}
 }
 
@@ -250,8 +250,8 @@ func TestNewClient_MiniMax(t *testing.T) {
 	if anthropicClient.thinkingEffort != "" {
 		t.Fatalf("expected no Anthropic thinking effort for MiniMax, got %q", anthropicClient.thinkingEffort)
 	}
-	if anthropicClient.contextWindowTokenCount != defaultContextWindowTokenCount {
-		t.Fatalf("expected fallback context window %d, got %d", defaultContextWindowTokenCount, anthropicClient.contextWindowTokenCount)
+	if anthropicClient.contextWindowTokenCount != 204800 {
+		t.Fatalf("expected context window 204800, got %d", anthropicClient.contextWindowTokenCount)
 	}
 }
 
