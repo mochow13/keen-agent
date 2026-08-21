@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mochow13/keen-agent/internal/agentconfig"
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
 	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
@@ -88,6 +89,7 @@ type replModel struct {
 	isCompacting              bool
 	compactionCancel          context.CancelFunc
 	contextStatus             contextStatus
+	gitBranch                 string
 	showThinking              bool
 	history                   replhistory.InputHistory
 	selection                 viewportSelection
@@ -264,6 +266,7 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 	}
 
 	model.refreshContextStatus()
+	model.refreshGitBranch()
 
 	if needsSetup {
 		welcomeStyle := lipgloss.NewStyle().Foreground(repltheme.PrimaryColor).Bold(true)
@@ -811,17 +814,54 @@ func (m replModel) View() tea.View {
 }
 
 func (m replModel) inputMetaView() string {
-	model := "-"
+	return m.inputMetaLocationLine() + "\n" + m.inputMetaStatusLine()
+}
 
-	if m.ctx != nil && m.ctx.cfg != nil {
-		if m.ctx.cfg.Model != "" {
-			model = displayModelName(m.ctx.cfg.Provider, m.ctx.cfg.Model)
-		}
+func (m replModel) inputMetaLocationLine() string {
+	const leftPad = "  "
+	const sep = " • "
+
+	model := m.inputMetaModel()
+	location := abbreviateHome(m.ctx.workingDir)
+	prefix := leftPad + repltheme.HighlightStyle.Render(model) + repltheme.MetaLabelStyle.Render(sep)
+	available := m.width - lipgloss.Width(prefix)
+	if m.width > 0 && lipgloss.Width(location) > available && available > 1 {
+		location = ansi.Truncate(location, available-1, "…")
 	}
 
-	modelText := repltheme.HighlightStyle.Render(model)
-	directory := repltheme.HighlightStyle.Render(" " + abbreviateHome(m.ctx.workingDir))
+	line := prefix + repltheme.HighlightStyle.Render(location)
+	if m.gitBranch != "" {
+		branch := m.gitBranch
+		available -= lipgloss.Width(location) + lipgloss.Width(sep)
+		if available > 1 && lipgloss.Width(branch) > available {
+			branch = ansi.Truncate(branch, available-1, "…")
+		}
+		if available > 0 {
+			line += repltheme.MetaLabelStyle.Render(sep) + repltheme.HighlightStyle.Render(branch)
+		}
+	}
+	if m.contextStatus.ShouldSuggestCompaction() {
+		hint := repltheme.CompactionSuggestionStyle.Render("Try /compact")
+		if m.width <= 0 || lipgloss.Width(line)+1+lipgloss.Width(hint) <= m.width {
+			line += repltheme.MetaLabelStyle.Render(sep) + hint
+		}
+	}
+	return line
+}
 
+func (m replModel) inputMetaModel() string {
+	if m.ctx == nil || m.ctx.cfg == nil || m.ctx.cfg.Model == "" {
+		return "-"
+	}
+
+	model := displayModelName(m.ctx.cfg.Provider, m.ctx.cfg.Model)
+	if m.ctx.cfg.Provider != "" {
+		return m.ctx.cfg.Provider + "/" + model
+	}
+	return model
+}
+
+func (m replModel) inputMetaStatusLine() string {
 	thinkingText := ""
 	if m.ctx != nil && m.ctx.cfg != nil && m.ctx.cfg.ThinkingEffort != "" && m.ctx.registry != nil {
 		if modelMeta, ok := m.ctx.registry.GetModel(m.ctx.cfg.Provider, m.ctx.cfg.Model); ok && modelMeta.SupportsThinkingEffort() {
@@ -840,7 +880,7 @@ func (m replModel) inputMetaView() string {
 		timerText = repltheme.LoadingTimerStyle.Render("⏱ " + m.loadingElapsedText())
 	}
 
-	parts := []string{directory, modelText}
+	parts := make([]string, 0, 3)
 	if thinkingText != "" {
 		parts = append(parts, thinkingText)
 	}
@@ -848,40 +888,7 @@ func (m replModel) inputMetaView() string {
 	if timerText != "" {
 		parts = append(parts, timerText)
 	}
-	left := strings.Join(parts, " • ")
-	right := ""
-	if m.contextStatus.ShouldSuggestCompaction() {
-		right = repltheme.CompactionSuggestionStyle.Render("Try /compact")
-	}
-
-	const leftPad = "  "
-	if m.width <= 0 {
-		if right == "" {
-			return leftPad + left
-		}
-		return leftPad + left + "   " + right
-	}
-
-	available := m.width - lipgloss.Width(leftPad)
-	if right == "" {
-		return leftPad + left
-	}
-	if available < lipgloss.Width(left)+lipgloss.Width(right)+1 {
-		right = ""
-	}
-	if right == "" {
-		return leftPad + left
-	}
-	if available <= lipgloss.Width(right)+1 {
-		return leftPad + left
-	}
-
-	space := available - lipgloss.Width(left) - lipgloss.Width(right)
-	if space >= 1 {
-		return leftPad + left + strings.Repeat(" ", space) + right
-	}
-
-	return leftPad + left
+	return "  " + strings.Join(parts, repltheme.MetaLabelStyle.Render(" • "))
 }
 
 func (m *replModel) replayLoadedSession(loaded *session.LoadedSession) {
