@@ -13,10 +13,10 @@ import (
 )
 
 func TestContextFitsBudget(t *testing.T) {
-	if !contextFitsBudget(13050, 700) {
+	if !contextFitsBudget(4800, 700) {
 		t.Fatal("expected context to fit budget")
 	}
-	if contextFitsBudget(13050, 800) {
+	if contextFitsBudget(4800, 800) {
 		t.Fatal("expected context to exceed budget")
 	}
 }
@@ -296,6 +296,25 @@ func TestReduceGenkitContextForRequest_ReplacesToolResponseOutput(t *testing.T) 
 	}
 }
 
+func TestReduceGenkitContextForRequest_PreservesAskUserResult(t *testing.T) {
+	longResult := repeatString("answer ", 200)
+	messages := []*ai.Message{
+		ai.NewMessage(ai.RoleTool, nil,
+			ai.NewToolResponsePart(&ai.ToolResponse{Name: "ask_user", Ref: "ask", Output: map[string]any{"tool": "ask_user", "answers": []string{longResult}}}),
+		),
+	}
+	budget := estimateGenkitMessagesTokenCount(messages) - estimateContextTokenCount(longResult)/2
+
+	reduced, reduction := reduceGenkitContextForRequest(contextWindowForInputBudget(budget), messages)
+
+	if reduction.RemovedToolResults != 0 {
+		t.Fatalf("expected ask_user result to be preserved, got %d removals", reduction.RemovedToolResults)
+	}
+	if got := reduced[0].Content[0].ToolResponse.Output; got == removedToolResultPlaceholder {
+		t.Fatal("ask_user result was pruned")
+	}
+}
+
 func TestReduceBedrockContextForRequest_ReplacesToolResultContentOnly(t *testing.T) {
 	longResult := repeatString("old ", 200)
 	messages := []brtypes.Message{
@@ -344,10 +363,10 @@ func TestReduceBedrockContextForRequest_ReplacesToolResultContentOnly(t *testing
 }
 
 func contextWindowForInputBudget(budget int) int {
-	if budget+contextOutputReserveTokenCount+4096 < 81920 {
-		return budget + contextOutputReserveTokenCount + 4096
+	if budget+4096 < 81920 {
+		return budget + 4096
 	}
-	return (20*(budget+contextOutputReserveTokenCount) + 18) / 19
+	return (20*budget + 18) / 19
 }
 
 func repeatString(s string, count int) string {

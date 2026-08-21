@@ -152,6 +152,11 @@ func (m *replModel) dispatchCommand(input string) (replModel, tea.Cmd, bool) {
 		result := m.handleToolHistoryCommand(input)
 		return result, nil, true
 
+	case input == replcommands.Context:
+		m.textarea.Reset()
+		m.handleContextCommand()
+		return *m, nil, true
+
 	case input == replcommands.Compact || strings.HasPrefix(input, replcommands.Compact+" "):
 		extraPrompt := strings.TrimSpace(strings.TrimPrefix(input, replcommands.Compact))
 		if !m.appState.IsClientReady(m.ctx.cfg) {
