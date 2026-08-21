@@ -106,10 +106,18 @@ type replModel struct {
 	copyNotification          string
 	copyNotificationExpiresAt time.Time
 	queuedInputs              []string
+	toolHistory               toolHistoryMode
 
 	streamRenderPending  bool
 	streamRenderInterval time.Duration
 }
+
+type toolHistoryMode uint8
+
+const (
+	toolHistoryNone toolHistoryMode = iota
+	toolHistoryFull
+)
 
 type bangState struct {
 	active bool

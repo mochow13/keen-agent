@@ -32,6 +32,7 @@ const (
 	Subagents       = "/subagents"
 	SubagentsList   = "/subagents list"
 	Thinking        = "/thinking"
+	ToolHistory     = "/tool-history"
 )
 
 type SlashCommand struct {
@@ -61,6 +62,7 @@ var All = []SlashCommand{
 	{Skills, "List, show status, reload, enable, or disable skills"},
 	{Subagents, "List available subagents"},
 	{Thinking, "Change thinking effort for the current model"},
+	{ToolHistory, "Control retention of tool outputs across turns (full|none)"},
 }
 
 var Suggestions = []SlashCommand{
@@ -93,6 +95,7 @@ var Suggestions = []SlashCommand{
 	{Subagents, "Show subagent commands"},
 	{SubagentsList, "List available subagents"},
 	{Thinking, "Change thinking effort for the current model"},
+	{ToolHistory, "Control retention of tool outputs across turns (full|none)"},
 }
 
 func IsKnownCommand(input string) bool {

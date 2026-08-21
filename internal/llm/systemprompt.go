@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mochow13/keen-agent/internal/agentconfig"
+	"github.com/mochow13/keen-agent/internal/memory"
 )
 
 type AgentMode string
@@ -124,6 +125,12 @@ func Build(workingDir, skillsCatalog, subagentsCatalog string, mode AgentMode, a
 		sb.WriteString(instructions)
 	}
 
+	mem := memorySection(workingDir)
+	if mem != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(mem)
+	}
+
 	if skillsCatalog != "" {
 		sb.WriteString("\n\n")
 		sb.WriteString(skillsCatalog)
@@ -203,6 +210,14 @@ func projectInstructions(workingDir string) string {
 	}
 
 	return fmt.Sprintf("# Project Instructions (from %s)\n\n%s", path, content)
+}
+
+func memorySection(workingDir string) string {
+	content := memory.Load(workingDir)
+	if content == "" {
+		return ""
+	}
+	return "# Memory\n\n" + content
 }
 
 func findUpward(dir string, candidates []string) (string, string) {

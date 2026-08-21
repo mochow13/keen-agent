@@ -147,6 +147,11 @@ func (m *replModel) dispatchCommand(input string) (replModel, tea.Cmd, bool) {
 		result := m.handleToolPermissionCommand(input, replcommands.ResetPermission, false)
 		return result, nil, true
 
+	case input == replcommands.ToolHistory || strings.HasPrefix(input, replcommands.ToolHistory+" "):
+		m.textarea.Reset()
+		result := m.handleToolHistoryCommand(input)
+		return result, nil, true
+
 	case input == replcommands.Compact || strings.HasPrefix(input, replcommands.Compact+" "):
 		extraPrompt := strings.TrimSpace(strings.TrimPrefix(input, replcommands.Compact))
 		if !m.appState.IsClientReady(m.ctx.cfg) {
@@ -297,6 +302,32 @@ func (m *replModel) handleShowThinkingCommand(input string) replModel {
 		} else {
 			m.output.AddStyledLine("  Thinking tokens: hidden (use /show-thinking on to show)", repltheme.HighlightStyle)
 		}
+	}
+
+	m.output.AddEmptyLine()
+	m.updateViewportContent()
+	m.viewport.GotoBottom()
+	return *m
+}
+
+func (m *replModel) handleToolHistoryCommand(input string) replModel {
+	arg := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(input, replcommands.ToolHistory)))
+
+	switch arg {
+	case "full":
+		m.toolHistory = toolHistoryFull
+		m.output.AddStyledLine("  ✓ Full tool outputs will be retained for future turns", repltheme.HighlightStyle)
+	case "none":
+		m.toolHistory = toolHistoryNone
+		m.output.AddStyledLine("  ✓ Tool outputs will be omitted from future turns", repltheme.HighlightStyle)
+	case "":
+		if m.toolHistory == toolHistoryFull {
+			m.output.AddStyledLine("  Tool output history: full (use /tool-history none to disable)", repltheme.HighlightStyle)
+		} else {
+			m.output.AddStyledLine("  Tool output history: none (use /tool-history full to enable)", repltheme.HighlightStyle)
+		}
+	default:
+		m.output.AddError("Usage: /tool-history full|none", repltheme.ErrorStyle)
 	}
 
 	m.output.AddEmptyLine()

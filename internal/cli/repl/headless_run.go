@@ -106,7 +106,7 @@ func RunHeadless(ctx context.Context, opts HeadlessRunOptions) (*HeadlessRunResu
 	handler.workingDir = opts.WorkingDir
 	handler.showThinking = false
 	handler.Start(eventCh, "")
-	turnMemory := newTurnMemoryAccumulator()
+	turnMemory := newTurnMemoryAccumulator(false)
 
 	var lastUsage *llm.TokenUsage
 	for {
@@ -183,7 +183,7 @@ func handleHeadlessToolEnd(handler *StreamHandler, toolCall *llm.ToolCall) {
 }
 
 func rebuildHeadlessTurnMemory(segments []streamSegment, workingDir string) *turnMemoryAccumulator {
-	memory := newTurnMemoryAccumulator()
+	memory := newTurnMemoryAccumulator(false)
 	memory.RecordToolActivity(segments, workingDir)
 	return memory
 }

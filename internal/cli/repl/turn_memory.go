@@ -1,35 +1,47 @@
 package repl
 
 import (
-	"net/url"
+	"encoding/json"
+	"maps"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/mochow13/keen-agent/internal/llm"
 )
 
-const maxHistoricalToolTargetBytes = 256
+const maxHistoricalToolInputFieldBytes = 4 * 1024
 
-var sensitiveTargetPattern = regexp.MustCompile(`(?i)(api[_-]?key|token|secret|password|passwd|authorization|credential)`)
+var retainedHistoricalToolInputs = map[string]struct{}{
+	"read_file":     {},
+	"grep":          {},
+	"glob":          {},
+	"web_fetch":     {},
+	"bash":          {},
+	"delegate_task": {},
+	"call_mcp_tool": {},
+	"write_file":    {},
+	"edit_file":     {},
+	"ask_user":      {},
+}
 
 type turnMemoryAccumulator struct {
 	toolActivity []llm.HistoricalToolActivity
+	retainOutput bool
 }
 
-func newTurnMemoryAccumulator() *turnMemoryAccumulator {
-	return &turnMemoryAccumulator{}
+func newTurnMemoryAccumulator(retainOutput bool) *turnMemoryAccumulator {
+	return &turnMemoryAccumulator{retainOutput: retainOutput}
 }
 
 func (a *turnMemoryAccumulator) RecordToolActivity(segments []streamSegment, workingDir string) {
 	if a == nil {
 		return
 	}
-	a.toolActivity = collectHistoricalToolActivity(segments, workingDir)
+	a.toolActivity = collectHistoricalToolActivity(segments, workingDir, a.retainOutput)
 }
 
-func collectHistoricalToolActivity(segments []streamSegment, workingDir string) []llm.HistoricalToolActivity {
+func collectHistoricalToolActivity(segments []streamSegment, workingDir string, retainOutput bool) []llm.HistoricalToolActivity {
 	textOffset := 0
 	activities := make([]llm.HistoricalToolActivity, 0)
 
@@ -39,11 +51,11 @@ func collectHistoricalToolActivity(segments []streamSegment, workingDir string) 
 			textOffset += len(segment.content)
 		case segmentToolEnd:
 			if segment.toolCall != nil {
-				activities = append(activities, historicalToolActivity(segment.toolCall, textOffset, workingDir, ""))
+				activities = append(activities, historicalToolActivity(segment.toolCall, textOffset, workingDir, "", retainOutput))
 			}
 		case segmentBash:
 			if segment.toolCall != nil {
-				activities = append(activities, historicalToolActivity(segment.toolCall, textOffset, workingDir, segment.command))
+				activities = append(activities, historicalToolActivity(segment.toolCall, textOffset, workingDir, segment.command, retainOutput))
 			}
 		}
 	}
@@ -51,134 +63,99 @@ func collectHistoricalToolActivity(segments []streamSegment, workingDir string) 
 	return activities
 }
 
-func historicalToolActivity(toolCall *llm.ToolCall, textOffset int, workingDir, bashCommand string) llm.HistoricalToolActivity {
+func historicalToolActivity(toolCall *llm.ToolCall, textOffset int, workingDir, bashCommand string, retainOutput bool) llm.HistoricalToolActivity {
 	activity := llm.HistoricalToolActivity{
 		TextOffset: textOffset,
 		Tool:       toolCall.Name,
-		Input:      historicalToolInput(toolCall, workingDir, bashCommand),
 		Status:     "success",
 	}
 	if toolCall.Error != "" {
 		activity.Status = "error"
 	}
+
+	if retainOutput {
+		activity.HasRawOutput = true
+		activity.RawOutput = toolCall.Output
+		if toolCall.Error != "" {
+			activity.RawOutput = map[string]any{"error": toolCall.Error}
+		}
+	}
+	if toolCall.Name == "ask_user" {
+		activity.RetainedOutput = toolCall.Output
+	}
+
+	if _, ok := retainedHistoricalToolInputs[toolCall.Name]; ok {
+		input := toolCall.Input
+		if retainsPathInput(toolCall.Name) {
+			input = cloneToolInput(input)
+			if path, ok := input["path"].(string); ok {
+				input["path"] = relativizePath(path, workingDir)
+			}
+		}
+		if toolCall.Name == "bash" && bashCommand != "" {
+			input = cloneToolInput(input)
+			input["command"] = bashCommand
+		}
+		if toolCall.Name == "ask_user" {
+			activity.Input = cloneToolInput(input)
+		} else {
+			activity.Input = boundedHistoricalToolInput(input, truncatesHistoricalToolInput(toolCall.Name))
+		}
+	}
+
 	if toolCall.Name == "bash" {
-		if exitCode, ok := extractIntField(toolCall.Output, "exit_code"); ok && exitCode != 0 {
+		exitCode, ok := extractIntField(toolCall.Output, "exit_code")
+		if ok && exitCode != 0 {
 			activity.ExitCode = &exitCode
 		}
 	}
 	return activity
 }
 
-func historicalToolInput(toolCall *llm.ToolCall, workingDir, bashCommand string) map[string]any {
-	if toolCall == nil {
-		return nil
-	}
-
-	input := make(map[string]any)
-	addPath := func(key string) {
-		if value := boundedTarget(relativizePath(toolStringField(toolCall, key), workingDir)); value != "" {
-			input[key] = value
-		}
-	}
-	addString := func(key, value string) {
-		if value = boundedTarget(value); value != "" {
-			input[key] = value
-		}
-	}
-
-	switch toolCall.Name {
-	case "read_file":
-		addPath("path")
-		copyOptionalInt(input, toolCall.Input, "offset")
-		copyOptionalInt(input, toolCall.Input, "limit")
-	case "write_file", "edit_file":
-		addPath("path")
-	case "glob":
-		addPath("path")
-		addString("pattern", inputStringField(toolCall, "pattern"))
-	case "grep":
-		addPath("path")
-		addString("pattern", inputStringField(toolCall, "pattern"))
-		addString("include", inputStringField(toolCall, "include"))
-		addString("output_mode", inputStringField(toolCall, "output_mode"))
-	case "bash":
-		if bashCommand == "" {
-			bashCommand = toolStringField(toolCall, "command")
-		}
-		addString("command", bashCommand)
-	case "web_fetch":
-		addString("url", sanitizedURL(inputStringField(toolCall, "url")))
-	case "call_mcp_tool":
-		addString("server", toolStringField(toolCall, "server"))
-		addString("tool", toolStringField(toolCall, "tool"))
-	case "delegate_task":
-		addString("agent", inputStringField(toolCall, "agent"))
-	}
+func boundedHistoricalToolInput(input map[string]any, truncateOversizedStrings bool) map[string]any {
 	if len(input) == 0 {
 		return nil
 	}
-	return input
+
+	bounded := make(map[string]any, len(input))
+	for key, value := range input {
+		if text, ok := value.(string); ok && truncateOversizedStrings {
+			bounded[key] = truncateUTF8(text, maxHistoricalToolInputFieldBytes)
+			continue
+		}
+		encoded, err := json.Marshal(value)
+		if err == nil && len(encoded) <= maxHistoricalToolInputFieldBytes {
+			bounded[key] = value
+		}
+	}
+	if len(bounded) == 0 {
+		return nil
+	}
+	return bounded
 }
 
-func copyOptionalInt(destination map[string]any, input map[string]any, key string) {
-	if input == nil {
-		return
-	}
-	switch value := input[key].(type) {
-	case int:
-		destination[key] = value
-	case int32:
-		destination[key] = int(value)
-	case int64:
-		destination[key] = int(value)
-	case float64:
-		destination[key] = int(value)
-	}
-}
-
-func toolStringField(toolCall *llm.ToolCall, key string) string {
-	if toolCall == nil {
-		return ""
-	}
-	if value := extractStringField(toolCall.Output, key); value != "" {
+func truncateUTF8(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
 		return value
 	}
-	return inputStringField(toolCall, key)
+	for maxBytes > 0 && !utf8.RuneStart(value[maxBytes]) {
+		maxBytes--
+	}
+	return value[:maxBytes]
 }
 
-func inputStringField(toolCall *llm.ToolCall, key string) string {
-	if toolCall == nil || toolCall.Input == nil {
-		return ""
-	}
-	value, _ := toolCall.Input[key].(string)
-	return value
+func cloneToolInput(input map[string]any) map[string]any {
+	cloned := make(map[string]any, len(input)+1)
+	maps.Copy(cloned, input)
+	return cloned
 }
 
-func sanitizedURL(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return ""
-	}
-	parsed.User = nil
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	return parsed.String()
+func retainsPathInput(tool string) bool {
+	return tool == "read_file" || tool == "grep" || tool == "glob" || tool == "write_file" || tool == "edit_file"
 }
 
-func boundedTarget(target string) string {
-	target = strings.Join(strings.Fields(target), " ")
-	if sensitiveTargetPattern.MatchString(target) {
-		return ""
-	}
-	if len(target) <= maxHistoricalToolTargetBytes {
-		return target
-	}
-
-	limit := maxHistoricalToolTargetBytes - len("...")
-	for limit > 0 && !utf8.RuneStart(target[limit]) {
-		limit--
-	}
-	return target[:limit] + "..."
+func truncatesHistoricalToolInput(tool string) bool {
+	return tool == "write_file" || tool == "edit_file"
 }
 
 func (a *turnMemoryAccumulator) Build() *llm.TurnMemory {
@@ -186,16 +163,7 @@ func (a *turnMemoryAccumulator) Build() *llm.TurnMemory {
 		return nil
 	}
 
-	return &llm.TurnMemory{ToolActivity: append([]llm.HistoricalToolActivity(nil), a.toolActivity...)}
-}
-
-func extractStringField(output any, key string) string {
-	result, ok := output.(map[string]any)
-	if !ok {
-		return ""
-	}
-	value, _ := result[key].(string)
-	return value
+	return llm.CloneTurnMemory(&llm.TurnMemory{ToolActivity: a.toolActivity})
 }
 
 func extractIntField(output any, key string) (int, bool) {
@@ -222,7 +190,7 @@ func (m *replModel) startAssistantTurnMemory() {
 	if m == nil {
 		return
 	}
-	m.turnMemory = newTurnMemoryAccumulator()
+	m.turnMemory = newTurnMemoryAccumulator(m.toolHistory == toolHistoryFull)
 }
 
 func (m *replModel) recordHistoricalToolActivity(segments []streamSegment) {
@@ -232,14 +200,6 @@ func (m *replModel) recordHistoricalToolActivity(segments []streamSegment) {
 	m.turnMemory.RecordToolActivity(segments, m.turnMemoryWorkingDir())
 }
 
-func (m *replModel) rebuildTurnMemoryFromSegments(segments []streamSegment) {
-	if m == nil || m.turnMemory == nil {
-		return
-	}
-	m.turnMemory = newTurnMemoryAccumulator()
-	m.recordHistoricalToolActivity(segments)
-}
-
 func (m *replModel) consumeTurnMemory() *llm.TurnMemory {
 	if m == nil || m.turnMemory == nil {
 		return nil
@@ -247,6 +207,14 @@ func (m *replModel) consumeTurnMemory() *llm.TurnMemory {
 	memory := m.turnMemory.Build()
 	m.turnMemory = nil
 	return memory
+}
+
+func (m *replModel) rebuildTurnMemoryFromSegments(segments []streamSegment) {
+	if m == nil || m.turnMemory == nil {
+		return
+	}
+	m.turnMemory = newTurnMemoryAccumulator(m.toolHistory == toolHistoryFull)
+	m.recordHistoricalToolActivity(segments)
 }
 
 func (m *replModel) clearTurnMemory() {
