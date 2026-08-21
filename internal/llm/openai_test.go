@@ -11,9 +11,9 @@ import (
 
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/tools"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/respjson"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/respjson"
 )
 
 type fakeChatStream struct {
@@ -752,6 +752,45 @@ func TestToOpenAIMessages_ReplaysHistoricalToolInput(t *testing.T) {
 	}
 }
 
+func TestFunctionToolCalls(t *testing.T) {
+	toolCalls := []openai.ChatCompletionMessageToolCallUnion{
+		{
+			ID:   "call_1",
+			Type: "function",
+			Function: openai.ChatCompletionMessageFunctionToolCallFunction{
+				Name:      "read_file",
+				Arguments: `{"path":"go.mod"}`,
+			},
+		},
+		{
+			ID:   "call_2",
+			Type: "function",
+		},
+		{
+			ID:   "call_3",
+			Type: "custom",
+		},
+		{
+			ID: "call_4",
+			Function: openai.ChatCompletionMessageFunctionToolCallFunction{
+				Name:      "grep",
+				Arguments: `{"pattern":"test"}`,
+			},
+		},
+	}
+
+	got := functionToolCalls(toolCalls)
+	if len(got) != 2 {
+		t.Fatalf("expected two named function calls, got %#v", got)
+	}
+	if got[0].ID != "call_1" || got[0].Function.Name != "read_file" {
+		t.Fatalf("unexpected first function call: %#v", got[0])
+	}
+	if got[1].ID != "call_4" || got[1].Function.Name != "grep" {
+		t.Fatalf("unexpected second function call: %#v", got[1])
+	}
+}
+
 func TestOpenAICompatibleClient_buildAssistantMessage_AttachesReasoningWithoutToolCalls(t *testing.T) {
 	client := &OpenAICompatibleClient{}
 
@@ -760,7 +799,7 @@ func TestOpenAICompatibleClient_buildAssistantMessage_AttachesReasoningWithoutTo
 		Content: "answer",
 	}
 
-	assistant := client.buildAssistantMessage(msg, "reasoning-step")
+	assistant := client.buildAssistantMessage(msg, "reasoning-step", nil)
 	extra := assistant.ExtraFields()
 	if extra == nil {
 		t.Fatal("expected extra fields to be set")

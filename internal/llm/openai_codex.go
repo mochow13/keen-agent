@@ -17,11 +17,11 @@ import (
 	"github.com/mochow13/keen-agent/internal/auth"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/tools"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 const openAICodexBaseURL = "https://chatgpt.com/backend-api/codex/"
@@ -286,10 +286,7 @@ func (c *OpenAICodexClient) collectTurn(
 
 		switch ev.Type {
 		case "response.output_text.delta":
-			text := ev.Delta.OfString
-			if text == "" {
-				text = ev.AsResponseOutputTextDelta().Delta
-			}
+			text := ev.Delta
 			emitCodexText(eventCh, &streamedContent, textProgress, codexTextProgressKey(ev), text)
 		case "response.output_text.done":
 			text := ev.Text
@@ -306,8 +303,8 @@ func (c *OpenAICodexClient) collectTurn(
 			if ev.Item.Type == "function_call" {
 				toolCalls = appendCodexToolCall(toolCalls, seenToolCalls, ev.Item.AsFunctionCall())
 			}
-		case "response.reasoning.delta", "response.reasoning_summary.delta", "response.reasoning_summary_text.delta":
-			reasoning := ev.Delta.OfString
+		case "response.reasoning.delta", "response.reasoning_summary.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+			reasoning := ev.Delta
 			if reasoning == "" {
 				reasoning = ev.Text
 			}
@@ -326,6 +323,10 @@ func (c *OpenAICodexClient) collectTurn(
 				msg = msg + " (" + ev.Code + ")"
 			}
 			return nil, streamedContent.String(), nil, fmt.Errorf("%s", msg)
+		case "response.failed":
+			return nil, streamedContent.String(), nil, responseFailedError(ev.AsResponseFailed().Response)
+		case "response.incomplete":
+			return nil, streamedContent.String(), nil, responseIncompleteError(ev.AsResponseIncomplete().Response)
 		case "response.completed":
 			v := ev.AsResponseCompleted()
 			completed = &v.Response
