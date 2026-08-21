@@ -7,10 +7,11 @@ import (
 	"charm.land/lipgloss/v2"
 	reploutput "github.com/mochow13/keen-agent/internal/cli/repl/output"
 	repltheme "github.com/mochow13/keen-agent/internal/cli/repl/theme"
+	"github.com/mochow13/keen-agent/internal/llm"
 	"github.com/mochow13/keen-agent/internal/tools"
 )
 
-const bashOutputMaxLines = 30
+const bashOutputMaxLines = 16
 const diffRightPadding = 2
 
 // wrapAndIndent wraps an already-styled string to wrapWidth and prefixes every
@@ -56,13 +57,16 @@ func (sh *StreamHandler) renderViewLines(width int) []string {
 		switch seg.kind {
 		case segmentToolStart:
 			if seg.toolCall != nil {
-				if i+1 < len(sh.segments) && sh.segments[i+1].kind == segmentToolEnd {
+				if sh.shouldHideToolStart(i) || (i+1 < len(sh.segments) && sh.segments[i+1].kind == segmentToolEnd) {
 					continue
 				}
 				lines = append(lines, renderToolStatusLines(reploutput.FormatToolStart(seg.toolCall, sh.workingDir), width)...)
 			}
 		case segmentToolEnd:
 			if seg.toolCall != nil {
+				if isHiddenToolFailure(seg.toolCall) {
+					continue
+				}
 				if i > 0 && sh.segments[i-1].kind == segmentToolStart && sh.segments[i-1].toolCall != nil {
 					lines = append(lines, renderToolStatusLines(reploutput.FormatToolDone(sh.segments[i-1].toolCall, seg.toolCall, sh.workingDir), width)...)
 				} else {
@@ -104,13 +108,16 @@ func (sh *StreamHandler) renderTranscriptLines() []string {
 		switch seg.kind {
 		case segmentToolStart:
 			if seg.toolCall != nil {
-				if i+1 < len(sh.segments) && sh.segments[i+1].kind == segmentToolEnd {
+				if sh.shouldHideToolStart(i) || (i+1 < len(sh.segments) && sh.segments[i+1].kind == segmentToolEnd) {
 					continue
 				}
 				lines = append(lines, renderToolStatusLines(reploutput.FormatToolStart(seg.toolCall, sh.workingDir), sh.lastWidth)...)
 			}
 		case segmentToolEnd:
 			if seg.toolCall != nil {
+				if isHiddenToolFailure(seg.toolCall) {
+					continue
+				}
 				if i > 0 && sh.segments[i-1].kind == segmentToolStart && sh.segments[i-1].toolCall != nil {
 					lines = append(lines, renderToolStatusLines(reploutput.FormatToolDone(sh.segments[i-1].toolCall, seg.toolCall, sh.workingDir), sh.lastWidth)...)
 				} else {
@@ -138,6 +145,24 @@ func (sh *StreamHandler) renderTranscriptLines() []string {
 	return lines
 }
 
+func (sh *StreamHandler) shouldHideToolStart(index int) bool {
+	return index+1 < len(sh.segments) && sh.segments[index+1].kind == segmentToolEnd && isHiddenToolFailure(sh.segments[index+1].toolCall)
+}
+
+func isHiddenToolFailure(toolCall *llm.ToolCall) bool {
+	if toolCall == nil {
+		return false
+	}
+	if toolCall.Name == "read_file" {
+		return strings.HasPrefix(toolCall.Error, "not found: file ")
+	}
+	if toolCall.Name != "edit_file" {
+		return false
+	}
+	return strings.HasPrefix(toolCall.Error, "not found: file ") ||
+		strings.HasPrefix(toolCall.Error, "not a file: ") && strings.HasSuffix(toolCall.Error, " is a directory") ||
+		strings.HasPrefix(toolCall.Error, "path resolution failed:")
+}
 func (sh *StreamHandler) renderAssistantViewLines(content string, width int) []string {
 	if content == "" {
 		return nil

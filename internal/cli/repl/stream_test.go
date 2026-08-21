@@ -1111,3 +1111,78 @@ func TestHandleKeyMsg_Enter_WhenPermissionPending_DoesNotSubmit(t *testing.T) {
 		t.Error("expected permission to be resolved")
 	}
 }
+
+func TestIsHiddenToolFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		call *llm.ToolCall
+		want bool
+	}{
+		{
+			name: "nil tool call",
+			call: nil,
+			want: false,
+		},
+		{
+			name: "read_file not found",
+			call: &llm.ToolCall{Name: "read_file", Error: `not found: file "missing.txt" does not exist`},
+			want: true,
+		},
+		{
+			name: "read_file other error",
+			call: &llm.ToolCall{Name: "read_file", Error: "permission denied"},
+			want: false,
+		},
+		{
+			name: "edit_file path resolution failed",
+			call: &llm.ToolCall{Name: "edit_file", Error: "path resolution failed: invalid path"},
+			want: true,
+		},
+		{
+			name: "edit_file not a file (directory)",
+			call: &llm.ToolCall{Name: "edit_file", Error: `not a file: "foo" is a directory`},
+			want: true,
+		},
+		{
+			name: "edit_file not found",
+			call: &llm.ToolCall{Name: "edit_file", Error: `not found: file "x" does not exist`},
+			want: true,
+		},
+		{
+			name: "edit_file oldString not found",
+			call: &llm.ToolCall{Name: "edit_file", Error: `oldString not found in file "x"`},
+			want: false,
+		},
+		{
+			name: "bash other error",
+			call: &llm.ToolCall{Name: "bash", Error: "exit code 1"},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isHiddenToolFailure(tt.call); got != tt.want {
+				t.Errorf("isHiddenToolFailure() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStreamHandler_ShouldHideToolStart(t *testing.T) {
+	sh := NewStreamHandler(nil)
+	sh.segments = []streamSegment{
+		{kind: segmentToolStart, toolCall: &llm.ToolCall{Name: "read_file", Error: `not found: file "x" does not exist`}},
+		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "read_file", Error: `not found: file "x" does not exist`}},
+	}
+	if !sh.shouldHideToolStart(0) {
+		t.Error("expected shouldHideToolStart to return true for hidden failure pair")
+	}
+
+	sh.segments = []streamSegment{
+		{kind: segmentToolStart, toolCall: &llm.ToolCall{Name: "bash"}},
+		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "bash"}},
+	}
+	if sh.shouldHideToolStart(0) {
+		t.Error("expected shouldHideToolStart to return false for non-hidden failure pair")
+	}
+}
