@@ -286,7 +286,7 @@ func TestUpdateViewportContent_UsesViewportWidthWhenModelStartsWithoutResize(t *
 	}
 }
 
-func TestBuildInitialScreen_HighlightsModelOnly(t *testing.T) {
+func TestBuildInitialScreen_UsesGradientArtAndTip(t *testing.T) {
 	ctx := &replContext{
 		version:    "0.20.1",
 		workingDir: "/tmp/project",
@@ -299,11 +299,14 @@ func TestBuildInitialScreen_HighlightsModelOnly(t *testing.T) {
 	lines := buildInitialScreen(ctx, nil, 0)
 	rendered := strings.Join(lines, "\n")
 
-	if strings.Contains(rendered, repltheme.HighlightStyle.Render("openai")) {
-		t.Fatalf("expected provider in initial screen to not use highlight style, got %q", rendered)
+	if !strings.Contains(rendered, "Keen Agent v0.20.1") {
+		t.Fatalf("expected version header, got %q", rendered)
 	}
-	if !strings.Contains(rendered, repltheme.ModelChipStyle.Render("gpt-5.4")) {
-		t.Fatalf("expected model in initial screen to use model chip style, got %q", rendered)
+	if !strings.Contains(rendered, "Tip of the session") {
+		t.Fatalf("expected tip label, got %q", rendered)
+	}
+	if strings.Contains(rendered, repltheme.ModelChipStyle.Render("gpt-5.4")) {
+		t.Fatalf("expected model chip to be removed from initial screen, got %q", rendered)
 	}
 }
 
