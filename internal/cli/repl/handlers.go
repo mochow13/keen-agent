@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
 	reploutput "github.com/mochow13/keen-agent/internal/cli/repl/output"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	repltheme "github.com/mochow13/keen-agent/internal/cli/repl/theme"
@@ -154,6 +155,15 @@ func (m *replModel) handleLLMRetry(err error, attempt int) (replModel, tea.Cmd) 
 	m.streamHandler.SetLoadingText(m.loadingText)
 	m.updateViewportContent()
 	m.scrollToBottomIfFollowing()
+	return *m, m.waitForAsyncEvent()
+}
+
+func (m *replModel) handleAutoCompactionApplied(event *llm.AutoCompactionEvent) (replModel, tea.Cmd) {
+	if event == nil || len(event.Replacement) == 0 {
+		return *m, m.waitForAsyncEvent()
+	}
+	m.appState.ReplaceMessages(replappstate.WithoutSystemMessages(event.Replacement))
+	m.refreshContextStatus()
 	return *m, m.waitForAsyncEvent()
 }
 
@@ -687,7 +697,7 @@ func (m replModel) handleLLMStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 
 	if m.streamHandler == nil || !m.streamHandler.IsActive() {
 		switch msg.(type) {
-		case llmChunkMsg, llmReasoningChunkMsg, llmDoneMsg, llmIncompleteMsg, llmErrorMsg, llmRetryMsg, llmToolStartMsg, llmToolEndMsg, llmUsageMsg:
+		case llmChunkMsg, llmReasoningChunkMsg, llmDoneMsg, llmIncompleteMsg, llmErrorMsg, llmRetryMsg, llmToolStartMsg, llmToolEndMsg, llmUsageMsg, llmAutoCompactionStartedMsg, llmAutoCompactionAppliedMsg, llmAutoCompactionCancelledMsg, llmAutoCompactionFailedMsg:
 			return m, nil, true
 		}
 	}
@@ -719,6 +729,11 @@ func (m replModel) handleLLMStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 		return updated, cmd, true
 	case llmToolEndMsg:
 		updated, cmd := m.handleToolEnd(msg.toolCall)
+		return updated, cmd, true
+	case llmAutoCompactionStartedMsg, llmAutoCompactionCancelledMsg, llmAutoCompactionFailedMsg:
+		return m, m.waitForAsyncEvent(), true
+	case llmAutoCompactionAppliedMsg:
+		updated, cmd := m.handleAutoCompactionApplied(msg.event)
 		return updated, cmd, true
 	default:
 		return m, nil, false

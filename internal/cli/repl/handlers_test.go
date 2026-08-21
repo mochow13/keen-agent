@@ -1009,3 +1009,33 @@ func TestHandleKeyMsg_SlashCommandWithoutAtShowsCommandSuggestions(t *testing.T)
 		t.Fatalf("expected /clear in suggestions, got %q", newM.suggestion.View(80))
 	}
 }
+
+func TestHandleAutoCompactionApplied_ReplacesAppStateMessages(t *testing.T) {
+	m := newTestModel()
+	m.appState.AppendMessage(llm.Message{Role: llm.RoleUser, Content: "original"})
+	m.appState.AppendMessage(llm.Message{Role: llm.RoleAssistant, Content: "old response"})
+
+	updated, _ := m.handleAutoCompactionApplied(&llm.AutoCompactionEvent{
+		Replacement: []llm.Message{
+			{Role: llm.RoleSystem, Content: "sys"},
+			{Role: llm.RoleUser, Content: "compacted user"},
+		},
+	})
+
+	messages := updated.appState.GetMessages()
+	if len(messages) != 1 || messages[0].Role != llm.RoleUser || messages[0].Content != "compacted user" {
+		t.Fatalf("expected compacted user message, got %#v", messages)
+	}
+}
+
+func TestHandleAutoCompactionApplied_EmptyReplacementContinuesWaiting(t *testing.T) {
+	m := newTestModel()
+	m.streamHandler.Start(make(<-chan llm.StreamEvent), "")
+	updated, cmd := m.handleAutoCompactionApplied(&llm.AutoCompactionEvent{Replacement: nil})
+	if cmd == nil {
+		t.Fatal("expected wait cmd")
+	}
+	if len(updated.appState.GetMessages()) != 0 {
+		t.Fatal("expected no messages to change")
+	}
+}

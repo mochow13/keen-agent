@@ -96,16 +96,27 @@ func (m *TurnMemory) IsEmpty() bool {
 type StreamEventType string
 
 const (
-	StreamEventTypeChunk          StreamEventType = "chunk"
-	StreamEventTypeReasoningChunk StreamEventType = "reasoning_chunk"
-	StreamEventTypeDone           StreamEventType = "done"
-	StreamEventTypeError          StreamEventType = "error"
-	StreamEventTypeToolStart      StreamEventType = "tool_start"
-	StreamEventTypeToolEnd        StreamEventType = "tool_end"
-	StreamEventTypeUsage          StreamEventType = "usage"
-	StreamEventTypeRetry          StreamEventType = "retry"
-	StreamEventTypeIncomplete     StreamEventType = "incomplete"
+	StreamEventTypeChunk                   StreamEventType = "chunk"
+	StreamEventTypeReasoningChunk          StreamEventType = "reasoning_chunk"
+	StreamEventTypeDone                    StreamEventType = "done"
+	StreamEventTypeError                   StreamEventType = "error"
+	StreamEventTypeToolStart               StreamEventType = "tool_start"
+	StreamEventTypeToolEnd                 StreamEventType = "tool_end"
+	StreamEventTypeUsage                   StreamEventType = "usage"
+	StreamEventTypeRetry                   StreamEventType = "retry"
+	StreamEventTypeIncomplete              StreamEventType = "incomplete"
+	StreamEventTypeAutoCompactionStarted   StreamEventType = "auto_compaction_started"
+	StreamEventTypeAutoCompactionApplied   StreamEventType = "auto_compaction_applied"
+	StreamEventTypeAutoCompactionCancelled StreamEventType = "auto_compaction_cancelled"
+	StreamEventTypeAutoCompactionFailed    StreamEventType = "auto_compaction_failed"
 )
+
+type AutoCompactionEvent struct {
+	Cancel      func()
+	Replacement []Message
+	Usage       *TokenUsage
+	Error       error
+}
 
 type TokenUsage struct {
 	InputTokens     int
@@ -116,12 +127,13 @@ type TokenUsage struct {
 }
 
 type StreamEvent struct {
-	Type     StreamEventType
-	Content  string
-	Error    error
-	ToolCall *ToolCall
-	Usage    *TokenUsage
-	Attempt  int
+	Type           StreamEventType
+	Content        string
+	Error          error
+	ToolCall       *ToolCall
+	Usage          *TokenUsage
+	Attempt        int
+	AutoCompaction *AutoCompactionEvent
 }
 
 type ToolCall struct {

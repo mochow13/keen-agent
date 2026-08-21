@@ -37,6 +37,19 @@ type permissionReadyMsg struct {
 type diffReadyMsg struct {
 	req repltooling.DiffRequest
 }
+type llmAutoCompactionStartedMsg struct {
+	event *llm.AutoCompactionEvent
+}
+type llmAutoCompactionAppliedMsg struct {
+	event *llm.AutoCompactionEvent
+}
+type llmAutoCompactionCancelledMsg struct {
+	event *llm.AutoCompactionEvent
+}
+type llmAutoCompactionFailedMsg struct {
+	event *llm.AutoCompactionEvent
+}
+
 type compactionDoneMsg struct{}
 type compactionErrMsg struct {
 	err error

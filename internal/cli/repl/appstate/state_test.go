@@ -856,3 +856,22 @@ func TestAppState_StreamCompactLeavesMessagesUntouchedOnCancel(t *testing.T) {
 		t.Fatalf("expected messages to remain unchanged, got %#v", got)
 	}
 }
+
+func TestWithoutSystemMessages_FiltersAndClones(t *testing.T) {
+	messages := []llm.Message{
+		{Role: llm.RoleSystem, Content: "system"},
+		{Role: llm.RoleUser, Content: "user"},
+		{Role: llm.RoleAssistant, Content: "assistant"},
+	}
+	filtered := WithoutSystemMessages(messages)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(filtered))
+	}
+	if filtered[0].Role != llm.RoleUser || filtered[1].Role != llm.RoleAssistant {
+		t.Fatalf("unexpected roles: %#v", filtered)
+	}
+	filtered[0].Content = "changed"
+	if messages[1].Content != "user" {
+		t.Fatal("WithoutSystemMessages returned aliases to input messages")
+	}
+}

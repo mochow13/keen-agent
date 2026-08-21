@@ -677,6 +677,14 @@ func waitForAsyncEvent(llmCh <-chan llm.StreamEvent, permissionCh <-chan *replpe
 				return llmUsageMsg{usage: event.Usage}
 			case llm.StreamEventTypeRetry:
 				return llmRetryMsg{err: event.Error, attempt: event.Attempt}
+			case llm.StreamEventTypeAutoCompactionStarted:
+				return llmAutoCompactionStartedMsg{event: event.AutoCompaction}
+			case llm.StreamEventTypeAutoCompactionApplied:
+				return llmAutoCompactionAppliedMsg{event: event.AutoCompaction}
+			case llm.StreamEventTypeAutoCompactionCancelled:
+				return llmAutoCompactionCancelledMsg{event: event.AutoCompaction}
+			case llm.StreamEventTypeAutoCompactionFailed:
+				return llmAutoCompactionFailedMsg{event: event.AutoCompaction}
 			default:
 				return llmDoneMsg{}
 			}

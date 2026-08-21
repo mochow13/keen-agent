@@ -167,6 +167,11 @@ func BuildCompactionPrompt(extraPrompt string) string {
 	}
 	return compactionPrompt
 }
+func BuildAutoCompactionPrompt() string {
+	return compactionPrompt + `
+
+This is an internal agent checkpoint. Keen retains the most recent user message verbatim outside this summary. Do not reproduce that user message verbatim. Preserve active-loop progress and meaningful tool results. Output only the structured summary with no preamble.`
+}
 
 const defaultBtwPrompt = `You are a helper agent for Keen Agent, an AI agent running in a terminal.
 
