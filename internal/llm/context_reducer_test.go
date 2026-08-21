@@ -296,25 +296,6 @@ func TestReduceGenkitContextForRequest_ReplacesToolResponseOutput(t *testing.T) 
 	}
 }
 
-func TestReduceGenkitContextForRequest_PreservesAskUserResult(t *testing.T) {
-	longResult := repeatString("answer ", 200)
-	messages := []*ai.Message{
-		ai.NewMessage(ai.RoleTool, nil,
-			ai.NewToolResponsePart(&ai.ToolResponse{Name: "ask_user", Ref: "ask", Output: map[string]any{"tool": "ask_user", "answers": []string{longResult}}}),
-		),
-	}
-	budget := estimateGenkitMessagesTokenCount(messages) - estimateContextTokenCount(longResult)/2
-
-	reduced, reduction := reduceGenkitContextForRequest(contextWindowForInputBudget(budget), messages)
-
-	if reduction.RemovedToolResults != 0 {
-		t.Fatalf("expected ask_user result to be preserved, got %d removals", reduction.RemovedToolResults)
-	}
-	if got := reduced[0].Content[0].ToolResponse.Output; got == removedToolResultPlaceholder {
-		t.Fatal("ask_user result was pruned")
-	}
-}
-
 func TestReduceBedrockContextForRequest_ReplacesToolResultContentOnly(t *testing.T) {
 	longResult := repeatString("old ", 200)
 	messages := []brtypes.Message{

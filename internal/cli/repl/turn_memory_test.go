@@ -84,21 +84,6 @@ func TestCollectHistoricalToolActivity_OmitsRawOutputsByDefault(t *testing.T) {
 	}
 }
 
-func TestCollectHistoricalToolActivity_RetainsAskUserResult(t *testing.T) {
-	input := map[string]any{"questions": []any{map[string]any{"question": "Pick", "options": []any{"one", "two"}}}}
-	output := map[string]any{"tool": "ask_user", "answers": []string{"two"}}
-	activities := collectHistoricalToolActivity([]streamSegment{{
-		kind:     segmentToolEnd,
-		toolCall: &llm.ToolCall{Name: "ask_user", Input: input, Output: output},
-	}}, "", false)
-	if len(activities) != 1 || activities[0].Input == nil || activities[0].RetainedOutput == nil {
-		t.Fatalf("expected retained ask_user input and output, got %#v", activities)
-	}
-	if got := llm.FormatMessageForProvider(llm.Message{Role: llm.RoleAssistant, TurnMemory: &llm.TurnMemory{ToolActivity: activities}}); got != "" {
-		t.Fatalf("unexpected formatted message %q", got)
-	}
-}
-
 func TestCollectHistoricalToolActivity_RetainsWriteInputWithoutChangedPath(t *testing.T) {
 	workingDir := t.TempDir()
 	targetPath := filepath.Join(workingDir, "dir", "file.go")

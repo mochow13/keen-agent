@@ -22,7 +22,6 @@ var retainedHistoricalToolInputs = map[string]struct{}{
 	"call_mcp_tool": {},
 	"write_file":    {},
 	"edit_file":     {},
-	"ask_user":      {},
 }
 
 type turnMemoryAccumulator struct {
@@ -80,10 +79,6 @@ func historicalToolActivity(toolCall *llm.ToolCall, textOffset int, workingDir, 
 			activity.RawOutput = map[string]any{"error": toolCall.Error}
 		}
 	}
-	if toolCall.Name == "ask_user" {
-		activity.RetainedOutput = toolCall.Output
-	}
-
 	if _, ok := retainedHistoricalToolInputs[toolCall.Name]; ok {
 		input := toolCall.Input
 		if retainsPathInput(toolCall.Name) {
@@ -96,11 +91,7 @@ func historicalToolActivity(toolCall *llm.ToolCall, textOffset int, workingDir, 
 			input = cloneToolInput(input)
 			input["command"] = bashCommand
 		}
-		if toolCall.Name == "ask_user" {
-			activity.Input = cloneToolInput(input)
-		} else {
-			activity.Input = boundedHistoricalToolInput(input, truncatesHistoricalToolInput(toolCall.Name))
-		}
+		activity.Input = boundedHistoricalToolInput(input, truncatesHistoricalToolInput(toolCall.Name))
 	}
 
 	if toolCall.Name == "bash" {

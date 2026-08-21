@@ -18,7 +18,6 @@ const (
 	removedToolResultPlaceholder   = "Tool result removed to fit context."
 	contextWindowExceededError     = "context exceeds model window after removing tool results"
 	defaultContextWindowTokenCount = 200000
-	askUserToolName                = "ask_user"
 )
 
 var ErrContextWindowExceeded = errors.New("context window exceeded")
@@ -123,7 +122,7 @@ func reduceOpenAIContextForRequest(
 			continue
 		}
 		content := openAIToolContent(msg.OfTool.Content)
-		if content == removedToolResultPlaceholder || isAskUserResultContent(content) {
+		if content == removedToolResultPlaceholder {
 			continue
 		}
 		idx := i
@@ -170,7 +169,7 @@ func reduceResponsesContextForRequest(
 			continue
 		}
 		content, ok := responsesToolOutputContent(item.OfFunctionCallOutput.Output)
-		if !ok || content == removedToolResultPlaceholder || isAskUserResultContent(content) {
+		if !ok || content == removedToolResultPlaceholder {
 			continue
 		}
 		idx := i
@@ -221,7 +220,7 @@ func reduceAnthropicContextForRequest(
 				continue
 			}
 			content := anthropicToolResultContent(block.OfToolResult)
-			if content == removedToolResultPlaceholder || isAskUserResultContent(content) {
+			if content == removedToolResultPlaceholder {
 				continue
 			}
 			messageIdx := mi
@@ -280,7 +279,7 @@ func reduceGenkitContextForRequest(
 			continue
 		}
 		for pi, part := range msg.Content {
-			if part == nil || part.ToolResponse == nil || part.ToolResponse.Name == askUserToolName || part.ToolResponse.Output == removedToolResultPlaceholder {
+			if part == nil || part.ToolResponse == nil || part.ToolResponse.Output == removedToolResultPlaceholder {
 				continue
 			}
 			messageIdx := mi
@@ -323,7 +322,7 @@ func reduceBedrockContextForRequest(
 				continue
 			}
 			content := bedrockToolResultContent(toolResult.Value.Content)
-			if content == removedToolResultPlaceholder || isAskUserResultContent(content) {
+			if content == removedToolResultPlaceholder {
 				continue
 			}
 			messageIdx := mi
@@ -361,10 +360,6 @@ func bedrockToolResultContent(content []brtypes.ToolResultContentBlock) string {
 		}
 	}
 	return b.String()
-}
-
-func isAskUserResultContent(content string) bool {
-	return strings.Contains(content, `"tool":"`+askUserToolName+`"`)
 }
 
 func marshalContextOrEmpty(v any) []byte {
