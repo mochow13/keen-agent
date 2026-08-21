@@ -57,7 +57,7 @@ func (g *Guard) CheckPath(path string, operation string) Permission {
 		return PermissionDenied
 	}
 
-	if operation == "read" && (g.IsInSkillDir(resolved) || g.IsInKeenBashDir(resolved) || g.IsInMCPArtifactsDir(resolved)) {
+	if operation == "read" && (g.IsInSkillDir(resolved) || g.IsInKeenBashDir(resolved) || g.IsInMCPArtifactsDir(resolved) || g.IsInMemoryDir(resolved)) {
 		return PermissionGranted
 	}
 
@@ -86,7 +86,7 @@ func (g *Guard) IsBlocked(path string) bool {
 		return true
 	}
 
-	if g.IsInSkillDir(resolved) || g.IsInKeenBashDir(resolved) || g.IsInMCPArtifactsDir(resolved) {
+	if g.IsInSkillDir(resolved) || g.IsInKeenBashDir(resolved) || g.IsInMCPArtifactsDir(resolved) || g.IsInMemoryDir(resolved) {
 		return false
 	}
 
@@ -181,6 +181,38 @@ func (g *Guard) IsInMCPArtifactsDir(path string) bool {
 	return true
 }
 
+func KeenMemoryDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if home == "" {
+		return "", fmt.Errorf("home directory is empty")
+	}
+	return filepath.Join(home, ".keen-agent", "memory"), nil
+}
+
+func (g *Guard) IsInMemoryDir(path string) bool {
+	cleaned := filepath.Clean(path)
+	memoryDir, err := KeenMemoryDir()
+	if err != nil {
+		return false
+	}
+	memoryDir = filepath.Clean(memoryDir)
+	if cleaned == memoryDir {
+		return true
+	}
+	prefix := memoryDir + string(filepath.Separator)
+	if !strings.HasPrefix(cleaned+string(filepath.Separator), prefix) {
+		return false
+	}
+
+	info, err := os.Lstat(cleaned)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return false
+	}
+	return true
+}
 func (g *Guard) IsInWorkingDir(path string) bool {
 	cleaned := filepath.Clean(path)
 	workingDirClean := filepath.Clean(g.workingDir)

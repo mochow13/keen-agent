@@ -1,10 +1,8 @@
 package llm
 
 import (
-	"bytes"
-	"encoding/json"
 	"strconv"
-	"strings"
+
 	"unicode/utf8"
 )
 
@@ -15,10 +13,7 @@ type historicalMessageStep struct {
 
 type historicalToolInvocation struct {
 	ID       string
-	Tool     string
-	Input    map[string]any
-	Status   string
-	ExitCode *int
+	Activity HistoricalToolActivity
 }
 
 func FormatMessageForProvider(message Message) string {
@@ -43,10 +38,7 @@ func historicalMessageSteps(messageIndex int, message Message) []historicalMessa
 
 		invocation := historicalToolInvocation{
 			ID:       "historical_" + strconv.Itoa(messageIndex) + "_" + strconv.Itoa(activityIndex),
-			Tool:     activity.Tool,
-			Input:    cloneHistoricalToolInput(activity.Input),
-			Status:   activity.Status,
-			ExitCode: activity.ExitCode,
+			Activity: activity,
 		}
 		activityIndex++
 
@@ -72,27 +64,35 @@ func historicalMessageSteps(messageIndex int, message Message) []historicalMessa
 	return steps
 }
 
-func historicalToolArguments(input map[string]any) string {
-	if len(input) == 0 {
-		return `{}`
+func historicalToolInput(activity HistoricalToolActivity) map[string]any {
+	if activity.Input == nil {
+		return map[string]any{}
 	}
-	return marshalHistoricalJSON(input)
+	return activity.Input
 }
 
-func historicalToolResult(invocation historicalToolInvocation) string {
-	result := map[string]any{"status": invocation.Status, "output_retained": false}
-	if invocation.ExitCode != nil {
-		result["exit_code"] = *invocation.ExitCode
-	}
-	return marshalHistoricalJSON(result)
+func historicalToolArguments(activity HistoricalToolActivity) string {
+	return serializeJSON(historicalToolInput(activity))
 }
 
-func marshalHistoricalJSON(value any) string {
-	var buffer bytes.Buffer
-	encoder := json.NewEncoder(&buffer)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return `{}`
+func historicalToolResult(activity HistoricalToolActivity) string {
+	if activity.HasRawOutput {
+		return serializeJSON(activity.RawOutput)
 	}
-	return strings.TrimSuffix(buffer.String(), "\n")
+	if activity.RetainedOutput != nil {
+		return serializeJSON(activity.RetainedOutput)
+	}
+
+	status := activity.Status
+	if status != "success" {
+		status = "error"
+	}
+	result := struct {
+		Status   string `json:"status"`
+		ExitCode *int   `json:"exit_code,omitempty"`
+	}{
+		Status:   status,
+		ExitCode: activity.ExitCode,
+	}
+	return serializeJSON(result)
 }

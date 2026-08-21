@@ -1,9 +1,6 @@
 package llm
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
 type Role string
 
@@ -24,11 +21,14 @@ type TurnMemory struct {
 }
 
 type HistoricalToolActivity struct {
-	TextOffset int            `json:"text_offset"`
-	Tool       string         `json:"tool"`
-	Input      map[string]any `json:"input,omitempty"`
-	Status     string         `json:"status"`
-	ExitCode   *int           `json:"exit_code,omitempty"`
+	TextOffset     int            `json:"text_offset"`
+	Tool           string         `json:"tool"`
+	Input          map[string]any `json:"input,omitempty"`
+	Status         string         `json:"status"`
+	ExitCode       *int           `json:"exit_code,omitempty"`
+	HasRawOutput   bool           `json:"-"`
+	RawOutput      any            `json:"-"`
+	RetainedOutput any            `json:"retained_output,omitempty"`
 }
 
 func CloneMessage(message Message) Message {
@@ -55,26 +55,38 @@ func CloneTurnMemory(memory *TurnMemory) *TurnMemory {
 		cloned.ToolActivity = make([]HistoricalToolActivity, len(memory.ToolActivity))
 		for i, activity := range memory.ToolActivity {
 			cloned.ToolActivity[i] = activity
-			cloned.ToolActivity[i].Input = cloneHistoricalToolInput(activity.Input)
+			cloned.ToolActivity[i].Input = cloneInputMap(activity.Input)
+			cloned.ToolActivity[i].RawOutput = cloneInputValue(activity.RawOutput)
+			cloned.ToolActivity[i].RetainedOutput = cloneInputValue(activity.RetainedOutput)
 		}
 	}
 	return cloned
 }
 
-func cloneHistoricalToolInput(input map[string]any) map[string]any {
-	if len(input) == 0 {
-		return map[string]any{}
+func cloneInputMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
 	}
-
-	encoded, err := json.Marshal(input)
-	if err != nil {
-		return map[string]any{}
-	}
-	var cloned map[string]any
-	if err := json.Unmarshal(encoded, &cloned); err != nil {
-		return map[string]any{}
+	cloned := make(map[string]any, len(input))
+	for key, value := range input {
+		cloned[key] = cloneInputValue(value)
 	}
 	return cloned
+}
+
+func cloneInputValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		return cloneInputMap(value)
+	case []any:
+		cloned := make([]any, len(value))
+		for i, item := range value {
+			cloned[i] = cloneInputValue(item)
+		}
+		return cloned
+	default:
+		return value
+	}
 }
 
 func (m *TurnMemory) IsEmpty() bool {

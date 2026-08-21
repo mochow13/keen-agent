@@ -141,8 +141,8 @@ func toOpenAIMessages(messages []Message) []openai.ChatCompletionMessageParamUni
 						OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
 							ID: invocation.ID,
 							Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
-								Name:      invocation.Tool,
-								Arguments: historicalToolArguments(invocation.Input),
+								Name:      invocation.Activity.Tool,
+								Arguments: historicalToolArguments(invocation.Activity),
 							},
 						},
 					})
@@ -151,7 +151,7 @@ func toOpenAIMessages(messages []Message) []openai.ChatCompletionMessageParamUni
 					result = append(result, openai.ChatCompletionMessageParamUnion{OfAssistant: &am})
 				}
 				for _, invocation := range step.Activities {
-					result = append(result, openai.ToolMessage(historicalToolResult(invocation), invocation.ID))
+					result = append(result, openai.ToolMessage(historicalToolResult(invocation.Activity), invocation.ID))
 				}
 			}
 		}
