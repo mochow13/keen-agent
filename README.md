@@ -169,9 +169,19 @@ keen-agent validate --agent ./agent.yaml
 
 ### Install
 
-> A one-line `curl` installation will be released soon.
+Install the latest released binary on macOS or Linux:
 
-For now, build a local binary from a clone:
+```bash
+curl -fsSL https://raw.githubusercontent.com/mochow13/keen-agent/main/scripts/install.sh | bash
+```
+
+The installer verifies the release archive's SHA-256 checksum and installs `keen-agent` to `/usr/local/bin` when writable; otherwise it installs to `~/.local/bin`. To install a specific release or choose a destination:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mochow13/keen-agent/main/scripts/install.sh | bash -s -- --version v1.2.3 --dir ~/.local/bin
+```
+
+Alternatively, build a local binary from a clone:
 
 ```bash
 git clone https://github.com/mochow13/keen-agent.git
