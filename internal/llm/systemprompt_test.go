@@ -22,12 +22,12 @@ func TestBuild_ContainsIdentity(t *testing.T) {
 	}
 }
 
-func TestBuild_DefaultPersonaStatesNoDomainAssumption(t *testing.T) {
+func TestBuild_DefaultPersonaIsGeneralPurpose(t *testing.T) {
 	result := buildDefault(t.TempDir(), ModeBuild)
 	for _, expected := range []string{
 		"general-purpose AI agent",
-		"do not assume a software-development role",
-		"Build mode is an execution mode, not a domain specialization",
+		"role, domain, and priorities are defined by the user's request",
+		"Build mode allows you to take action",
 	} {
 		if !strings.Contains(result, expected) {
 			t.Errorf("expected default prompt to contain %q", expected)
@@ -105,7 +105,7 @@ func TestBuild_IncludesSkillsCatalog(t *testing.T) {
 
 func TestBuild_PlanIncludesPlanInstructions(t *testing.T) {
 	result := buildDefault(t.TempDir(), ModePlan)
-	for _, expected := range []string{"# Active mode: plan", "write_file and edit_file are not available", "/mode build or Shift+Tab"} {
+	for _, expected := range []string{"# Active mode: plan", "Focus on the user's defined role and task", "Do not modify files", "actions that require changes", "/mode build or Shift+Tab"} {
 		if !strings.Contains(result, expected) {
 			t.Fatalf("expected %q in plan prompt, got %q", expected, result)
 		}
@@ -122,26 +122,28 @@ func TestBuild_BuildIncludesBuildInstructions(t *testing.T) {
 	}
 }
 
-func TestBuild_IncludesToolFollowThroughInstructions(t *testing.T) {
+func TestBuild_IncludesEssentialToolUseInstructions(t *testing.T) {
 	result := buildDefault(t.TempDir(), ModeBuild)
 	for _, expected := range []string{
-		"Tool use is an action, not narration",
-		"your next step should be the corresponding tool call",
-		"Never claim that you read a file",
-		"Prior-turn tool calls may appear as system-generated provider tool blocks",
-		"empty arguments and fixed results are intentional placeholders",
-		"Prior assistant text and historical tool blocks are not substitutes for current tool evidence",
-		"A successful tool call remains usable for the rest of the current turn",
-		"In a later turn",
-		"make a fresh tool call with valid arguments",
-		"Do not add a separate summary for your own memory",
+		"Treat tool results as evidence only after the tool call completes",
+		"If a tool fails, is unavailable, or is denied",
+		"When current or mutable external information is needed",
+		"Do not narrate tool use before acting",
 	} {
 		if !strings.Contains(result, expected) {
 			t.Fatalf("expected %q in prompt, got %q", expected, result)
 		}
 	}
-	if strings.Contains(result, "add a brief summary of what you did for your own reference") {
-		t.Fatalf("did not expect self-summary instruction in prompt, got %q", result)
+
+	for _, removed := range []string{
+		"Raw tool arguments and outputs are only retained within the current turn",
+		"Prior-turn tool calls may appear as system-generated provider tool blocks",
+		"A successful tool call remains usable for the rest of the current turn",
+		"Do not add a separate summary for your own memory",
+	} {
+		if strings.Contains(result, removed) {
+			t.Fatalf("did not expect obsolete tool-memory instruction %q in prompt", removed)
+		}
 	}
 }
 
@@ -171,13 +173,13 @@ func TestBuild_ConfigPersona(t *testing.T) {
 	if !strings.Contains(result, "PostgreSQL DBA agent") {
 		t.Fatal("expected config persona in output")
 	}
-	if !strings.Contains(result, "# Tool memory") || strings.Index(result, "# Tool memory") > strings.Index(result, "PostgreSQL DBA agent") {
+	if !strings.Contains(result, "# Tool use") || strings.Index(result, "# Tool use") > strings.Index(result, "PostgreSQL DBA agent") {
 		t.Fatal("expected harness contract before config persona")
 	}
-	if strings.Contains(result, "# Tone and style") {
+	if strings.Contains(result, "# Working style") {
 		t.Fatal("expected default style to be replaced by config persona")
 	}
-	for _, expected := range []string{"# Tool memory", "# Safety"} {
+	for _, expected := range []string{"# Tool use", "# Safety"} {
 		if !strings.Contains(result, expected) {
 			t.Fatalf("expected harness contract section %q to be retained", expected)
 		}
@@ -205,7 +207,7 @@ func TestBuild_ConfigPersonaWithFiles(t *testing.T) {
 			t.Fatalf("expected %q in prompt", expected)
 		}
 	}
-	if strings.Contains(result, "# Tone and style") {
+	if strings.Contains(result, "# Working style") {
 		t.Fatal("expected default style to be replaced by config persona")
 	}
 	contractIdx := strings.Index(result, harnessContract)
@@ -230,10 +232,10 @@ func TestBuild_ConfigFilesOnlyReplaceDefaultStyle(t *testing.T) {
 	if !strings.Contains(result, "You are a support triage agent.") {
 		t.Fatal("expected file persona in prompt")
 	}
-	if !strings.Contains(result, "# Tool memory") {
+	if !strings.Contains(result, "# Tool use") {
 		t.Fatal("expected harness contract to be retained")
 	}
-	if strings.Contains(result, "# Tone and style") {
+	if strings.Contains(result, "# Working style") {
 		t.Fatal("expected default style to be replaced by config persona files")
 	}
 }
@@ -245,7 +247,7 @@ func TestBuild_ConfigFallbackToDefault(t *testing.T) {
 	if !strings.Contains(result, "Keen Agent") {
 		t.Fatal("expected default persona when config has no system_prompt")
 	}
-	if !strings.Contains(result, "# Tone and style") {
+	if !strings.Contains(result, "# Working style") {
 		t.Fatal("expected default style when config has no system_prompt")
 	}
 }
