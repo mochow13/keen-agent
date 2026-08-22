@@ -342,8 +342,8 @@ func TestInitialModel_ConfiguredPlanModeFiltersMCPTools(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	client := &recordingHeadlessClient{events: []llm.StreamEvent{{Type: llm.StreamEventTypeDone}}}
 	agentCfg := &agentconfig.Config{
-		DefaultMode:   agentconfig.ModePlan,
-		MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"},
+		DefaultMode:    agentconfig.ModePlan,
+		MCPConfigPaths: agentconfig.StringOrArray{"mcp.json"},
 	}
 	m := initialModel(&replContext{
 		version:    "test",

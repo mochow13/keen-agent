@@ -850,6 +850,60 @@ func TestHandleLLMStreamMsg_ToolEnd_ReturnsSpinnerTick(t *testing.T) {
 	}
 }
 
+func TestHandleLLMStreamMsg_RoutesToolStartFromActiveStream(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+
+	updated, _, handled := m.handleLLMStreamMsg(mainStreamMsg{
+		eventCh: eventCh,
+		event: llm.StreamEvent{
+			Type:     llm.StreamEventTypeToolStart,
+			ToolCall: &llm.ToolCall{Name: "read_file"},
+		},
+	})
+	if !handled {
+		t.Fatal("expected stream event to be handled")
+	}
+	if len(updated.streamHandler.segments) != 1 || updated.streamHandler.segments[0].kind != segmentToolStart {
+		t.Fatal("expected tool start to reach stream handler")
+	}
+}
+
+func TestHandleLLMStreamMsg_RendersCompletedGlobTool(t *testing.T) {
+	m := newTestModel()
+	m.streamRenderInterval = 0
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+
+	updated, _, handled := m.handleLLMStreamMsg(mainStreamMsg{
+		eventCh: eventCh,
+		event: llm.StreamEvent{
+			Type:     llm.StreamEventTypeToolStart,
+			ToolCall: &llm.ToolCall{Name: "glob", Input: map[string]any{"pattern": "**/*.go"}},
+		},
+	})
+	if !handled {
+		t.Fatal("expected tool start to be handled")
+	}
+
+	updated, _, handled = updated.handleLLMStreamMsg(mainStreamMsg{
+		eventCh: eventCh,
+		event: llm.StreamEvent{
+			Type:     llm.StreamEventTypeToolEnd,
+			ToolCall: &llm.ToolCall{Name: "glob", Output: map[string]any{"count": 1}},
+		},
+	})
+	if !handled {
+		t.Fatal("expected tool end to be handled")
+	}
+
+	view := updated.streamHandler.View(80)
+	if !strings.Contains(view, "Find") || !strings.Contains(view, "✓") {
+		t.Fatalf("expected rendered glob tool, got %q", view)
+	}
+}
+
 func TestHandleBtwStreamMsg_Chunk(t *testing.T) {
 	btwSh := NewStreamHandler(nil)
 	eventCh := make(chan llm.StreamEvent)

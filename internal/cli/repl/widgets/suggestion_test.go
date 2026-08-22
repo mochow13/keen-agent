@@ -2,6 +2,7 @@ package widgets
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
@@ -253,6 +254,19 @@ func TestRefreshModels(t *testing.T) {
 	}
 	if s.items[0].Name != "Pick from supported providers" {
 		t.Errorf("expected first item to be 'Pick from supported providers', got %q", s.items[0].Name)
+	}
+}
+
+func TestSuggestionView_ModelModeUsesPrimaryTextSelectionStyle(t *testing.T) {
+	s := NewSuggestionModel()
+	s.RefreshModels("/model openai", []string{"openai/gpt-4o"})
+
+	view := s.View(80)
+	if !strings.Contains(view, "\x1b[1;38;2;189;189;189mopenai/gpt-4o") {
+		t.Fatalf("model suggestion should use the primary text selection style: %q", view)
+	}
+	if strings.Contains(view, "\x1b[1;38;2;92;107;192mopenai/gpt-4o") {
+		t.Fatalf("model suggestion should not use the primary color: %q", view)
 	}
 }
 

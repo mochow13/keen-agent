@@ -98,14 +98,14 @@ func TestSetupToolRegistry_IncludesMCPToolWhenConfigDirsPresent(t *testing.T) {
 	diffEmitter := NewDiffEmitter()
 	resolvedCfg := &config.ResolvedConfig{}
 	agentCfg := &agentconfig.Config{
-		MCPConfigDirs: agentconfig.StringOrArray{"./mcp.json"},
+		MCPConfigPaths: agentconfig.StringOrArray{"./mcp.json"},
 	}
 
 	SetupToolRegistry(work, state, permissionRequester, diffEmitter, &fakeMCPRuntime{}, resolvedCfg, agentCfg)
 
 	names := toolNames(t, state)
 	if !slices.Contains(names, "call_mcp_tool") {
-		t.Errorf("expected call_mcp_tool to be registered when mcp_config_dirs is set")
+		t.Errorf("expected call_mcp_tool to be registered when mcp_config_paths is set")
 	}
 	if slices.Contains(names, "delegate_task") {
 		t.Errorf("expected delegate_task to be excluded when subagents_dirs is not set")
@@ -129,7 +129,7 @@ func TestSetupToolRegistry_IncludesDelegateToolWhenSubagentsDirsPresent(t *testi
 		t.Errorf("expected delegate_task to be registered when subagents_dirs is set")
 	}
 	if slices.Contains(names, "call_mcp_tool") {
-		t.Errorf("expected call_mcp_tool to be excluded when mcp_config_dirs is not set")
+		t.Errorf("expected call_mcp_tool to be excluded when mcp_config_paths is not set")
 	}
 }
 
@@ -143,8 +143,8 @@ func TestSetupToolRegistry_DoesNotExcludeRequiredIntegrationTools(t *testing.T) 
 		BuiltinTools: &agentconfig.BuiltinTools{
 			Exclude: []string{"call_mcp_tool", "delegate_task"},
 		},
-		MCPConfigDirs: agentconfig.StringOrArray{"./mcp.json"},
-		SubagentsDirs: agentconfig.StringOrArray{"./subagents"},
+		MCPConfigPaths: agentconfig.StringOrArray{"./mcp.json"},
+		SubagentsDirs:  agentconfig.StringOrArray{"./subagents"},
 	}
 
 	SetupToolRegistry(work, state, permissionRequester, diffEmitter, &fakeMCPRuntime{}, resolvedCfg, agentCfg)

@@ -40,10 +40,15 @@ func ServerName(skillName string) string {
 }
 
 func SkillDir(configDirs []string, server string) (string, error) {
-	if len(configDirs) == 0 {
-		return "", fmt.Errorf("mcpskills: no config directories provided")
+	if len(configDirs) > 0 {
+		return filepath.Join(configDirs[0], SkillName(server)), nil
 	}
-	return filepath.Join(configDirs[0], SkillName(server)), nil
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("mcpskills: find home directory: %w", err)
+	}
+	return filepath.Join(home, ".keen-agent", "skills", SkillName(server)), nil
 }
 
 func Remove(configDirs []string, server string) error {

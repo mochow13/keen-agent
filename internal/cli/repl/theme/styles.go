@@ -179,8 +179,8 @@ var (
 
 	ModelChipStyle                  = lipgloss.NewStyle().Background(PrimaryColor).Foreground(WhiteColor).Bold(true).Padding(0, 1)
 	ModelSelectionStyle             = HighlightStyle
-	ModelSelectionCursorStyle       = SuggestionSelectedStyle
-	ModelSelectionSelectedTextStyle = SuggestionSelectedFileStyle
+	ModelSelectionCursorStyle       = ModelSelectionSelectedTextStyle
+	ModelSelectionSelectedTextStyle = lipgloss.NewStyle().Foreground(TextPrimaryColor).Bold(true)
 	ModelSelectionTextStyle         = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
 	ModelSelectionTitleStyle        = ModelSelectionTextStyle.Bold(true)
 	ModelSelectionThinkingStyle     = ModelSelectionTitleStyle

@@ -211,7 +211,13 @@ func (s SuggestionModel) View(width int) string {
 		isSelected := (i + s.scrollOffset) == s.selected
 
 		var cmdStyle, descStyle lipgloss.Style
-		if isSelected {
+		if s.IsModelMode() {
+			cmdStyle = repltheme.ModelSelectionTextStyle
+			if isSelected {
+				cmdStyle = repltheme.ModelSelectionCursorStyle
+			}
+			cmdStyle = cmdStyle.Width(cmdColWidth)
+		} else if isSelected {
 			cmdStyle = repltheme.SuggestionSelectedCmdStyle.Width(cmdColWidth)
 			descStyle = repltheme.SuggestionSelectedDescStyle
 		} else {

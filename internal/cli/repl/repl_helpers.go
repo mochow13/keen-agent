@@ -656,40 +656,7 @@ func waitForAsyncEvent(llmCh <-chan llm.StreamEvent, permissionCh <-chan *replpe
 		case req := <-diffCh:
 			return diffReadyMsg{req: req}
 		case event, ok := <-llmCh:
-			if !ok {
-				return llmDoneMsg{}
-			}
-
-			switch event.Type {
-			case llm.StreamEventTypeChunk:
-				return llmChunkMsg(event.Content)
-			case llm.StreamEventTypeReasoningChunk:
-				return llmReasoningChunkMsg(event.Content)
-			case llm.StreamEventTypeDone:
-				return llmDoneMsg{}
-			case llm.StreamEventTypeError:
-				return llmErrorMsg{err: event.Error}
-			case llm.StreamEventTypeIncomplete:
-				return llmIncompleteMsg{err: event.Error}
-			case llm.StreamEventTypeToolStart:
-				return llmToolStartMsg{toolCall: event.ToolCall}
-			case llm.StreamEventTypeToolEnd:
-				return llmToolEndMsg{toolCall: event.ToolCall}
-			case llm.StreamEventTypeUsage:
-				return llmUsageMsg{usage: event.Usage}
-			case llm.StreamEventTypeRetry:
-				return llmRetryMsg{err: event.Error, attempt: event.Attempt}
-			case llm.StreamEventTypeAutoCompactionStarted:
-				return llmAutoCompactionStartedMsg{event: event.AutoCompaction}
-			case llm.StreamEventTypeAutoCompactionApplied:
-				return llmAutoCompactionAppliedMsg{event: event.AutoCompaction}
-			case llm.StreamEventTypeAutoCompactionCancelled:
-				return llmAutoCompactionCancelledMsg{event: event.AutoCompaction}
-			case llm.StreamEventTypeAutoCompactionFailed:
-				return llmAutoCompactionFailedMsg{event: event.AutoCompaction}
-			default:
-				return llmDoneMsg{}
-			}
+			return mainStreamMsg{eventCh: llmCh, event: event, closed: !ok}
 		}
 	}
 }

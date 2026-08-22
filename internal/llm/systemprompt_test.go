@@ -22,6 +22,19 @@ func TestBuild_ContainsIdentity(t *testing.T) {
 	}
 }
 
+func TestBuild_DefaultPersonaStatesNoDomainAssumption(t *testing.T) {
+	result := buildDefault(t.TempDir(), ModeBuild)
+	for _, expected := range []string{
+		"general-purpose AI agent",
+		"do not assume a software-development role",
+		"Build mode is an execution mode, not a domain specialization",
+	} {
+		if !strings.Contains(result, expected) {
+			t.Errorf("expected default prompt to contain %q", expected)
+		}
+	}
+}
+
 func TestBuild_BuiltInPromptsAreDomainNeutral(t *testing.T) {
 	prompts := strings.ToLower(strings.Join([]string{
 		defaultPersona,

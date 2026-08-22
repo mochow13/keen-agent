@@ -184,6 +184,25 @@ func TestNewClient_OpenCodeGoOpenAICompatibleModel(t *testing.T) {
 	}
 }
 
+func TestNewClient_OpenCodeGoResponsesModel(t *testing.T) {
+	client, err := NewClient(&config.ResolvedConfig{
+		Provider:       config.ProviderOpenCodeGo,
+		Model:          "gpt-5.6-luna",
+		APIKey:         "test-api-key",
+		ThinkingEffort: "max",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	responsesClient, ok := client.(*OpenAIResponsesClient)
+	if !ok {
+		t.Fatalf("expected *OpenAIResponsesClient, got %T", client)
+	}
+	if responsesClient.provider != Provider(config.ProviderOpenCodeGo) {
+		t.Fatalf("expected provider opencode-go, got %s", responsesClient.provider)
+	}
+}
+
 func TestNewClient_OpenCodeGoAnthropicModel(t *testing.T) {
 	tests := []struct {
 		name  string

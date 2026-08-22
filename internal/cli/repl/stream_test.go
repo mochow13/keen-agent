@@ -477,12 +477,29 @@ func TestWaitForAsyncEvent_Chunk(t *testing.T) {
 	}
 
 	msg := cmd()
-	chunkMsg, ok := msg.(llmChunkMsg)
+	streamMsg, ok := msg.(mainStreamMsg)
 	if !ok {
-		t.Fatalf("expected llmChunkMsg, got %T", msg)
+		t.Fatalf("expected mainStreamMsg, got %T", msg)
 	}
-	if string(chunkMsg) != "chunk data" {
-		t.Errorf("expected chunk 'chunk data', got '%s'", string(chunkMsg))
+	if streamMsg.event.Type != llm.StreamEventTypeChunk || streamMsg.event.Content != "chunk data" {
+		t.Fatalf("unexpected stream event: %#v", streamMsg.event)
+	}
+}
+
+func TestWaitForAsyncEvent_ToolStart(t *testing.T) {
+	eventCh := make(chan llm.StreamEvent, 1)
+	eventCh <- llm.StreamEvent{
+		Type:     llm.StreamEventTypeToolStart,
+		ToolCall: &llm.ToolCall{Name: "read_file"},
+	}
+
+	msg := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))()
+	streamMsg, ok := msg.(mainStreamMsg)
+	if !ok {
+		t.Fatalf("expected mainStreamMsg, got %T", msg)
+	}
+	if streamMsg.event.Type != llm.StreamEventTypeToolStart || streamMsg.event.ToolCall.Name != "read_file" {
+		t.Fatalf("unexpected stream event: %#v", streamMsg.event)
 	}
 }
 
@@ -496,9 +513,9 @@ func TestWaitForAsyncEvent_Done(t *testing.T) {
 	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
-	_, ok := msg.(llmDoneMsg)
-	if !ok {
-		t.Fatalf("expected llmDoneMsg, got %T", msg)
+	streamMsg, ok := msg.(mainStreamMsg)
+	if !ok || streamMsg.event.Type != llm.StreamEventTypeDone {
+		t.Fatalf("expected done stream event, got %#v", msg)
 	}
 }
 
@@ -516,12 +533,12 @@ func TestWaitForAsyncEvent_ReasoningChunk(t *testing.T) {
 	}
 
 	msg := cmd()
-	reasoningMsg, ok := msg.(llmReasoningChunkMsg)
+	streamMsg, ok := msg.(mainStreamMsg)
 	if !ok {
-		t.Fatalf("expected llmReasoningChunkMsg, got %T", msg)
+		t.Fatalf("expected mainStreamMsg, got %T", msg)
 	}
-	if string(reasoningMsg) != "thinking" {
-		t.Fatalf("expected 'thinking', got %q", string(reasoningMsg))
+	if streamMsg.event.Type != llm.StreamEventTypeReasoningChunk || streamMsg.event.Content != "thinking" {
+		t.Fatalf("unexpected stream event: %#v", streamMsg.event)
 	}
 }
 
@@ -537,12 +554,12 @@ func TestWaitForAsyncEvent_Error(t *testing.T) {
 	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
-	errMsg, ok := msg.(llmErrorMsg)
+	streamMsg, ok := msg.(mainStreamMsg)
 	if !ok {
-		t.Fatalf("expected llmErrorMsg, got %T", msg)
+		t.Fatalf("expected mainStreamMsg, got %T", msg)
 	}
-	if errMsg.err != testErr {
-		t.Errorf("expected error '%v', got '%v'", testErr, errMsg.err)
+	if streamMsg.event.Type != llm.StreamEventTypeError || streamMsg.event.Error != testErr {
+		t.Fatalf("unexpected stream event: %#v", streamMsg.event)
 	}
 }
 
@@ -553,9 +570,9 @@ func TestWaitForAsyncEvent_ChannelClosed(t *testing.T) {
 	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
-	_, ok := msg.(llmDoneMsg)
-	if !ok {
-		t.Fatalf("expected llmDoneMsg when channel closed, got %T", msg)
+	streamMsg, ok := msg.(mainStreamMsg)
+	if !ok || !streamMsg.closed {
+		t.Fatalf("expected closed mainStreamMsg, got %#v", msg)
 	}
 }
 

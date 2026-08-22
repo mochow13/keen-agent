@@ -60,7 +60,7 @@ type OpenAIResponsesClient struct {
 }
 
 func NewOpenAIResponsesClient(cfg *ClientConfig) (*OpenAIResponsesClient, error) {
-	if cfg.Provider != Provider(config.ProviderOpenAI) {
+	if cfg.Provider != Provider(config.ProviderOpenAI) && cfg.Provider != Provider(config.ProviderOpenCodeGo) {
 		return nil, fmt.Errorf("unsupported Responses API provider: %s. %s", cfg.Provider, config.ConfigFixHint)
 	}
 
@@ -167,7 +167,9 @@ func (c *OpenAIResponsesClient) StreamChat(
 		defer close(eventCh)
 
 		input := toOpenAIResponseInput(messages)
-		oneShot := streamOptions(opts).OneShot
+		streamOpts := streamOptions(opts)
+		oneShot := streamOpts.OneShot
+		sessionID := streamOpts.SessionID
 		var replayedPendingInput []responses.ResponseInputItemUnionParam
 		if !oneShot {
 			input, replayedPendingInput = c.injectPendingState(input)
@@ -201,7 +203,7 @@ func (c *OpenAIResponsesClient) StreamChat(
 				params.Tools = responseTools
 			}
 
-			completed, streamedContent, toolCalls, err := c.collectTurnWithRetry(ctx, params, eventCh, c.requestOptions()...)
+			completed, streamedContent, toolCalls, err := c.collectTurnWithRetry(ctx, params, eventCh, c.requestOptions(sessionID)...)
 			if err != nil {
 				c.exitIncomplete(eventCh, input, turnStartLen, replayedPendingInput, err, oneShot)
 				return
@@ -252,10 +254,13 @@ func (c *OpenAIResponsesClient) Reset() {
 	c.pendingState = nil
 }
 
-func (c *OpenAIResponsesClient) requestOptions() []option.RequestOption {
+func (c *OpenAIResponsesClient) requestOptions(sessionID string) []option.RequestOption {
 	var requestOpts []option.RequestOption
 	for k, v := range c.headers {
 		requestOpts = append(requestOpts, option.WithHeader(k, v))
+	}
+	if c.provider == Provider(config.ProviderOpenCodeGo) && sessionID != "" {
+		requestOpts = append(requestOpts, option.WithHeader("x-opencode-session", opencodeSessionID(sessionID)))
 	}
 	return requestOpts
 }
@@ -353,7 +358,6 @@ func (c *OpenAIResponsesClient) collectTurn(
 	stream := c.responseStreamImpl(ctx, params, opts...)
 	var completed *responses.Response
 	var streamedContent strings.Builder
-
 	for stream.Next() {
 		ev := stream.Current()
 

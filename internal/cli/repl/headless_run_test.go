@@ -111,7 +111,7 @@ func TestRunHeadless_RegistersMCPToolWhenEnabled(t *testing.T) {
 	_, err := RunHeadless(context.Background(), HeadlessRunOptions{
 		WorkingDir: workingDir,
 		Config:     headlessTestConfig(),
-		AgentCfg:   &agentconfig.Config{MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"}},
+		AgentCfg:   &agentconfig.Config{MCPConfigPaths: agentconfig.StringOrArray{"mcp.json"}},
 		Client:     client,
 		MCP:        headlessMCPRuntime{},
 		Prompt:     "prompt",
@@ -238,8 +238,8 @@ func TestRunHeadless_PlanModeOnlyRegistersReadOnlyBuiltins(t *testing.T) {
 		WorkingDir: workingDir,
 		Config:     headlessTestConfig(),
 		AgentCfg: &agentconfig.Config{
-			DefaultMode:   agentconfig.ModePlan,
-			MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"},
+			DefaultMode:    agentconfig.ModePlan,
+			MCPConfigPaths: agentconfig.StringOrArray{"mcp.json"},
 		},
 		Client: client,
 		MCP:    headlessMCPRuntime{},
@@ -273,9 +273,9 @@ func TestRunHeadless_BuildModeOverridesConfiguredPlanMode(t *testing.T) {
 		WorkingDir: workingDir,
 		Config:     headlessTestConfig(),
 		AgentCfg: &agentconfig.Config{
-			DefaultMode:   agentconfig.ModePlan,
-			MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"},
-			SubagentsDirs: agentconfig.StringOrArray{"subagents"},
+			DefaultMode:    agentconfig.ModePlan,
+			MCPConfigPaths: agentconfig.StringOrArray{"mcp.json"},
+			SubagentsDirs:  agentconfig.StringOrArray{"subagents"},
 		},
 		Client: client,
 		MCP:    headlessMCPRuntime{},

@@ -99,8 +99,8 @@ func NewRootCommand(version string) *cobra.Command {
 func startMCPRuntime(ctx context.Context, agentCfg *agentconfig.Config) (keenmcp.Runtime, func(), error) {
 	var opts []keenmcp.Option
 	if agentCfg != nil {
-		if dirs := agentCfg.ResolvedMCPConfigDirs(); len(dirs) > 0 {
-			opts = append(opts, keenmcp.WithConfigPaths(dirs))
+		if paths := agentCfg.ResolvedMCPConfigPaths(); len(paths) > 0 {
+			opts = append(opts, keenmcp.WithConfigPaths(paths))
 		}
 	}
 	manager, err := newMCPManager(opts...)
