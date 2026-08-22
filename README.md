@@ -175,7 +175,19 @@ Install the latest released binary on macOS or Linux:
 curl -fsSL https://raw.githubusercontent.com/mochow13/keen-agent/main/scripts/install.sh | bash
 ```
 
-The installer verifies the release archive's SHA-256 checksum and installs `keen-agent` to `/usr/local/bin` when writable; otherwise it installs to `~/.local/bin`. To install a specific release or choose a destination:
+The installer prints the installed path. It uses `/usr/local/bin` when writable; otherwise it uses `~/.local/bin`. If it reports `~/.local/bin/keen-agent`, add that directory to your `PATH` before running the command:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+keen-agent --help
+```
+
+For Bash, add the same `export PATH=...` line to `~/.bashrc` instead. Open a new shell or run `source ~/.bashrc` after adding it. If `keen-agent` is still not found, check the installed location with:
+
+```bash
+ls -l /usr/local/bin/keen-agent ~/.local/bin/keen-agent 2>/dev/null
+```
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mochow13/keen-agent/main/scripts/install.sh | bash -s -- --version v1.2.3 --dir ~/.local/bin
