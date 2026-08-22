@@ -76,7 +76,8 @@ PLATFORM=$(detect_platform)
 VERSION=$(resolve_version "$VERSION")
 TAG="${VERSION}"
 
-ARCHIVE="keen-agent_${TAG}_${PLATFORM}.tar.gz"
+RELEASE_VERSION="${TAG#v}"
+ARCHIVE="keen-agent_${RELEASE_VERSION}_${PLATFORM}.tar.gz"
 BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
 [ -z "$INSTALL_DIR" ] && INSTALL_DIR=$(pick_install_dir)
