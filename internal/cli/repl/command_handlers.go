@@ -54,8 +54,6 @@ func (m *replModel) dispatchCommand(input string) (replModel, tea.Cmd, bool) {
 		m.textarea.Reset()
 		pair := strings.TrimSpace(strings.TrimPrefix(input, replcommands.Model))
 		return m.startModelSelectionPair(pair)
-		m.textarea.Reset()
-		return m.startModelSelection(), nil, true
 
 	case input == replcommands.MCP || strings.HasPrefix(input, replcommands.MCP+" "):
 		m.textarea.Reset()

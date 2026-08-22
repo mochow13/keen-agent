@@ -763,7 +763,8 @@ func (m replModel) View() tea.View {
 			view.WriteString("\n")
 		} else if m.copyNotification != "" {
 			view.WriteString("\n")
-			view.WriteString("  " + repltheme.AccentStyle.Render(m.copyNotification))
+			view.WriteString("  ")
+			view.WriteString(repltheme.AccentStyle.Render(m.copyNotification))
 			view.WriteString("\n")
 		} else if m.lastTurnElapsedMsg != "" {
 			view.WriteString("\n")

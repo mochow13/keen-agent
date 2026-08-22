@@ -483,7 +483,6 @@ func (m *Model) ViewString() string {
 		return m.renderThinkingSelection()
 	case StepUpdateProviderConfigs:
 		return m.renderUpdateProviderConfigs()
-		return m.renderThinkingSelection()
 	case StepBaseURL:
 		return m.renderBaseURLInput()
 	case StepAPIKey:
@@ -501,7 +500,8 @@ func (m *Model) renderProviderSelection() string {
 	view.WriteString(repltheme.UserPromptStyle.Render("Select a provider:"))
 	view.WriteString("\n\n")
 	view.WriteString(m.renderList(m.ProviderCursor, func(i int) string { return m.ProviderList[i].Name }, len(m.ProviderList)))
-	view.WriteString("\n" + repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
+	view.WriteString("\n")
+	view.WriteString(repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
 	return view.String()
 }
 
@@ -511,7 +511,8 @@ func (m *Model) renderModelSelection() string {
 	view.WriteString(repltheme.UserPromptStyle.Render(fmt.Sprintf("Select a model for %s:", providerName)))
 	view.WriteString("\n\n")
 	view.WriteString(m.renderList(m.ModelCursor, func(i int) string { return m.ModelList[i].Name }, len(m.ModelList)))
-	view.WriteString("\n" + repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
+	view.WriteString("\n")
+	view.WriteString(repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
 	return view.String()
 }
 
@@ -520,7 +521,8 @@ func (m *Model) renderThinkingSelection() string {
 	view.WriteString(repltheme.UserPromptStyle.Render("Select thinking effort:"))
 	view.WriteString("\n\n")
 	view.WriteString(m.renderList(m.ThinkingCursor, func(i int) string { return m.ThinkingOptions[i] }, len(m.ThinkingOptions)))
-	view.WriteString("\n" + repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
+	view.WriteString("\n")
+	view.WriteString(repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
 	return view.String()
 }
 
@@ -531,7 +533,8 @@ func (m *Model) renderUpdateProviderConfigs() string {
 	view.WriteString(m.renderList(m.UpdateProviderConfigCursor, func(i int) string {
 		return []string{"No", "Yes"}[i]
 	}, 2))
-	view.WriteString("\n" + repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
+	view.WriteString("\n")
+	view.WriteString(repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
 	return view.String()
 }
 
@@ -547,11 +550,14 @@ func (m *Model) renderBaseURLInput() string {
 	view.WriteString(repltheme.UserPromptStyle.Render(title))
 	view.WriteString("\n\n")
 
-	view.WriteString(repltheme.PromptStyle.Render(" ▶ ") + m.BaseURLInput)
-	view.WriteString("\n\n" + repltheme.HintStyle.Render("[Enter to confirm, Esc to cancel]"))
+	view.WriteString(repltheme.PromptStyle.Render(" ▶ "))
+	view.WriteString(m.BaseURLInput)
+	view.WriteString("\n\n")
+	view.WriteString(repltheme.HintStyle.Render("[Enter to confirm, Esc to cancel]"))
 
 	if m.BaseURLError != "" {
-		view.WriteString("\n" + repltheme.ErrorStyle.Render(m.BaseURLError))
+		view.WriteString("\n")
+		view.WriteString(repltheme.ErrorStyle.Render(m.BaseURLError))
 	}
 	return view.String()
 }
@@ -576,11 +582,14 @@ func (m *Model) renderAPIKeyInput() string {
 	view.WriteString("\n\n")
 
 	maskedKey := strings.Repeat("•", len(m.APIKeyInput))
-	view.WriteString(repltheme.PromptStyle.Render(" ▶ ") + maskedKey)
-	view.WriteString("\n\n" + repltheme.HintStyle.Render("[Enter to confirm, Esc to cancel]"))
+	view.WriteString(repltheme.PromptStyle.Render(" ▶ "))
+	view.WriteString(maskedKey)
+	view.WriteString("\n\n")
+	view.WriteString(repltheme.HintStyle.Render("[Enter to confirm, Esc to cancel]"))
 
 	if m.ErrorMessage != "" {
-		view.WriteString("\n" + repltheme.ErrorStyle.Render(m.ErrorMessage))
+		view.WriteString("\n")
+		view.WriteString(repltheme.ErrorStyle.Render(m.ErrorMessage))
 	}
 	return view.String()
 }
@@ -606,13 +615,16 @@ func (m *Model) renderOAuthStatus() string {
 	view.WriteString(repltheme.NormalStyle.Render(status))
 	view.WriteString("\n")
 	if m.OAuthURL != "" {
-		view.WriteString("\n" + repltheme.HintStyle.Render("URL:"))
-		view.WriteString("\n" + repltheme.NormalStyle.Render(m.OAuthURL))
+		view.WriteString("\n")
+		view.WriteString(repltheme.HintStyle.Render("URL:"))
+		view.WriteString("\n")
+		view.WriteString(repltheme.NormalStyle.Render(m.OAuthURL))
 		view.WriteString("\n")
 	}
 	view.WriteString(repltheme.HintStyle.Render("After authentication succeeds, return to Keen Agent. Press Esc to cancel."))
 	if m.ErrorMessage != "" {
-		view.WriteString("\n\n" + repltheme.ErrorStyle.Render(m.ErrorMessage))
+		view.WriteString("\n\n")
+		view.WriteString(repltheme.ErrorStyle.Render(m.ErrorMessage))
 	}
 	return view.String()
 }
@@ -621,18 +633,23 @@ func (m *Model) renderList(cursor int, getName func(int) string, count int) stri
 	var view strings.Builder
 	start, end := visibleListRange(cursor, count, maxVisibleListItems)
 	if start > 0 {
-		view.WriteString(repltheme.HighlightStyle.Render("  ↑") + "\n")
+		view.WriteString(repltheme.HighlightStyle.Render("  ↑"))
+		view.WriteString("\n")
 	}
 	for i := start; i < end; i++ {
 		if i == cursor {
-			view.WriteString(repltheme.ModelSelectionStyle.Render("▶ " + getName(i)))
+			view.WriteString(repltheme.ModelSelectionStyle.Render("▶ "))
+			view.WriteString(getName(i))
 			view.WriteString("\n")
 			continue
 		}
-		view.WriteString("  " + repltheme.NormalStyle.Render(getName(i)) + "\n")
+		view.WriteString("  ")
+		view.WriteString(repltheme.NormalStyle.Render(getName(i)))
+		view.WriteString("\n")
 	}
 	if end < count {
-		view.WriteString(repltheme.HighlightStyle.Render("  ↓") + "\n")
+		view.WriteString(repltheme.HighlightStyle.Render("  ↓"))
+		view.WriteString("\n")
 	}
 	return view.String()
 }
