@@ -15,8 +15,8 @@ var (
 		Dark:  lipgloss.Color("#7986CB"),
 	}
 	SecondaryColor = compat.AdaptiveColor{
-		Light: lipgloss.Color("#00897B"),
-		Dark:  lipgloss.Color("#4DB6AC"),
+		Light: lipgloss.Color("#287A8A"),
+		Dark:  lipgloss.Color("#649FA9"),
 	}
 	MutedColor = compat.AdaptiveColor{
 		Light: lipgloss.Color("#757575"),
@@ -101,6 +101,17 @@ var (
 	PrimaryBoldStyle = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
 	AccentStyle      = lipgloss.NewStyle().Foreground(AccentColor)
 
+	InitialScreenMetadataStyle = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
+	InitialScreenWordmarkStyle = lipgloss.NewStyle().Foreground(SecondaryColor)
+	InitialScreenTipLabelStyle = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true).Bold(true)
+	InitialScreenRuleStyle     = lipgloss.NewStyle().Foreground(RuleColor).Faint(true)
+	InitialScreenArtStyles     = []lipgloss.Style{
+		lipgloss.NewStyle().Foreground(PrimaryLightColor).Bold(true),
+		lipgloss.NewStyle().Foreground(PrimaryLightColor),
+		PrimaryBoldStyle,
+		lipgloss.NewStyle().Foreground(PrimaryColor),
+	}
+
 	PromptStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(PrimaryColor).
@@ -117,9 +128,13 @@ var (
 				Bold(true).
 				Foreground(SecondaryColor).
 				MarginTop(2)
-	InputRuleStyle        = lipgloss.NewStyle().Foreground(PrimaryColor)
-	InputRuleBlurredStyle = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
-	UserInputBlockStyle   = lipgloss.NewStyle().
+	InputRuleStyle          = lipgloss.NewStyle().Foreground(PrimaryColor).Faint(true)
+	InputRuleBlurredStyle   = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
+	ShellInputRuleStyle     = lipgloss.NewStyle().Foreground(AccentColor).Faint(true)
+	BtwInputRuleStyle       = lipgloss.NewStyle().Foreground(AccentColor).Faint(true)
+	AdversaryInputRuleStyle = lipgloss.NewStyle().Foreground(SecondaryColor).Faint(true)
+	PlanInputRuleStyle      = lipgloss.NewStyle().Foreground(SecondaryColor).Faint(true)
+	UserInputBlockStyle     = lipgloss.NewStyle().
 				Background(UserInputBlockBackground).
 				Padding(1, 1)
 
@@ -146,9 +161,9 @@ var (
 	CompactionErrorStyle        = lipgloss.NewStyle().Foreground(ErrorColor)
 	CompactionCancelledStyle    = lipgloss.NewStyle().Foreground(TextDimColor)
 
-	ToolStartStyle    = lipgloss.NewStyle().Foreground(SecondaryColor)
-	ToolSuccessStyle  = lipgloss.NewStyle().Foreground(SecondaryColor)
+	ToolNameStyle     = PrimaryBoldStyle
 	ToolErrorStyle    = lipgloss.NewStyle().Foreground(ErrorColor)
+	ToolMetaStyle     = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
 	WarningTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(ErrorColor)
 
 	BashCommandStyle = lipgloss.NewStyle().Foreground(SecondaryColor)
@@ -162,29 +177,26 @@ var (
 	DiffLineNumStyle = lipgloss.NewStyle().Foreground(TextDimColor)
 	RuleStyle        = lipgloss.NewStyle().Foreground(RuleColor)
 
-	ModelChipStyle           = lipgloss.NewStyle().Background(PrimaryColor).Foreground(WhiteColor).Bold(true).Padding(0, 1)
-	ModelSelectionStyle      = lipgloss.NewStyle().Foreground(SecondaryColor).Bold(true)
-	ModelSelectionRuleStyle  = lipgloss.NewStyle().Foreground(SecondaryColor)
-	UserPromptCardStyle      = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(SecondaryColor).Padding(1, 2)
-	UserPromptStyle          = lipgloss.NewStyle().Bold(true).Foreground(SecondaryColor)
-	UserPromptSelectionStyle = lipgloss.NewStyle().Foreground(SecondaryColor).Bold(true)
+	ModelChipStyle                  = lipgloss.NewStyle().Background(PrimaryColor).Foreground(WhiteColor).Bold(true).Padding(0, 1)
+	ModelSelectionStyle             = HighlightStyle
+	ModelSelectionCursorStyle       = ModelSelectionSelectedTextStyle
+	ModelSelectionSelectedTextStyle = lipgloss.NewStyle().Foreground(TextPrimaryColor).Bold(true)
+	ModelSelectionTextStyle         = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
+	ModelSelectionTitleStyle        = ModelSelectionTextStyle.Bold(true)
+	ModelSelectionThinkingStyle     = ModelSelectionTitleStyle
+	ModelSelectionRuleStyle         = ModelSelectionTextStyle
+	UserPromptCardStyle             = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(SecondaryColor).Padding(1, 2)
+	UserPromptStyle                 = lipgloss.NewStyle().Bold(true).Foreground(SecondaryColor)
+	UserPromptSelectionStyle        = lipgloss.NewStyle().Foreground(SecondaryColor).Bold(true)
 
-	SuggestionContainerStyle = lipgloss.NewStyle().
-					BorderStyle(lipgloss.RoundedBorder()).
-					BorderForeground(MutedColor).
-					Padding(0, 1)
-	SuggestionCmdStyle  = lipgloss.NewStyle().Foreground(SecondaryColor)
-	SuggestionDescStyle = lipgloss.NewStyle().
-				Foreground(MutedColor).
-				PaddingLeft(2)
-	SuggestionSelectedCmdStyle = lipgloss.NewStyle().
-					Foreground(WhiteColor).
-					Background(PrimaryColor).
-					Bold(true)
-	SuggestionSelectedDescStyle = lipgloss.NewStyle().
-					Foreground(WhiteColor).
-					Background(PrimaryColor).
-					PaddingLeft(2)
+	SuggestionContainerStyle    = lipgloss.NewStyle().Padding(0, 1)
+	SuggestionSelectedStyle     = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
+	SuggestionCmdStyle          = lipgloss.NewStyle().Foreground(PrimaryColor)
+	SuggestionSelectedCmdStyle  = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
+	SuggestionDescStyle         = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true).PaddingLeft(2)
+	SuggestionSelectedDescStyle = lipgloss.NewStyle().Foreground(TextDimColor).Bold(true).PaddingLeft(2)
+	SuggestionFileStyle         = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
+	SuggestionSelectedFileStyle = lipgloss.NewStyle().Foreground(TextDimColor).Bold(true)
 
 	MetaLabelStyle                    = lipgloss.NewStyle().Foreground(TextDimColor).Faint(true)
 	ContextStatusLabelStyle           = lipgloss.NewStyle().Foreground(TextDimColor)

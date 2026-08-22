@@ -59,7 +59,7 @@ type Config struct {
 	Adversary           *AdversaryConfig      `yaml:"adversary,omitempty"`
 	BuiltinTools        *BuiltinTools         `yaml:"builtin_tools,omitempty"`
 	SubagentsDirs       StringOrArray         `yaml:"subagents_dirs,omitempty"`
-	MCPConfigDirs       StringOrArray         `yaml:"mcp_config_dirs,omitempty"`
+	MCPConfigPaths      StringOrArray         `yaml:"mcp_config_paths,omitempty"`
 	SkillsDirs          StringOrArray         `yaml:"skills_dirs,omitempty"`
 	baseDir             string
 	cwd                 string
@@ -111,8 +111,8 @@ func (c *Config) ResolvedSubagentsDirs() []string {
 	return c.resolveAll(c.SubagentsDirs)
 }
 
-func (c *Config) ResolvedMCPConfigDirs() []string {
-	return c.resolveAll(c.MCPConfigDirs)
+func (c *Config) ResolvedMCPConfigPaths() []string {
+	return c.resolveAll(c.MCPConfigPaths)
 }
 
 func (c *Config) ResolvedSkillsDirs() []string {
@@ -350,9 +350,9 @@ func validateFileExistence(cfg *Config, res *ValidationResult) {
 			}
 		}
 	}
-	for i, p := range cfg.ResolvedMCPConfigDirs() {
+	for i, p := range cfg.ResolvedMCPConfigPaths() {
 		if _, err := os.Stat(p); err != nil {
-			res.addError(fmt.Sprintf("mcp_config_dirs[%d]", i), fmt.Sprintf("%q: %v", p, err))
+			res.addError(fmt.Sprintf("mcp_config_paths[%d]", i), fmt.Sprintf("%q: %v", p, err))
 		}
 	}
 	for i, p := range cfg.ResolvedSkillsDirs() {

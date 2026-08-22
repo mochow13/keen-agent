@@ -57,20 +57,20 @@ func TestHistoricalMessageSteps_PreservesActivityOrder(t *testing.T) {
 	if len(steps[0].Activities) != 2 {
 		t.Fatalf("expected two grouped activities, got %#v", steps[0].Activities)
 	}
-	if steps[0].Activities[0].ID != "historical_2_0" || steps[0].Activities[0].Tool != "read_file" {
+	if steps[0].Activities[0].ID != "historical_2_0" || steps[0].Activities[0].Activity.Tool != "read_file" {
 		t.Fatalf("unexpected first activity: %#v", steps[0].Activities[0])
 	}
-	if steps[0].Activities[1].ID != "historical_2_1" || steps[0].Activities[1].Tool != "grep" {
+	if steps[0].Activities[1].ID != "historical_2_1" || steps[0].Activities[1].Activity.Tool != "grep" {
 		t.Fatalf("unexpected second activity: %#v", steps[0].Activities[1])
 	}
 }
 
 func TestHistoricalToolResult_UsesConciseStatusJSON(t *testing.T) {
-	if got := historicalToolResult(historicalToolInvocation{Status: "success"}); got != `{"output_retained":false,"status":"success"}` {
+	if got := historicalToolResult(HistoricalToolActivity{Status: "success"}); got != `{"status":"success"}` {
 		t.Fatalf("unexpected success result: %q", got)
 	}
 	exitCode := 1
-	if got := historicalToolResult(historicalToolInvocation{Status: "error", ExitCode: &exitCode}); got != `{"exit_code":1,"output_retained":false,"status":"error"}` {
+	if got := historicalToolResult(HistoricalToolActivity{Status: "error", ExitCode: &exitCode}); got != `{"status":"error","exit_code":1}` {
 		t.Fatalf("unexpected failure result: %q", got)
 	}
 }
@@ -121,10 +121,10 @@ func TestHistoricalMessageSteps_HandlesBoundaryAndInvalidOffsets(t *testing.T) {
 	if len(steps) != 3 {
 		t.Fatalf("expected three steps, got %#v", steps)
 	}
-	if steps[0].Text != "" || steps[0].Activities[0].Tool != "read_file" {
+	if steps[0].Text != "" || steps[0].Activities[0].Activity.Tool != "read_file" {
 		t.Fatalf("unexpected leading step: %#v", steps[0])
 	}
-	if steps[1].Text != "done" || steps[1].Activities[0].Tool != "bash" {
+	if steps[1].Text != "done" || steps[1].Activities[0].Activity.Tool != "bash" {
 		t.Fatalf("unexpected trailing activity step: %#v", steps[1])
 	}
 	if steps[2].Text != "" || len(steps[2].Activities) != 0 {

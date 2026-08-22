@@ -8,6 +8,7 @@ const (
 	Btw             = "/btw"
 	Clear           = "/clear"
 	Compact         = "/compact"
+	Context         = "/context"
 	EmptyQueue      = "/emptyq"
 	Exit            = "/exit"
 	Help            = "/help"
@@ -32,6 +33,7 @@ const (
 	Subagents       = "/subagents"
 	SubagentsList   = "/subagents list"
 	Thinking        = "/thinking"
+	ToolHistory     = "/tool-history"
 )
 
 type SlashCommand struct {
@@ -46,6 +48,7 @@ var All = []SlashCommand{
 	{Btw, "Ask a quick side question (not added to conversation)"},
 	{Clear, "Clear the session and create a new one (also /new)"},
 	{Compact, "Compact conversation context"},
+	{Context, "Show context usage breakdown"},
 	{EmptyQueue, "Clear all queued messages"},
 	{Exit, "Quit Keen Agent"},
 	{Help, "Show available commands"},
@@ -61,6 +64,7 @@ var All = []SlashCommand{
 	{Skills, "List, show status, reload, enable, or disable skills"},
 	{Subagents, "List available subagents"},
 	{Thinking, "Change thinking effort for the current model"},
+	{ToolHistory, "Control retention of tool outputs across turns (full|none)"},
 }
 
 var Suggestions = []SlashCommand{
@@ -70,6 +74,7 @@ var Suggestions = []SlashCommand{
 	{Btw, "Ask a quick side question (not added to conversation)"},
 	{Clear, "Clear the session and create a new one (also /new)"},
 	{Compact, "Compact conversation context"},
+	{Context, "Show context usage breakdown"},
 	{EmptyQueue, "Clear all queued messages"},
 	{Exit, "Quit Keen Agent"},
 	{Help, "Show available commands"},
@@ -93,6 +98,7 @@ var Suggestions = []SlashCommand{
 	{Subagents, "Show subagent commands"},
 	{SubagentsList, "List available subagents"},
 	{Thinking, "Change thinking effort for the current model"},
+	{ToolHistory, "Control retention of tool outputs across turns (full|none)"},
 }
 
 func IsKnownCommand(input string) bool {

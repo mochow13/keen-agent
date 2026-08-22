@@ -31,12 +31,31 @@ type llmToolEndMsg struct {
 type llmUsageMsg struct {
 	usage *llm.TokenUsage
 }
+
+type mainStreamMsg struct {
+	eventCh <-chan llm.StreamEvent
+	event   llm.StreamEvent
+	closed  bool
+}
 type permissionReadyMsg struct {
 	req *replpermissions.Request
 }
 type diffReadyMsg struct {
 	req repltooling.DiffRequest
 }
+type llmAutoCompactionStartedMsg struct {
+	event *llm.AutoCompactionEvent
+}
+type llmAutoCompactionAppliedMsg struct {
+	event *llm.AutoCompactionEvent
+}
+type llmAutoCompactionCancelledMsg struct {
+	event *llm.AutoCompactionEvent
+}
+type llmAutoCompactionFailedMsg struct {
+	event *llm.AutoCompactionEvent
+}
+
 type compactionDoneMsg struct{}
 type compactionErrMsg struct {
 	err error

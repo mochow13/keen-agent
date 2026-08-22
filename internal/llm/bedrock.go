@@ -127,8 +127,8 @@ func toBedrockMessages(messages []Message) ([]brtypes.SystemContentBlock, []brty
 				for _, invocation := range step.Activities {
 					blocks = append(blocks, &brtypes.ContentBlockMemberToolUse{Value: brtypes.ToolUseBlock{
 						ToolUseId: aws.String(invocation.ID),
-						Name:      aws.String(invocation.Tool),
-						Input:     document.NewLazyDocument(cloneHistoricalToolInput(invocation.Input)),
+						Name:      aws.String(invocation.Activity.Tool),
+						Input:     document.NewLazyDocument(cloneInputMap(invocation.Activity.Input)),
 					}})
 				}
 				if len(blocks) > 0 {
@@ -138,13 +138,13 @@ func toBedrockMessages(messages []Message) ([]brtypes.SystemContentBlock, []brty
 					resultBlocks := make([]brtypes.ContentBlock, 0, len(step.Activities))
 					for _, invocation := range step.Activities {
 						status := brtypes.ToolResultStatusSuccess
-						if invocation.Status != "success" {
+						if invocation.Activity.Status != "success" {
 							status = brtypes.ToolResultStatusError
 						}
 						resultBlocks = append(resultBlocks, &brtypes.ContentBlockMemberToolResult{Value: brtypes.ToolResultBlock{
 							ToolUseId: aws.String(invocation.ID),
 							Content: []brtypes.ToolResultContentBlock{
-								&brtypes.ToolResultContentBlockMemberText{Value: historicalToolResult(invocation)},
+								&brtypes.ToolResultContentBlockMemberText{Value: historicalToolResult(invocation.Activity)},
 							},
 							Status: status,
 						}})

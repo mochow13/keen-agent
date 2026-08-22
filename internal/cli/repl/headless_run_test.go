@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mochow13/keen-agent/internal/agentconfig"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/llm"
@@ -110,7 +111,7 @@ func TestRunHeadless_RegistersMCPToolWhenEnabled(t *testing.T) {
 	_, err := RunHeadless(context.Background(), HeadlessRunOptions{
 		WorkingDir: workingDir,
 		Config:     headlessTestConfig(),
-		AgentCfg:   &agentconfig.Config{MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"}},
+		AgentCfg:   &agentconfig.Config{MCPConfigPaths: agentconfig.StringOrArray{"mcp.json"}},
 		Client:     client,
 		MCP:        headlessMCPRuntime{},
 		Prompt:     "prompt",
@@ -237,8 +238,8 @@ func TestRunHeadless_PlanModeOnlyRegistersReadOnlyBuiltins(t *testing.T) {
 		WorkingDir: workingDir,
 		Config:     headlessTestConfig(),
 		AgentCfg: &agentconfig.Config{
-			DefaultMode:   agentconfig.ModePlan,
-			MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"},
+			DefaultMode:    agentconfig.ModePlan,
+			MCPConfigPaths: agentconfig.StringOrArray{"mcp.json"},
 		},
 		Client: client,
 		MCP:    headlessMCPRuntime{},
@@ -272,9 +273,9 @@ func TestRunHeadless_BuildModeOverridesConfiguredPlanMode(t *testing.T) {
 		WorkingDir: workingDir,
 		Config:     headlessTestConfig(),
 		AgentCfg: &agentconfig.Config{
-			DefaultMode:   agentconfig.ModePlan,
-			MCPConfigDirs: agentconfig.StringOrArray{"mcp.json"},
-			SubagentsDirs: agentconfig.StringOrArray{"subagents"},
+			DefaultMode:    agentconfig.ModePlan,
+			MCPConfigPaths: agentconfig.StringOrArray{"mcp.json"},
+			SubagentsDirs:  agentconfig.StringOrArray{"subagents"},
 		},
 		Client: client,
 		MCP:    headlessMCPRuntime{},
@@ -380,4 +381,40 @@ func containsOrderedSuffix(got []string, want []string) bool {
 		}
 	}
 	return true
+}
+
+func TestRunHeadless_ProgressStreamsChunksAndToolEnds(t *testing.T) {
+	workingDir := setupHeadlessTestHome(t)
+	client := &recordingHeadlessClient{events: []llm.StreamEvent{
+		{Type: llm.StreamEventTypeChunk, Content: "Inspecting"},
+		{Type: llm.StreamEventTypeToolStart, ToolCall: &llm.ToolCall{Name: "read_file", Input: map[string]any{"path": filepath.Join(workingDir, "a.go")}}},
+		{Type: llm.StreamEventTypeToolEnd, ToolCall: &llm.ToolCall{Name: "read_file", Input: map[string]any{"path": filepath.Join(workingDir, "a.go")}}},
+		{Type: llm.StreamEventTypeChunk, Content: " done."},
+		{Type: llm.StreamEventTypeDone},
+	}}
+	var progress bytes.Buffer
+	var out bytes.Buffer
+
+	_, err := RunHeadless(context.Background(), HeadlessRunOptions{
+		WorkingDir: workingDir,
+		Config:     headlessTestConfig(),
+		Client:     client,
+		Prompt:     "inspect",
+		Out:        &out,
+		Progress:   &progress,
+	})
+	if err != nil {
+		t.Fatalf("RunHeadless() error = %v", err)
+	}
+
+	prog := ansi.Strip(progress.String())
+	if !strings.Contains(prog, "Inspecting") {
+		t.Fatalf("expected progress to contain chunk text, got %q", prog)
+	}
+	if !strings.Contains(prog, "Read") {
+		t.Fatalf("expected progress to contain tool name, got %q", prog)
+	}
+	if strings.Count(prog, "\n") < 1 {
+		t.Fatalf("expected progress to include newlines around tool output, got %q", prog)
+	}
 }

@@ -397,7 +397,13 @@ func TestModelSelection_SwitchProviderPreservesHeaders(t *testing.T) {
 	if m.Step != StepModel {
 		t.Fatalf("expected StepModel, got %v", m.Step)
 	}
-	// Confirm model -> BaseURL step (DeepSeek supports custom base URL).
+	// Confirm model -> StepUpdateProviderConfigs (DeepSeek already has an API key).
+	m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.Step != StepUpdateProviderConfigs {
+		t.Fatalf("expected StepUpdateProviderConfigs, got %v", m.Step)
+	}
+	// Pick "Yes" to update provider configs.
+	m.UpdateProviderConfigCursor = 1
 	m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.Step != StepBaseURL {
 		t.Fatalf("expected StepBaseURL, got %v", m.Step)
@@ -453,5 +459,57 @@ func TestVisibleListRangeKeepsCursorVisible(t *testing.T) {
 		if tt.count > 0 && tt.count > tt.maxVisible && (tt.cursor < gotStart || tt.cursor >= gotEnd) {
 			t.Fatalf("%s: cursor %d outside visible range %d:%d", tt.name, tt.cursor, gotStart, gotEnd)
 		}
+	}
+}
+
+func TestModelSelection_HidesOpenAICompatibleProvider(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	registry := &providers.Registry{Providers: []providers.Provider{
+		{ID: config.ProviderOpenAICompatible, Name: "OpenAI Compatible"},
+		{ID: config.ProviderOpenAI, Name: "OpenAI"},
+	}}
+	m := New(registry, config.DefaultGlobalConfig(), config.NewLoader(), &config.ResolvedConfig{}, nil)
+	if len(m.ProviderList) != 1 || m.ProviderList[0].ID != config.ProviderOpenAI {
+		t.Fatalf("provider list = %+v, want only OpenAI", m.ProviderList)
+	}
+	if len(registry.Providers) != 2 {
+		t.Fatalf("model selection mutated provider registry: %+v", registry.Providers)
+	}
+}
+
+func TestModelSelection_SelectSetsPairAndPromptsThinking(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	registry := &providers.Registry{Providers: []providers.Provider{{
+		ID: config.ProviderOpenAI,
+		Models: []providers.Model{{
+			ID:              "gpt-5.4",
+			ThinkingEfforts: []string{"low", "medium", "high"},
+		}},
+	}}}
+	m := New(registry, config.DefaultGlobalConfig(), config.NewLoader(), &config.ResolvedConfig{}, nil)
+
+	m, cmd, err := m.Select(config.ProviderOpenAI, "gpt-5.4")
+	if err != nil {
+		t.Fatalf("Select() error = %v", err)
+	}
+	if cmd != nil {
+		t.Fatal("Select() returned an unexpected command")
+	}
+	if m.SelectedProvider != config.ProviderOpenAI || m.SelectedModel != "gpt-5.4" {
+		t.Fatalf("selected pair = %s/%s", m.SelectedProvider, m.SelectedModel)
+	}
+	if m.Step != StepThinking {
+		t.Fatalf("step = %v, want StepThinking", m.Step)
+	}
+}
+
+func TestModelSelection_SelectRejectsUnknownPair(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	registry := &providers.Registry{Providers: []providers.Provider{{ID: config.ProviderOpenAI}}}
+	m := New(registry, config.DefaultGlobalConfig(), config.NewLoader(), &config.ResolvedConfig{}, nil)
+
+	_, _, err := m.Select(config.ProviderOpenAI, "gpt-unknown")
+	if err == nil || err.Error() != "unknown model: openai/gpt-unknown" {
+		t.Fatalf("Select() error = %v", err)
 	}
 }

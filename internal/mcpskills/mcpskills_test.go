@@ -10,6 +10,22 @@ import (
 	keenmcp "github.com/mochow13/keen-agent/internal/mcp"
 )
 
+func TestSkillDir_DefaultsToHomeSkillsDir(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+
+	dir, err := SkillDir(nil, "github")
+	if err != nil {
+		t.Fatalf("SkillDir() error = %v", err)
+	}
+	want := filepath.Join(home, ".keen-agent", "skills", "mcp:github")
+	if dir != want {
+		t.Errorf("SkillDir() = %q, want %q", dir, want)
+	}
+}
+
 func TestRemoveDeletesGeneratedSkill(t *testing.T) {
 	home := t.TempDir()
 	configDirs := []string{filepath.Join(home, ".keen-agent", "skills")}

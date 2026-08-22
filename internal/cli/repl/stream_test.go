@@ -241,13 +241,13 @@ func TestStreamHandler_HandleDone_MixedSegmentsChronological(t *testing.T) {
 	if !strings.Contains(lines[0], "First chunk") {
 		t.Fatalf("expected first line to be first assistant chunk, got %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "read_file") || !strings.Contains(lines[1], "⚙") {
+	if !strings.Contains(lines[1], "Read") || !strings.Contains(lines[1], "●") {
 		t.Fatalf("expected second line to be tool start, got %q", lines[1])
 	}
 	if !strings.Contains(lines[2], "Second chunk") {
 		t.Fatalf("expected third line to be second assistant chunk, got %q", lines[2])
 	}
-	if !strings.Contains(lines[3], "read_file") || !strings.Contains(lines[3], "✓") {
+	if !strings.Contains(lines[3], "Read") || !strings.Contains(lines[3], "✓") {
 		t.Fatalf("expected fourth line to be tool end, got %q", lines[3])
 	}
 }
@@ -265,10 +265,10 @@ func TestStreamHandler_HandleDone_AdjacentToolStartEnd_CollapsedToOneLine(t *tes
 	if len(lines) != 1 {
 		t.Fatalf("expected 1 line for adjacent start/end, got %d: %v", len(lines), lines)
 	}
-	if !strings.Contains(lines[0], "glob") || !strings.Contains(lines[0], "✓") {
+	if !strings.Contains(lines[0], "Find") || !strings.Contains(lines[0], "✓") {
 		t.Fatalf("expected combined done line, got %q", lines[0])
 	}
-	if strings.Contains(lines[0], "⚙") {
+	if strings.Contains(lines[0], "●") {
 		t.Fatalf("expected no tool-start marker in combined line, got %q", lines[0])
 	}
 }
@@ -286,7 +286,7 @@ func TestStreamHandler_CallMCPToolNeverShowsArguments(t *testing.T) {
 	}})
 
 	view := sh.View(80)
-	if !strings.Contains(view, "call_mcp_tool") || !strings.Contains(view, "context7/query-docs") {
+	if !strings.Contains(view, "MCP") || !strings.Contains(view, "context7/query-docs") {
 		t.Fatalf("expected MCP tool summary, got %q", view)
 	}
 	if strings.Contains(view, "libraryId") || strings.Contains(view, "query:") || strings.Contains(view, "React useEffect") {
@@ -303,7 +303,7 @@ func TestStreamHandler_CallMCPToolNeverShowsArguments(t *testing.T) {
 	}, Duration: 5})
 
 	view = sh.View(80)
-	if !strings.Contains(view, "call_mcp_tool") || !strings.Contains(view, "context7/query-docs") {
+	if !strings.Contains(view, "MCP") || !strings.Contains(view, "context7/query-docs") {
 		t.Fatalf("expected completed MCP tool summary, got %q", view)
 	}
 	if strings.Contains(view, "libraryId") || strings.Contains(view, "query:") || strings.Contains(view, "React useEffect") {
@@ -312,7 +312,7 @@ func TestStreamHandler_CallMCPToolNeverShowsArguments(t *testing.T) {
 
 	lines, _ := sh.HandleDone()
 	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "call_mcp_tool") || !strings.Contains(joined, "context7/query-docs") {
+	if !strings.Contains(joined, "MCP") || !strings.Contains(joined, "context7/query-docs") {
 		t.Fatalf("expected transcript MCP tool summary, got %q", joined)
 	}
 	if strings.Contains(joined, "libraryId") || strings.Contains(joined, "query:") || strings.Contains(joined, "React useEffect") {
@@ -477,12 +477,29 @@ func TestWaitForAsyncEvent_Chunk(t *testing.T) {
 	}
 
 	msg := cmd()
-	chunkMsg, ok := msg.(llmChunkMsg)
+	streamMsg, ok := msg.(mainStreamMsg)
 	if !ok {
-		t.Fatalf("expected llmChunkMsg, got %T", msg)
+		t.Fatalf("expected mainStreamMsg, got %T", msg)
 	}
-	if string(chunkMsg) != "chunk data" {
-		t.Errorf("expected chunk 'chunk data', got '%s'", string(chunkMsg))
+	if streamMsg.event.Type != llm.StreamEventTypeChunk || streamMsg.event.Content != "chunk data" {
+		t.Fatalf("unexpected stream event: %#v", streamMsg.event)
+	}
+}
+
+func TestWaitForAsyncEvent_ToolStart(t *testing.T) {
+	eventCh := make(chan llm.StreamEvent, 1)
+	eventCh <- llm.StreamEvent{
+		Type:     llm.StreamEventTypeToolStart,
+		ToolCall: &llm.ToolCall{Name: "read_file"},
+	}
+
+	msg := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))()
+	streamMsg, ok := msg.(mainStreamMsg)
+	if !ok {
+		t.Fatalf("expected mainStreamMsg, got %T", msg)
+	}
+	if streamMsg.event.Type != llm.StreamEventTypeToolStart || streamMsg.event.ToolCall.Name != "read_file" {
+		t.Fatalf("unexpected stream event: %#v", streamMsg.event)
 	}
 }
 
@@ -496,9 +513,9 @@ func TestWaitForAsyncEvent_Done(t *testing.T) {
 	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
-	_, ok := msg.(llmDoneMsg)
-	if !ok {
-		t.Fatalf("expected llmDoneMsg, got %T", msg)
+	streamMsg, ok := msg.(mainStreamMsg)
+	if !ok || streamMsg.event.Type != llm.StreamEventTypeDone {
+		t.Fatalf("expected done stream event, got %#v", msg)
 	}
 }
 
@@ -516,12 +533,12 @@ func TestWaitForAsyncEvent_ReasoningChunk(t *testing.T) {
 	}
 
 	msg := cmd()
-	reasoningMsg, ok := msg.(llmReasoningChunkMsg)
+	streamMsg, ok := msg.(mainStreamMsg)
 	if !ok {
-		t.Fatalf("expected llmReasoningChunkMsg, got %T", msg)
+		t.Fatalf("expected mainStreamMsg, got %T", msg)
 	}
-	if string(reasoningMsg) != "thinking" {
-		t.Fatalf("expected 'thinking', got %q", string(reasoningMsg))
+	if streamMsg.event.Type != llm.StreamEventTypeReasoningChunk || streamMsg.event.Content != "thinking" {
+		t.Fatalf("unexpected stream event: %#v", streamMsg.event)
 	}
 }
 
@@ -537,12 +554,12 @@ func TestWaitForAsyncEvent_Error(t *testing.T) {
 	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
-	errMsg, ok := msg.(llmErrorMsg)
+	streamMsg, ok := msg.(mainStreamMsg)
 	if !ok {
-		t.Fatalf("expected llmErrorMsg, got %T", msg)
+		t.Fatalf("expected mainStreamMsg, got %T", msg)
 	}
-	if errMsg.err != testErr {
-		t.Errorf("expected error '%v', got '%v'", testErr, errMsg.err)
+	if streamMsg.event.Type != llm.StreamEventTypeError || streamMsg.event.Error != testErr {
+		t.Fatalf("unexpected stream event: %#v", streamMsg.event)
 	}
 }
 
@@ -553,9 +570,9 @@ func TestWaitForAsyncEvent_ChannelClosed(t *testing.T) {
 	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
-	_, ok := msg.(llmDoneMsg)
-	if !ok {
-		t.Fatalf("expected llmDoneMsg when channel closed, got %T", msg)
+	streamMsg, ok := msg.(mainStreamMsg)
+	if !ok || !streamMsg.closed {
+		t.Fatalf("expected closed mainStreamMsg, got %#v", msg)
 	}
 }
 
@@ -1109,5 +1126,80 @@ func TestHandleKeyMsg_Enter_WhenPermissionPending_DoesNotSubmit(t *testing.T) {
 	}
 	if newM.streamHandler.HasPendingPermission() {
 		t.Error("expected permission to be resolved")
+	}
+}
+
+func TestIsHiddenToolFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		call *llm.ToolCall
+		want bool
+	}{
+		{
+			name: "nil tool call",
+			call: nil,
+			want: false,
+		},
+		{
+			name: "read_file not found",
+			call: &llm.ToolCall{Name: "read_file", Error: `not found: file "missing.txt" does not exist`},
+			want: true,
+		},
+		{
+			name: "read_file other error",
+			call: &llm.ToolCall{Name: "read_file", Error: "permission denied"},
+			want: false,
+		},
+		{
+			name: "edit_file path resolution failed",
+			call: &llm.ToolCall{Name: "edit_file", Error: "path resolution failed: invalid path"},
+			want: true,
+		},
+		{
+			name: "edit_file not a file (directory)",
+			call: &llm.ToolCall{Name: "edit_file", Error: `not a file: "foo" is a directory`},
+			want: true,
+		},
+		{
+			name: "edit_file not found",
+			call: &llm.ToolCall{Name: "edit_file", Error: `not found: file "x" does not exist`},
+			want: true,
+		},
+		{
+			name: "edit_file oldString not found",
+			call: &llm.ToolCall{Name: "edit_file", Error: `oldString not found in file "x"`},
+			want: false,
+		},
+		{
+			name: "bash other error",
+			call: &llm.ToolCall{Name: "bash", Error: "exit code 1"},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isHiddenToolFailure(tt.call); got != tt.want {
+				t.Errorf("isHiddenToolFailure() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStreamHandler_ShouldHideToolStart(t *testing.T) {
+	sh := NewStreamHandler(nil)
+	sh.segments = []streamSegment{
+		{kind: segmentToolStart, toolCall: &llm.ToolCall{Name: "read_file", Error: `not found: file "x" does not exist`}},
+		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "read_file", Error: `not found: file "x" does not exist`}},
+	}
+	if !sh.shouldHideToolStart(0) {
+		t.Error("expected shouldHideToolStart to return true for hidden failure pair")
+	}
+
+	sh.segments = []streamSegment{
+		{kind: segmentToolStart, toolCall: &llm.ToolCall{Name: "bash"}},
+		{kind: segmentToolEnd, toolCall: &llm.ToolCall{Name: "bash"}},
+	}
+	if sh.shouldHideToolStart(0) {
+		t.Error("expected shouldHideToolStart to return false for non-hidden failure pair")
 	}
 }

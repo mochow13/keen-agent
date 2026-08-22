@@ -8,15 +8,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	brtypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	"github.com/firebase/genkit/go/ai"
-	openai "github.com/openai/openai-go"
-	"github.com/openai/openai-go/responses"
+	openai "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
 )
 
 func TestContextFitsBudget(t *testing.T) {
-	if !contextFitsBudget(13050, 700) {
+	if !contextFitsBudget(4800, 700) {
 		t.Fatal("expected context to fit budget")
 	}
-	if contextFitsBudget(13050, 800) {
+	if contextFitsBudget(4800, 800) {
 		t.Fatal("expected context to exceed budget")
 	}
 }
@@ -175,13 +175,55 @@ func TestReduceResponsesContextForRequest_SkipsExistingPlaceholders(t *testing.T
 	if reduction.RemovedToolResults != 1 {
 		t.Fatalf("expected 1 removed tool result, got %d", reduction.RemovedToolResults)
 	}
-	if got := reduced[0].OfFunctionCallOutput.Output; got != removedToolResultPlaceholder {
+	if got := reduced[0].OfFunctionCallOutput.Output.OfString.Value; got != removedToolResultPlaceholder {
 		t.Fatalf("expected existing placeholder to remain, got %q", got)
 	}
-	if got := reduced[1].OfFunctionCallOutput.Output; got != removedToolResultPlaceholder {
+	if got := reduced[1].OfFunctionCallOutput.Output.OfString.Value; got != removedToolResultPlaceholder {
 		t.Fatalf("expected oldest non-placeholder result to be replaced, got %q", got)
 	}
-	if got := reduced[2].OfFunctionCallOutput.Output; got != "recent result" {
+	if got := reduced[2].OfFunctionCallOutput.Output.OfString.Value; got != "recent result" {
+		t.Fatalf("expected recent tool result to remain, got %q", got)
+	}
+}
+
+func TestReduceResponsesContextForRequest_ReplacesArrayOutput(t *testing.T) {
+	longResult := repeatString("old ", 200)
+	arrayOutput := responses.ResponseInputItemUnionParam{
+		OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+			CallID: "call_old",
+			Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+				OfResponseFunctionCallOutputItemArray: responses.ResponseFunctionCallOutputItemListParam{
+					responses.ResponseFunctionCallOutputItemParamOfInputText(longResult),
+				},
+			},
+		},
+	}
+	input := []responses.ResponseInputItemUnionParam{
+		arrayOutput,
+		responses.ResponseInputItemParamOfFunctionCallOutput("call_recent", "recent result"),
+	}
+	arrayContent, ok := responsesToolOutputContent(arrayOutput.OfFunctionCallOutput.Output)
+	if !ok {
+		t.Fatal("expected array-backed output content")
+	}
+	budget := estimateResponsesInputTokenCount(input) - estimateContextTokenCount(arrayContent)/2
+
+	reduced, reduction := reduceResponsesContextForRequest(contextWindowForInputBudget(budget), input)
+
+	if !reduction.FitsBudget {
+		t.Fatal("expected reduced context to fit budget")
+	}
+	if reduction.RemovedToolResults != 1 {
+		t.Fatalf("expected 1 removed tool result, got %d", reduction.RemovedToolResults)
+	}
+	output := reduced[0].OfFunctionCallOutput.Output
+	if got := output.OfString.Value; got != removedToolResultPlaceholder {
+		t.Fatalf("expected array output to be replaced, got %q", got)
+	}
+	if output.OfResponseFunctionCallOutputItemArray != nil {
+		t.Fatal("expected array output arm to be cleared")
+	}
+	if got := reduced[1].OfFunctionCallOutput.Output.OfString.Value; got != "recent result" {
 		t.Fatalf("expected recent tool result to remain, got %q", got)
 	}
 }
@@ -302,10 +344,10 @@ func TestReduceBedrockContextForRequest_ReplacesToolResultContentOnly(t *testing
 }
 
 func contextWindowForInputBudget(budget int) int {
-	if budget+contextOutputReserveTokenCount+4096 < 81920 {
-		return budget + contextOutputReserveTokenCount + 4096
+	if budget+4096 < 81920 {
+		return budget + 4096
 	}
-	return (20*(budget+contextOutputReserveTokenCount) + 18) / 19
+	return (20*budget + 18) / 19
 }
 
 func repeatString(s string, count int) string {

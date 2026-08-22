@@ -850,6 +850,60 @@ func TestHandleLLMStreamMsg_ToolEnd_ReturnsSpinnerTick(t *testing.T) {
 	}
 }
 
+func TestHandleLLMStreamMsg_RoutesToolStartFromActiveStream(t *testing.T) {
+	m := newTestModel()
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+
+	updated, _, handled := m.handleLLMStreamMsg(mainStreamMsg{
+		eventCh: eventCh,
+		event: llm.StreamEvent{
+			Type:     llm.StreamEventTypeToolStart,
+			ToolCall: &llm.ToolCall{Name: "read_file"},
+		},
+	})
+	if !handled {
+		t.Fatal("expected stream event to be handled")
+	}
+	if len(updated.streamHandler.segments) != 1 || updated.streamHandler.segments[0].kind != segmentToolStart {
+		t.Fatal("expected tool start to reach stream handler")
+	}
+}
+
+func TestHandleLLMStreamMsg_RendersCompletedGlobTool(t *testing.T) {
+	m := newTestModel()
+	m.streamRenderInterval = 0
+	eventCh := make(chan llm.StreamEvent)
+	m.streamHandler.Start(eventCh, "Loading...")
+
+	updated, _, handled := m.handleLLMStreamMsg(mainStreamMsg{
+		eventCh: eventCh,
+		event: llm.StreamEvent{
+			Type:     llm.StreamEventTypeToolStart,
+			ToolCall: &llm.ToolCall{Name: "glob", Input: map[string]any{"pattern": "**/*.go"}},
+		},
+	})
+	if !handled {
+		t.Fatal("expected tool start to be handled")
+	}
+
+	updated, _, handled = updated.handleLLMStreamMsg(mainStreamMsg{
+		eventCh: eventCh,
+		event: llm.StreamEvent{
+			Type:     llm.StreamEventTypeToolEnd,
+			ToolCall: &llm.ToolCall{Name: "glob", Output: map[string]any{"count": 1}},
+		},
+	})
+	if !handled {
+		t.Fatal("expected tool end to be handled")
+	}
+
+	view := updated.streamHandler.View(80)
+	if !strings.Contains(view, "Find") || !strings.Contains(view, "✓") {
+		t.Fatalf("expected rendered glob tool, got %q", view)
+	}
+}
+
 func TestHandleBtwStreamMsg_Chunk(t *testing.T) {
 	btwSh := NewStreamHandler(nil)
 	eventCh := make(chan llm.StreamEvent)
@@ -1007,5 +1061,35 @@ func TestHandleKeyMsg_SlashCommandWithoutAtShowsCommandSuggestions(t *testing.T)
 	}
 	if !strings.Contains(newM.suggestion.View(80), "/clear") {
 		t.Fatalf("expected /clear in suggestions, got %q", newM.suggestion.View(80))
+	}
+}
+
+func TestHandleAutoCompactionApplied_ReplacesAppStateMessages(t *testing.T) {
+	m := newTestModel()
+	m.appState.AppendMessage(llm.Message{Role: llm.RoleUser, Content: "original"})
+	m.appState.AppendMessage(llm.Message{Role: llm.RoleAssistant, Content: "old response"})
+
+	updated, _ := m.handleAutoCompactionApplied(&llm.AutoCompactionEvent{
+		Replacement: []llm.Message{
+			{Role: llm.RoleSystem, Content: "sys"},
+			{Role: llm.RoleUser, Content: "compacted user"},
+		},
+	})
+
+	messages := updated.appState.GetMessages()
+	if len(messages) != 1 || messages[0].Role != llm.RoleUser || messages[0].Content != "compacted user" {
+		t.Fatalf("expected compacted user message, got %#v", messages)
+	}
+}
+
+func TestHandleAutoCompactionApplied_EmptyReplacementContinuesWaiting(t *testing.T) {
+	m := newTestModel()
+	m.streamHandler.Start(make(<-chan llm.StreamEvent), "")
+	updated, cmd := m.handleAutoCompactionApplied(&llm.AutoCompactionEvent{Replacement: nil})
+	if cmd == nil {
+		t.Fatal("expected wait cmd")
+	}
+	if len(updated.appState.GetMessages()) != 0 {
+		t.Fatal("expected no messages to change")
 	}
 }

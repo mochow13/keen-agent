@@ -43,7 +43,7 @@ State is split into:
   provider setup and OAuth login.
 2. **Agent-scoped runtime state** — isolated by agent name for sessions, logs, and
   input history.
-3. **User-authored resources** — explicit paths such as `mcp_config_dirs` and
+3. **User-authored resources** — explicit paths such as `mcp_config_paths` and
   `skills_dirs`.
 
 Shared state lives directly under `~/.keen-agent/`:
@@ -149,7 +149,7 @@ adversary:
 
 # Built-in tools (read_file, write_file, edit_file, web_fetch, glob, grep, bash)
 # All enabled by default. Opt out here.
-# call_mcp_tool is auto-included only when mcp_config_dirs is set.
+# call_mcp_tool is auto-included only when mcp_config_paths is set.
 # delegate_task is auto-included only when subagents_dirs is set.
 builtin_tools:
   exclude:
@@ -166,7 +166,7 @@ subagents_dirs:
 
 # MCP server configuration file paths (JSON). Optional; if omitted,
 # no MCP tools are loaded.
-mcp_config_dirs:
+mcp_config_paths:
   - ./mcp-config.json
 
 # Skills directories (agent-local)
@@ -174,13 +174,13 @@ skills_dirs:
   - ./skills
 ```
 
-**Backward compatibility:** `subagents_dirs`, `mcp_config_dirs`, and `skills_dirs` each accept a single string or an array of strings. A single string is treated as a one-element array.
+**Backward compatibility:** `subagents_dirs`, `mcp_config_paths`, and `skills_dirs` each accept a single string or an array of strings. A single string is treated as a one-element array.
 
 ---
 
 ## MCP Configuration File
 
-`mcp_config_dirs` is a list of JSON files containing MCP server definitions. If omitted, MCP support is disabled for this agent. Files are processed in order; later files can add servers or override earlier ones by name.
+`mcp_config_paths` is a list of JSON files containing MCP server definitions. If omitted, MCP support is disabled for this agent. Files are processed in order; later files can add servers or override earlier ones by name.
 
 Format:
 
@@ -210,7 +210,7 @@ Format:
 | TUI / REPL          | keen-code `internal/cli/repl`   | Customizable name                                                                           |
 | Built-in tools      | keen-code `internal/tools`      | read_file, write_file, edit_file, web_fetch, glob, grep, bash, call_mcp_tool, delegate_task |
 | Skill loader        | keen-code skill mechanism       | Agent-local (`skills_dirs`) only                                                           |
-| MCP client          | keen-code MCP integration       | Same server config format; call_mcp_tool auto-included when mcp_config_dirs is set          |
+| MCP client          | keen-code MCP integration       | Same server config format; call_mcp_tool auto-included when mcp_config_paths is set          |
 | Subagent system     | keen-code `internal/subagents`  | Discovery, runner, and `delegate_task` tool; auto-included when subagents_dirs is set       |
 | Session persistence | keen-code session storage       | Same format under `~/.keen-agent/<agent-name>/sessions/`; `/resume` command in TUI          |
 
@@ -270,7 +270,7 @@ configuration keeps sources separate:
 | Source         | User-facing config | Purpose                                                                   |
 | -------------- | ------------------ | ------------------------------------------------------------------------- |
 | Built-in tools | `builtin_tools`    | Keen-native capabilities such as file reads, grep, edits, bash, web fetch |
-| MCP tools      | `mcp_config_dirs`  | Scalable external/local integrations with discovery and protocol support  |
+| MCP tools      | `mcp_config_paths`  | Scalable external/local integrations with discovery and protocol support  |
 | Subagents      | `subagents_dirs`   | Focused read-only assistants for delegated investigation and analysis     |
 
 
@@ -301,7 +301,7 @@ Available by default:
 
 All excludable built-ins can be disabled through `builtin_tools.exclude`.
 `call_mcp_tool` is a core runtime tool and cannot be excluded; it is **auto-included
-whenever `mcp_config_dirs` is set**, and omitted entirely when `mcp_config_dirs` is
+whenever `mcp_config_paths` is set**, and omitted entirely when `mcp_config_paths` is
 absent. Users control MCP access by pointing the config files to the desired MCP
 server definitions.
 
@@ -559,7 +559,7 @@ keen-agent separates user-authored resources from runtime state:
 | Kind                                          | Ownership                     | Path                                                                         |
 | --------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------- |
 | Agent config                                  | user-authored                 | `--agent ./agent.yaml`                                                       |
-| MCP server config                             | user-authored                 | `mcp_config_dirs` (optional)                                                 |
+| MCP server config                             | user-authored                 | `mcp_config_paths` (optional)                                                 |
 | Skills                                        | user-authored                 | `skills_dirs` only                                                            |
 | Subagents                                     | user-authored                 | `subagents_dirs` only                                                         |
 | Provider/model config + API credentials       | shared keen-agent state       | `~/.keen-agent/configs.json`                                                 |
@@ -572,7 +572,7 @@ keen-agent separates user-authored resources from runtime state:
 This keeps each user-built agent's sessions, logs, and input history independent,
 while model/provider defaults and authentication are shared to avoid repeated setup.
 Shared resources remain explicit: users can point multiple agents at the same
-`mcp_config_dirs`, `skills_dirs`, or `subagents_dirs` entries if they want reuse.
+`mcp_config_paths`, `skills_dirs`, or `subagents_dirs` entries if they want reuse.
 
 ## Session Persistence
 
@@ -668,7 +668,7 @@ before reporting so users see the full picture at once.
   - Helper `model` block (`adversary`) must have `provider` and `model_id` when present.
 3. **File existence checks (fatal)**
   - Each `system_prompt_files` entry exists and is readable.
-  - Each `mcp_config_dirs` entry exists and is readable.
+  - Each `mcp_config_paths` entry exists and is readable.
   - Each `skills_dirs` directory exists and is readable.
   - Each `subagents_dirs` directory exists and is readable.
   - Each `modes.<mode>.system_prompt_files` entry exists when specified.
@@ -694,7 +694,7 @@ before reporting so users see the full picture at once.
 - YAML schema validity
 - Required fields present (`name`, `system_prompt` or `system_prompt_files`)
 - `ascii_art`, if present, is a string
-- MCP config files exist (only if `mcp_config_dirs` is specified)
+- MCP config files exist (only if `mcp_config_paths` is specified)
 - `system_prompt_files` entries exist (if specified)
 - `skills_dirs` entries exist (if specified)
 - `subagents_dirs` entries exist (if specified); each `.md` file has valid YAML frontmatter with required `name` and `description` fields
@@ -731,7 +731,7 @@ before reporting so users see the full picture at once.
 1. Extract/copy built-in tools (read_file, write_file, edit_file, web_fetch, glob, grep, bash, call_mcp_tool, delegate_task)
 2. Extract/copy MCP client
 3. Extract/copy subagent discovery, profile parser, and runner from keen-code
-4. Wire tool registration (built-in via registry + MCP + subagents, with opt-out for excludable built-ins only; `call_mcp_tool` auto-included only when `mcp_config_dirs` is set; `delegate_task` auto-included only when `subagents_dirs` is set)
+4. Wire tool registration (built-in via registry + MCP + subagents, with opt-out for excludable built-ins only; `call_mcp_tool` auto-included only when `mcp_config_paths` is set; `delegate_task` auto-included only when `subagents_dirs` is set)
 
 ### Phase 4 — TUI + Skills + Subagents
 
@@ -817,7 +817,7 @@ persona or namespace assumptions. Items are ordered by dependency and impact.
 
 - [x] **Finish config-driven tool registration.**
   - `builtin_tools.exclude` applies to excludable built-ins only.
-  - `call_mcp_tool` is registered only when `mcp_config_dirs` is non-empty and
+  - `call_mcp_tool` is registered only when `mcp_config_paths` is non-empty and
     `delegate_task` only when `subagents_dirs` is non-empty; configured core
     integration tools cannot be excluded.
   - Coverage verifies excluded `bash`, absent integration tools without their

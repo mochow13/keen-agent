@@ -3,10 +3,10 @@ package llm
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/mochow13/keen-agent/internal/agentconfig"
+	"github.com/mochow13/keen-agent/internal/memory"
 )
 
 type AgentMode string
@@ -66,14 +66,14 @@ const defaultStyle = `# Tone and style
 - Run independent tool calls in parallel where possible.
 - Reference relevant sources as file_path:line_number when line-level references are useful.`
 
-const defaultPersona = `You are Keen Agent, an AI agent running in a terminal environment.
+const defaultPersona = `You are Keen Agent, a general-purpose AI agent with access to a terminal environment and other available tools. Your domain is defined by the user's request and any configured instructions; do not assume a software-development role unless the request or instructions establish one.
 
 ` + harnessContract + "\n\n" + defaultStyle
 
 const buildModePrompt = `
 
 # Active mode: build
-- You are in build mode. Lean toward taking action to complete the user's request.
+- Build mode is an execution mode, not a domain specialization. Use available tools and take action to complete the user's request within the active instructions and permissions.
 `
 
 const planModePrompt = `
@@ -118,10 +118,16 @@ func Build(workingDir, skillsCatalog, subagentsCatalog string, mode AgentMode, a
 	sb.WriteString(persona)
 	sb.WriteString(fmt.Sprintf("\n\nWorking directory: %s", workingDir))
 
-	instructions := resolveProjectInstructions(workingDir, agentCfg)
+	instructions := resolveProjectInstructions(agentCfg)
 	if instructions != "" {
 		sb.WriteString("\n\n")
 		sb.WriteString(instructions)
+	}
+
+	mem := memorySection(workingDir)
+	if mem != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(mem)
 	}
 
 	if skillsCatalog != "" {
@@ -160,6 +166,11 @@ func BuildCompactionPrompt(extraPrompt string) string {
 	}
 	return compactionPrompt
 }
+func BuildAutoCompactionPrompt() string {
+	return compactionPrompt + `
+
+This is an internal agent checkpoint. Keen retains the most recent user message verbatim outside this summary. Do not reproduce that user message verbatim. Preserve active-loop progress and meaningful tool results. Output only the structured summary with no preamble.`
+}
 
 const defaultBtwPrompt = `You are a helper agent for Keen Agent, an AI agent running in a terminal.
 
@@ -191,46 +202,12 @@ func BuildAdversaryPrompt(workingDir string, agentCfg *agentconfig.Config) strin
 	return prompt + fmt.Sprintf("\n\nWorking directory: %s", workingDir)
 }
 
-func projectInstructions(workingDir string) string {
-	candidates := []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md"}
-	path, content := findUpward(workingDir, candidates)
+func memorySection(workingDir string) string {
+	content := memory.Load(workingDir)
 	if content == "" {
 		return ""
 	}
-
-	if len(content) > maxInstructionsSize {
-		content = content[:maxInstructionsSize] + fmt.Sprintf("\n[truncated — full file at %s]", path)
-	}
-
-	return fmt.Sprintf("# Project Instructions (from %s)\n\n%s", path, content)
-}
-
-func findUpward(dir string, candidates []string) (string, string) {
-	dir, err := filepath.Abs(dir)
-	if err != nil {
-		return "", ""
-	}
-
-	for {
-		for _, name := range candidates {
-			path := filepath.Join(dir, name)
-			data, err := os.ReadFile(path)
-			if err == nil {
-				content := strings.TrimSpace(string(data))
-				if content != "" {
-					return path, content
-				}
-			}
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-
-	return "", ""
+	return "# Memory\n\n" + content
 }
 
 func resolvePersona(cfg *agentconfig.Config) string {
@@ -251,7 +228,7 @@ func resolvePersona(cfg *agentconfig.Config) string {
 	return strings.Join(parts, "\n\n")
 }
 
-func resolveProjectInstructions(_ string, cfg *agentconfig.Config) string {
+func resolveProjectInstructions(cfg *agentconfig.Config) string {
 	if cfg == nil {
 		return ""
 	}

@@ -60,7 +60,7 @@ func SetupToolRegistry(
 	webFetchTool := tools.NewWebFetchTool()
 	registerExcludable(webFetchTool)
 
-	if mcpRuntime != nil && hasMCPConfigDirs(agentCfg) {
+	if mcpRuntime != nil && hasMCPConfigPaths(agentCfg) {
 		registerRequired(tools.NewCallMCPTool(mcpRuntime, permissionRequester))
 	}
 
@@ -89,8 +89,8 @@ func builtinToolsExcluded(cfg *agentconfig.Config) map[string]bool {
 	return excluded
 }
 
-func hasMCPConfigDirs(cfg *agentconfig.Config) bool {
-	return cfg != nil && len(cfg.ResolvedMCPConfigDirs()) > 0
+func hasMCPConfigPaths(cfg *agentconfig.Config) bool {
+	return cfg != nil && len(cfg.ResolvedMCPConfigPaths()) > 0
 }
 
 func hasSubagentsDirs(cfg *agentconfig.Config) bool {

@@ -2,23 +2,25 @@ package llm
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	brtypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	"github.com/firebase/genkit/go/ai"
-	openai "github.com/openai/openai-go"
-	openaiParam "github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/responses"
+	openai "github.com/openai/openai-go/v3"
+	openaiParam "github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
 )
 
 const (
 	removedToolResultPlaceholder   = "Tool result removed to fit context."
 	contextWindowExceededError     = "context exceeds model window after removing tool results"
-	contextOutputReserveTokenCount = 8192
 	defaultContextWindowTokenCount = 200000
 )
+
+var ErrContextWindowExceeded = errors.New("context window exceeded")
 
 type contextReduction struct {
 	OriginalTokenCount int
@@ -44,12 +46,14 @@ func contextInputBudget(contextWindowTokenCount int) int {
 	if window <= 0 {
 		window = defaultContextWindowTokenCount
 	}
-	safety := max(4096, window/20)
-	budget := window - contextOutputReserveTokenCount - safety
-	if budget < 1 {
-		return 1
+	return max(1, window-max(4096, window/20)) // 5% safety margin
+}
+
+func shouldAutoCompact(estimatedInputTokenCount, effectiveBudget int) bool {
+	if effectiveBudget <= 0 {
+		return estimatedInputTokenCount > 0
 	}
-	return budget
+	return estimatedInputTokenCount >= effectiveBudget-(effectiveBudget/10) // 90% boundary
 }
 
 func contextFitsBudget(contextWindowTokenCount int, currentInputTokenCount int) bool {
@@ -161,19 +165,34 @@ func reduceResponsesContextForRequest(
 
 	targets := make([]toolResultReductionTarget, 0)
 	for i, item := range next {
-		if item.OfFunctionCallOutput == nil || item.OfFunctionCallOutput.Output == removedToolResultPlaceholder {
+		if item.OfFunctionCallOutput == nil {
+			continue
+		}
+		content, ok := responsesToolOutputContent(item.OfFunctionCallOutput.Output)
+		if !ok || content == removedToolResultPlaceholder {
 			continue
 		}
 		idx := i
 		targets = append(targets, toolResultReductionTarget{
-			tokenCount: estimateContextTokenCount(item.OfFunctionCallOutput.Output),
+			tokenCount: estimateContextTokenCount(content),
 			remove: func() {
-				next[idx].OfFunctionCallOutput.Output = removedToolResultPlaceholder
+				next[idx].OfFunctionCallOutput.Output.OfString = openaiParam.NewOpt(removedToolResultPlaceholder)
+				next[idx].OfFunctionCallOutput.Output.OfResponseFunctionCallOutputItemArray = nil
 			},
 		})
 	}
 
 	return next, reduceToolResultsForRequest(contextWindowTokenCount, estimatedInputTokenCount, targets)
+}
+
+func responsesToolOutputContent(output responses.ResponseInputItemFunctionCallOutputOutputUnionParam) (string, bool) {
+	if output.OfString.Valid() {
+		return output.OfString.Value, true
+	}
+	if output.OfResponseFunctionCallOutputItemArray != nil {
+		return string(marshalContextOrEmpty(output.OfResponseFunctionCallOutputItemArray)), true
+	}
+	return "", false
 }
 
 func estimateResponsesInputTokenCount(input []responses.ResponseInputItemUnionParam) int {

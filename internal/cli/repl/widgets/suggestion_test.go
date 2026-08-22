@@ -2,6 +2,7 @@ package widgets
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
@@ -15,8 +16,8 @@ func TestFilterCommandsEmpty(t *testing.T) {
 
 func TestFilterCommandsC(t *testing.T) {
 	got := replcommands.Filter("/c")
-	if len(got) != 2 || got[0].Name != "/clear" || got[1].Name != "/compact" {
-		t.Errorf("expected /clear and /compact, got %v", got)
+	if len(got) != 3 || got[0].Name != "/clear" || got[1].Name != "/compact" || got[2].Name != "/context" {
+		t.Errorf("expected /clear, /compact and /context, got %v", got)
 	}
 }
 
@@ -233,5 +234,64 @@ func TestNavigationFileMode(t *testing.T) {
 	cur := s.Current()
 	if cur == nil || cur.Name != "b.go" {
 		t.Errorf("expected b.go after down/down/up, got %v", cur)
+	}
+}
+
+func TestRefreshModels(t *testing.T) {
+	s := NewSuggestionModel()
+	s.RefreshModels("/model ", []string{"openai/gpt-4o", "anthropic/claude-sonnet"})
+	if !s.Visible() {
+		t.Fatal("expected suggestions to be visible")
+	}
+	if !s.IsModelMode() {
+		t.Error("expected IsModelMode to be true after RefreshModels")
+	}
+	if s.IsFileMode() {
+		t.Error("model mode should not report file mode")
+	}
+	if len(s.items) < 1 {
+		t.Fatalf("expected at least the prompt item, got %d items", len(s.items))
+	}
+	if s.items[0].Name != "Pick from supported providers" {
+		t.Errorf("expected first item to be 'Pick from supported providers', got %q", s.items[0].Name)
+	}
+}
+
+func TestSuggestionView_ModelModeUsesPrimaryTextSelectionStyle(t *testing.T) {
+	s := NewSuggestionModel()
+	s.RefreshModels("/model openai", []string{"openai/gpt-4o"})
+
+	view := s.View(80)
+	if !strings.Contains(view, "\x1b[1;38;2;189;189;189mopenai/gpt-4o") {
+		t.Fatalf("model suggestion should use the primary text selection style: %q", view)
+	}
+	if strings.Contains(view, "\x1b[1;38;2;92;107;192mopenai/gpt-4o") {
+		t.Fatalf("model suggestion should not use the primary color: %q", view)
+	}
+}
+
+func TestRefreshModelsWithQuery(t *testing.T) {
+	s := NewSuggestionModel()
+	s.RefreshModels("/model an", []string{"openai/gpt-4o", "anthropic/claude-sonnet"})
+	if !s.Visible() {
+		t.Fatal("expected suggestions to be visible for matched query")
+	}
+	if s.items[0].Name != "anthropic/claude-sonnet" {
+		t.Errorf("expected first item to be anthropic match, got %q", s.items[0].Name)
+	}
+	if s.items[0].Value != "/model anthropic/claude-sonnet" {
+		t.Errorf("expected Value to be /model prefix, got %q", s.items[0].Value)
+	}
+}
+
+func TestIsFirstSelected(t *testing.T) {
+	s := NewSuggestionModel()
+	s.RefreshFiles([]string{"a.go", "b.go", "c.go"})
+	if !s.IsFirstSelected() {
+		t.Error("expected IsFirstSelected to be true initially")
+	}
+	s.MoveDown()
+	if s.IsFirstSelected() {
+		t.Error("expected IsFirstSelected to be false after MoveDown")
 	}
 }

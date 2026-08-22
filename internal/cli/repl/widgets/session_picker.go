@@ -133,7 +133,9 @@ func FormatSessionPickerCard(picker *SessionPicker, width, maxHeight int) string
 			out.WriteString("\n")
 			continue
 		}
-		out.WriteString("  " + line + "\n")
+		out.WriteString("  ")
+		out.WriteString(line)
+		out.WriteString("\n")
 	}
 	out.WriteString(rule)
 	out.WriteString("\n")

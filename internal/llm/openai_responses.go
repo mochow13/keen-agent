@@ -10,12 +10,12 @@ import (
 
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/tools"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/packages/ssestream"
-	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/packages/ssestream"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 type responseStream interface {
@@ -60,7 +60,7 @@ type OpenAIResponsesClient struct {
 }
 
 func NewOpenAIResponsesClient(cfg *ClientConfig) (*OpenAIResponsesClient, error) {
-	if cfg.Provider != Provider(config.ProviderOpenAI) {
+	if cfg.Provider != Provider(config.ProviderOpenAI) && cfg.Provider != Provider(config.ProviderOpenCodeGo) {
 		return nil, fmt.Errorf("unsupported Responses API provider: %s. %s", cfg.Provider, config.ConfigFixHint)
 	}
 
@@ -103,10 +103,10 @@ func toOpenAIResponseInput(messages []Message) []responses.ResponseInputItemUnio
 					result = append(result, responses.ResponseInputItemParamOfMessage(step.Text, responses.EasyInputMessageRoleAssistant))
 				}
 				for _, invocation := range step.Activities {
-					result = append(result, responses.ResponseInputItemParamOfFunctionCall(historicalToolArguments(invocation.Input), invocation.ID, invocation.Tool))
+					result = append(result, responses.ResponseInputItemParamOfFunctionCall(historicalToolArguments(invocation.Activity), invocation.ID, invocation.Activity.Tool))
 				}
 				for _, invocation := range step.Activities {
-					result = append(result, responses.ResponseInputItemParamOfFunctionCallOutput(invocation.ID, historicalToolResult(invocation)))
+					result = append(result, responses.ResponseInputItemParamOfFunctionCallOutput(invocation.ID, historicalToolResult(invocation.Activity)))
 				}
 			}
 		}
@@ -167,7 +167,9 @@ func (c *OpenAIResponsesClient) StreamChat(
 		defer close(eventCh)
 
 		input := toOpenAIResponseInput(messages)
-		oneShot := streamOptions(opts).OneShot
+		streamOpts := streamOptions(opts)
+		oneShot := streamOpts.OneShot
+		sessionID := streamOpts.SessionID
 		var replayedPendingInput []responses.ResponseInputItemUnionParam
 		if !oneShot {
 			input, replayedPendingInput = c.injectPendingState(input)
@@ -201,7 +203,7 @@ func (c *OpenAIResponsesClient) StreamChat(
 				params.Tools = responseTools
 			}
 
-			completed, streamedContent, toolCalls, err := c.collectTurnWithRetry(ctx, params, eventCh, c.requestOptions()...)
+			completed, streamedContent, toolCalls, err := c.collectTurnWithRetry(ctx, params, eventCh, c.requestOptions(sessionID)...)
 			if err != nil {
 				c.exitIncomplete(eventCh, input, turnStartLen, replayedPendingInput, err, oneShot)
 				return
@@ -252,10 +254,13 @@ func (c *OpenAIResponsesClient) Reset() {
 	c.pendingState = nil
 }
 
-func (c *OpenAIResponsesClient) requestOptions() []option.RequestOption {
+func (c *OpenAIResponsesClient) requestOptions(sessionID string) []option.RequestOption {
 	var requestOpts []option.RequestOption
 	for k, v := range c.headers {
 		requestOpts = append(requestOpts, option.WithHeader(k, v))
+	}
+	if c.provider == Provider(config.ProviderOpenCodeGo) && sessionID != "" {
+		requestOpts = append(requestOpts, option.WithHeader("x-opencode-session", opencodeSessionID(sessionID)))
 	}
 	return requestOpts
 }
@@ -353,18 +358,17 @@ func (c *OpenAIResponsesClient) collectTurn(
 	stream := c.responseStreamImpl(ctx, params, opts...)
 	var completed *responses.Response
 	var streamedContent strings.Builder
-
 	for stream.Next() {
 		ev := stream.Current()
 
 		switch ev.Type {
 		case "response.output_text.delta":
-			if ev.Delta.OfString != "" {
-				streamedContent.WriteString(ev.Delta.OfString)
-				emitChunk(eventCh, ev.Delta.OfString)
+			if ev.Delta != "" {
+				streamedContent.WriteString(ev.Delta)
+				emitChunk(eventCh, ev.Delta)
 			}
-		case "response.reasoning.delta", "response.reasoning_summary.delta", "response.reasoning_summary_text.delta":
-			reasoning := ev.Delta.OfString
+		case "response.reasoning.delta", "response.reasoning_summary.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+			reasoning := ev.Delta
 			if reasoning == "" {
 				reasoning = ev.Text
 			}
@@ -383,6 +387,10 @@ func (c *OpenAIResponsesClient) collectTurn(
 				msg = msg + " (" + ev.Code + ")"
 			}
 			return nil, streamedContent.String(), nil, fmt.Errorf("%s", msg)
+		case "response.failed":
+			return nil, streamedContent.String(), nil, responseFailedError(ev.AsResponseFailed().Response)
+		case "response.incomplete":
+			return nil, streamedContent.String(), nil, responseIncompleteError(ev.AsResponseIncomplete().Response)
 		case "response.completed":
 			v := ev.AsResponseCompleted()
 			completed = &v.Response
@@ -422,6 +430,9 @@ func responseOutputInputs(output []responses.ResponseOutputItemUnion, fallbackTo
 			messageParam := message.ToParam()
 			result = append(result, responses.ResponseInputItemUnionParam{OfOutputMessage: &messageParam})
 			seenMessage = true
+		case "reasoning":
+			reasoningParam := item.AsReasoning().ToParam()
+			result = append(result, responses.ResponseInputItemUnionParam{OfReasoning: &reasoningParam})
 		case "function_call":
 			toolCall := item.AsFunctionCall()
 			result = append(result, responseFunctionCallInput(toolCall))
@@ -438,6 +449,25 @@ func responseOutputInputs(output []responses.ResponseOutputItemUnion, fallbackTo
 		result = append(result, responseFunctionCallInput(tc))
 	}
 	return result
+}
+
+func responseFailedError(response responses.Response) error {
+	message := strings.TrimSpace(response.Error.Message)
+	if message == "" {
+		message = "response failed"
+	}
+	if response.Error.Code != "" {
+		message += " (" + string(response.Error.Code) + ")"
+	}
+	return fmt.Errorf("%s", message)
+}
+
+func responseIncompleteError(response responses.Response) error {
+	message := "response incomplete"
+	if reason := strings.TrimSpace(response.IncompleteDetails.Reason); reason != "" {
+		message += " (" + reason + ")"
+	}
+	return fmt.Errorf("%s", message)
 }
 
 func responseFunctionCallInput(tc responses.ResponseFunctionToolCall) responses.ResponseInputItemUnionParam {

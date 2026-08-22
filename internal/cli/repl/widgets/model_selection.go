@@ -29,6 +29,7 @@ const (
 	StepProvider Step = iota
 	StepModel
 	StepThinking
+	StepUpdateProviderConfigs
 	StepBaseURL
 	StepAPIKey
 	StepAPIKeyHelper
@@ -49,35 +50,43 @@ type modelSelectionAPIKeyHelperResultMsg struct {
 }
 
 type Model struct {
-	Step             Step
-	SelectedProvider string
-	SelectedModel    string
-	APIKeyInput      string
-	BaseURLInput     string
-	BaseURLError     string
-	ProviderCursor   int
-	ModelCursor      int
-	ThinkingCursor   int
-	ThinkingOptions  []string
-	SelectedThinking string
-	OAuthStatus      string
-	OAuthURL         string
-	ProviderList     []providers.Provider
-	ModelList        []providers.Model
-	ErrorMessage     string
-	oauthCancel      context.CancelFunc
-	authManager      *keenauth.OAuthManager
-	registry         *providers.Registry
-	globalCfg        *config.GlobalConfig
-	loader           *config.Loader
-	resolvedCfg      *config.ResolvedConfig
-	onComplete       func(provider, model, apiKey string) error
+	Step                       Step
+	SelectedProvider           string
+	SelectedModel              string
+	APIKeyInput                string
+	BaseURLInput               string
+	BaseURLError               string
+	ProviderCursor             int
+	ModelCursor                int
+	ThinkingCursor             int
+	ThinkingOptions            []string
+	SelectedThinking           string
+	UpdateProviderConfigCursor int
+	updatingProviderConfig     bool
+	OAuthStatus                string
+	OAuthURL                   string
+	ProviderList               []providers.Provider
+	ModelList                  []providers.Model
+	ErrorMessage               string
+	oauthCancel                context.CancelFunc
+	authManager                *keenauth.OAuthManager
+	registry                   *providers.Registry
+	globalCfg                  *config.GlobalConfig
+	loader                     *config.Loader
+	resolvedCfg                *config.ResolvedConfig
+	onComplete                 func(provider, model, apiKey string) error
 }
 
 func New(registry *providers.Registry, globalCfg *config.GlobalConfig, loader *config.Loader, resolvedCfg *config.ResolvedConfig, onComplete func(provider, model, apiKey string) error) *Model {
+	providerList := make([]providers.Provider, 0, len(registry.Providers))
+	for _, provider := range registry.Providers {
+		if provider.ID != config.ProviderOpenAICompatible {
+			providerList = append(providerList, provider)
+		}
+	}
 	return &Model{
 		Step:         StepProvider,
-		ProviderList: registry.Providers,
+		ProviderList: providerList,
 		authManager:  keenauth.NewOAuthManager(nil),
 		registry:     registry,
 		globalCfg:    globalCfg,
@@ -117,6 +126,10 @@ func (m *Model) handleKeyMsg(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 			m.ProviderCursor = (m.ProviderCursor + 1) % len(m.ProviderList)
 		case "enter":
 			m.SelectedProvider = m.ProviderList[m.ProviderCursor].ID
+			m.APIKeyInput = ""
+			m.BaseURLInput = ""
+			m.BaseURLError = ""
+			m.updatingProviderConfig = false
 			provider, _ := m.registry.GetProvider(m.SelectedProvider)
 			m.ModelList = provider.Models
 			m.ModelCursor = 0
@@ -142,13 +155,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 				m.ThinkingOptions = modelMeta.ThinkingEfforts
 				m.ThinkingCursor = m.resolveThinkingCursor(m.ThinkingOptions)
 				m.Step = StepThinking
-			} else if !promptsForAPIKey(m.SelectedProvider) {
-				return m.complete()
-			} else if supportsBaseURL(m.SelectedProvider) {
-				m.BaseURLInput = m.getExistingBaseURL(m.SelectedProvider)
-				m.Step = StepBaseURL
 			} else {
-				m.Step = StepAPIKey
+				return m.continueAfterModelSelection()
 			}
 		case "esc":
 			return m, func() tea.Msg { return modelSelectionCancelMsg{} }
@@ -162,15 +170,20 @@ func (m *Model) handleKeyMsg(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 			m.ThinkingCursor = (m.ThinkingCursor + 1) % len(m.ThinkingOptions)
 		case "enter":
 			m.SelectedThinking = m.ThinkingOptions[m.ThinkingCursor]
-			if !promptsForAPIKey(m.SelectedProvider) {
+			return m.continueAfterModelSelection()
+		}
+
+	case StepUpdateProviderConfigs:
+		switch msg.String() {
+		case "up", "down":
+			m.UpdateProviderConfigCursor = 1 - m.UpdateProviderConfigCursor
+		case "enter":
+			if m.UpdateProviderConfigCursor == 0 {
 				return m.complete()
 			}
-			if supportsBaseURL(m.SelectedProvider) {
-				m.BaseURLInput = m.getExistingBaseURL(m.SelectedProvider)
-				m.Step = StepBaseURL
-			} else {
-				m.Step = StepAPIKey
-			}
+			m.updatingProviderConfig = true
+			m.beginProviderConfigUpdate()
+			return m, nil
 		case "esc":
 			return m, func() tea.Msg { return modelSelectionCancelMsg{} }
 		}
@@ -276,6 +289,60 @@ func (m *Model) handleOAuthComplete(msg modelSelectionOAuthCompleteMsg) (*Model,
 	return m, nil
 }
 
+func (m *Model) Select(providerID, modelID string) (*Model, tea.Cmd, error) {
+	modelMeta, ok := m.registry.GetModel(providerID, modelID)
+	if !ok {
+		return m, nil, fmt.Errorf("unknown model: %s/%s", providerID, modelID)
+	}
+
+	m.SelectedProvider = providerID
+	m.SelectedModel = modelID
+	m.APIKeyInput = ""
+	m.BaseURLInput = ""
+	m.BaseURLError = ""
+	m.ErrorMessage = ""
+	m.updatingProviderConfig = false
+
+	if modelMeta.SupportsThinkingEffort() {
+		m.ThinkingOptions = modelMeta.ThinkingEfforts
+		m.ThinkingCursor = m.resolveThinkingCursor(m.ThinkingOptions)
+		m.Step = StepThinking
+		return m, nil, nil
+	}
+
+	if config.AuthModeForProvider(m.SelectedProvider) == config.AuthModeOAuth && !m.authManager.HasCredential(m.SelectedProvider) {
+		updated, cmd := m.startOAuth()
+		return updated, cmd, nil
+	}
+	updated, cmd := m.continueAfterModelSelection()
+	return updated, cmd, nil
+}
+
+func (m *Model) continueAfterModelSelection() (*Model, tea.Cmd) {
+	if config.AuthModeForProvider(m.SelectedProvider) == config.AuthModeOAuth && !m.authManager.HasCredential(m.SelectedProvider) {
+		return m.startOAuth()
+	}
+	if !promptsForAPIKey(m.SelectedProvider) {
+		return m.complete()
+	}
+	if m.getExistingAPIKey(m.SelectedProvider) != "" {
+		m.UpdateProviderConfigCursor = 0
+		m.Step = StepUpdateProviderConfigs
+		return m, nil
+	}
+	m.beginProviderConfigUpdate()
+	return m, nil
+}
+
+func (m *Model) beginProviderConfigUpdate() {
+	if supportsBaseURL(m.SelectedProvider) {
+		m.BaseURLInput = m.getExistingBaseURL(m.SelectedProvider)
+		m.Step = StepBaseURL
+		return
+	}
+	m.Step = StepAPIKey
+}
+
 func (m *Model) resolveThinkingCursor(options []string) int {
 	currentEffort := ""
 	if m.resolvedCfg != nil {
@@ -332,15 +399,14 @@ func (m *Model) complete() (*Model, tea.Cmd) {
 	m.globalCfg.ThinkingEffort = storedEffort
 
 	providerCfg := config.ProviderConfig{
-		APIKey: apiKey,
-		Models: []string{m.SelectedModel},
+		APIKey:       apiKey,
+		Models:       []string{m.SelectedModel},
+		BaseURL:      existing.BaseURL,
+		Headers:      existing.Headers,
+		APIKeyHelper: existing.APIKeyHelper,
 	}
-	if supportsBaseURL(m.SelectedProvider) {
+	if supportsBaseURL(m.SelectedProvider) && (m.updatingProviderConfig || !exists) {
 		providerCfg.BaseURL = m.BaseURLInput
-	}
-	if exists {
-		providerCfg.Headers = existing.Headers
-		providerCfg.APIKeyHelper = existing.APIKeyHelper
 	}
 
 	if providerCfg.APIKeyHelper != "" {
@@ -415,6 +481,8 @@ func (m *Model) ViewString() string {
 		return m.renderModelSelection()
 	case StepThinking:
 		return m.renderThinkingSelection()
+	case StepUpdateProviderConfigs:
+		return m.renderUpdateProviderConfigs()
 	case StepBaseURL:
 		return m.renderBaseURLInput()
 	case StepAPIKey:
@@ -432,7 +500,8 @@ func (m *Model) renderProviderSelection() string {
 	view.WriteString(repltheme.UserPromptStyle.Render("Select a provider:"))
 	view.WriteString("\n\n")
 	view.WriteString(m.renderList(m.ProviderCursor, func(i int) string { return m.ProviderList[i].Name }, len(m.ProviderList)))
-	view.WriteString("\n" + repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
+	view.WriteString("\n")
+	view.WriteString(repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
 	return view.String()
 }
 
@@ -442,7 +511,8 @@ func (m *Model) renderModelSelection() string {
 	view.WriteString(repltheme.UserPromptStyle.Render(fmt.Sprintf("Select a model for %s:", providerName)))
 	view.WriteString("\n\n")
 	view.WriteString(m.renderList(m.ModelCursor, func(i int) string { return m.ModelList[i].Name }, len(m.ModelList)))
-	view.WriteString("\n" + repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
+	view.WriteString("\n")
+	view.WriteString(repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
 	return view.String()
 }
 
@@ -451,7 +521,20 @@ func (m *Model) renderThinkingSelection() string {
 	view.WriteString(repltheme.UserPromptStyle.Render("Select thinking effort:"))
 	view.WriteString("\n\n")
 	view.WriteString(m.renderList(m.ThinkingCursor, func(i int) string { return m.ThinkingOptions[i] }, len(m.ThinkingOptions)))
-	view.WriteString("\n" + repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
+	view.WriteString("\n")
+	view.WriteString(repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
+	return view.String()
+}
+
+func (m *Model) renderUpdateProviderConfigs() string {
+	var view strings.Builder
+	view.WriteString(repltheme.UserPromptStyle.Render("Update provider configs?"))
+	view.WriteString("\n\n")
+	view.WriteString(m.renderList(m.UpdateProviderConfigCursor, func(i int) string {
+		return []string{"No", "Yes"}[i]
+	}, 2))
+	view.WriteString("\n")
+	view.WriteString(repltheme.HintStyle.Render("[↑/↓ to navigate, Enter to select, Esc to cancel]"))
 	return view.String()
 }
 
@@ -467,11 +550,14 @@ func (m *Model) renderBaseURLInput() string {
 	view.WriteString(repltheme.UserPromptStyle.Render(title))
 	view.WriteString("\n\n")
 
-	view.WriteString(repltheme.PromptStyle.Render(" ▶ ") + m.BaseURLInput)
-	view.WriteString("\n\n" + repltheme.HintStyle.Render("[Enter to confirm, Esc to cancel]"))
+	view.WriteString(repltheme.PromptStyle.Render(" ▶ "))
+	view.WriteString(m.BaseURLInput)
+	view.WriteString("\n\n")
+	view.WriteString(repltheme.HintStyle.Render("[Enter to confirm, Esc to cancel]"))
 
 	if m.BaseURLError != "" {
-		view.WriteString("\n" + repltheme.ErrorStyle.Render(m.BaseURLError))
+		view.WriteString("\n")
+		view.WriteString(repltheme.ErrorStyle.Render(m.BaseURLError))
 	}
 	return view.String()
 }
@@ -496,11 +582,14 @@ func (m *Model) renderAPIKeyInput() string {
 	view.WriteString("\n\n")
 
 	maskedKey := strings.Repeat("•", len(m.APIKeyInput))
-	view.WriteString(repltheme.PromptStyle.Render(" ▶ ") + maskedKey)
-	view.WriteString("\n\n" + repltheme.HintStyle.Render("[Enter to confirm, Esc to cancel]"))
+	view.WriteString(repltheme.PromptStyle.Render(" ▶ "))
+	view.WriteString(maskedKey)
+	view.WriteString("\n\n")
+	view.WriteString(repltheme.HintStyle.Render("[Enter to confirm, Esc to cancel]"))
 
 	if m.ErrorMessage != "" {
-		view.WriteString("\n" + repltheme.ErrorStyle.Render(m.ErrorMessage))
+		view.WriteString("\n")
+		view.WriteString(repltheme.ErrorStyle.Render(m.ErrorMessage))
 	}
 	return view.String()
 }
@@ -526,13 +615,16 @@ func (m *Model) renderOAuthStatus() string {
 	view.WriteString(repltheme.NormalStyle.Render(status))
 	view.WriteString("\n")
 	if m.OAuthURL != "" {
-		view.WriteString("\n" + repltheme.HintStyle.Render("URL:"))
-		view.WriteString("\n" + repltheme.NormalStyle.Render(m.OAuthURL))
+		view.WriteString("\n")
+		view.WriteString(repltheme.HintStyle.Render("URL:"))
+		view.WriteString("\n")
+		view.WriteString(repltheme.NormalStyle.Render(m.OAuthURL))
 		view.WriteString("\n")
 	}
 	view.WriteString(repltheme.HintStyle.Render("After authentication succeeds, return to Keen Agent. Press Esc to cancel."))
 	if m.ErrorMessage != "" {
-		view.WriteString("\n\n" + repltheme.ErrorStyle.Render(m.ErrorMessage))
+		view.WriteString("\n\n")
+		view.WriteString(repltheme.ErrorStyle.Render(m.ErrorMessage))
 	}
 	return view.String()
 }
@@ -541,18 +633,23 @@ func (m *Model) renderList(cursor int, getName func(int) string, count int) stri
 	var view strings.Builder
 	start, end := visibleListRange(cursor, count, maxVisibleListItems)
 	if start > 0 {
-		view.WriteString(repltheme.HighlightStyle.Render("  ↑") + "\n")
+		view.WriteString(repltheme.HighlightStyle.Render("  ↑"))
+		view.WriteString("\n")
 	}
 	for i := start; i < end; i++ {
 		if i == cursor {
-			view.WriteString(repltheme.ModelSelectionStyle.Render("▶ " + getName(i)))
+			view.WriteString(repltheme.ModelSelectionStyle.Render("▶ "))
+			view.WriteString(getName(i))
 			view.WriteString("\n")
 			continue
 		}
-		view.WriteString("  " + repltheme.NormalStyle.Render(getName(i)) + "\n")
+		view.WriteString("  ")
+		view.WriteString(repltheme.NormalStyle.Render(getName(i)))
+		view.WriteString("\n")
 	}
 	if end < count {
-		view.WriteString(repltheme.HighlightStyle.Render("  ↓") + "\n")
+		view.WriteString(repltheme.HighlightStyle.Render("  ↓"))
+		view.WriteString("\n")
 	}
 	return view.String()
 }

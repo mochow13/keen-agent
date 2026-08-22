@@ -84,7 +84,7 @@ builtin_tools:
         permission: deny
 subagents_dirs:
   - ./subagents
-mcp_config_dirs:
+mcp_config_paths:
   - ./mcp-config.json
 skills_dirs:
   - ./skills
@@ -171,9 +171,9 @@ skills_dirs:
 	if len(resolvedSub) != 1 || resolvedSub[0] != filepath.Join(dir, "subagents") {
 		t.Errorf("unexpected resolved subagents dirs: %v", resolvedSub)
 	}
-	resolvedMCP := cfg.ResolvedMCPConfigDirs()
+	resolvedMCP := cfg.ResolvedMCPConfigPaths()
 	if len(resolvedMCP) != 1 || resolvedMCP[0] != filepath.Join(dir, "mcp-config.json") {
-		t.Errorf("unexpected resolved mcp config dirs: %v", resolvedMCP)
+		t.Errorf("unexpected resolved mcp config paths: %v", resolvedMCP)
 	}
 	resolvedSkills := cfg.ResolvedSkillsDirs()
 	if len(resolvedSkills) != 1 || resolvedSkills[0] != filepath.Join(dir, "skills") {
@@ -325,7 +325,7 @@ func TestLoad_StringOrArrayBackwardCompat(t *testing.T) {
 	path := writeConfig(t, dir, `name: compat
 system_prompt: hi
 subagents_dirs: ./subagents
-mcp_config_dirs: ./mcp.json
+mcp_config_paths: ./mcp.json
 skills_dirs: ./skills
 `)
 	cfg, err := Load(path)
@@ -335,8 +335,8 @@ skills_dirs: ./skills
 	if len(cfg.SubagentsDirs) != 1 || cfg.SubagentsDirs[0] != "./subagents" {
 		t.Errorf("unexpected subagents_dirs: %v", cfg.SubagentsDirs)
 	}
-	if len(cfg.MCPConfigDirs) != 1 || cfg.MCPConfigDirs[0] != "./mcp.json" {
-		t.Errorf("unexpected mcp_config_dirs: %v", cfg.MCPConfigDirs)
+	if len(cfg.MCPConfigPaths) != 1 || cfg.MCPConfigPaths[0] != "./mcp.json" {
+		t.Errorf("unexpected mcp_config_paths: %v", cfg.MCPConfigPaths)
 	}
 	if len(cfg.SkillsDirs) != 1 || cfg.SkillsDirs[0] != "./skills" {
 		t.Errorf("unexpected skills_dirs: %v", cfg.SkillsDirs)

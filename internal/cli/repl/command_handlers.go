@@ -50,6 +50,11 @@ func (m *replModel) dispatchCommand(input string) (replModel, tea.Cmd, bool) {
 		m.textarea.Reset()
 		return m.startModelSelection(), nil, true
 
+	case strings.HasPrefix(input, replcommands.Model+" "):
+		m.textarea.Reset()
+		pair := strings.TrimSpace(strings.TrimPrefix(input, replcommands.Model))
+		return m.startModelSelectionPair(pair)
+
 	case input == replcommands.MCP || strings.HasPrefix(input, replcommands.MCP+" "):
 		m.textarea.Reset()
 		result, cmd := m.handleMCPCommand(input)
@@ -147,6 +152,16 @@ func (m *replModel) dispatchCommand(input string) (replModel, tea.Cmd, bool) {
 		result := m.handleToolPermissionCommand(input, replcommands.ResetPermission, false)
 		return result, nil, true
 
+	case input == replcommands.ToolHistory || strings.HasPrefix(input, replcommands.ToolHistory+" "):
+		m.textarea.Reset()
+		result := m.handleToolHistoryCommand(input)
+		return result, nil, true
+
+	case input == replcommands.Context:
+		m.textarea.Reset()
+		m.handleContextCommand()
+		return *m, nil, true
+
 	case input == replcommands.Compact || strings.HasPrefix(input, replcommands.Compact+" "):
 		extraPrompt := strings.TrimSpace(strings.TrimPrefix(input, replcommands.Compact))
 		if !m.appState.IsClientReady(m.ctx.cfg) {
@@ -179,6 +194,30 @@ func (m *replModel) startModelSelection() replModel {
 	m.updateViewportContent()
 	m.viewport.GotoBottom()
 	return *m
+}
+
+func (m *replModel) startModelSelectionPair(pair string) (replModel, tea.Cmd, bool) {
+	providerID, modelID, ok := strings.Cut(pair, "/")
+	if !ok || providerID == "" || modelID == "" || strings.Contains(modelID, "/") {
+		m.output.AddError("Usage: /model <provider/model-id>", repltheme.ErrorStyle)
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
+		return *m, nil, true
+	}
+
+	updated := m.startModelSelection()
+	selection, cmd, err := updated.modelSelection.Select(providerID, modelID)
+	updated.modelSelection = selection
+	if err != nil {
+		updated.output.AddError(err.Error(), repltheme.ErrorStyle)
+		updated.modelSelection = nil
+		updated.updateViewportContent()
+		updated.viewport.GotoBottom()
+		return updated, nil, true
+	}
+	updated.updateViewportContent()
+	updated.viewport.GotoBottom()
+	return updated, cmd, true
 }
 
 func (m *replModel) startCompaction(extraPrompt string) (replModel, tea.Cmd) {
@@ -297,6 +336,32 @@ func (m *replModel) handleShowThinkingCommand(input string) replModel {
 		} else {
 			m.output.AddStyledLine("  Thinking tokens: hidden (use /show-thinking on to show)", repltheme.HighlightStyle)
 		}
+	}
+
+	m.output.AddEmptyLine()
+	m.updateViewportContent()
+	m.viewport.GotoBottom()
+	return *m
+}
+
+func (m *replModel) handleToolHistoryCommand(input string) replModel {
+	arg := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(input, replcommands.ToolHistory)))
+
+	switch arg {
+	case "full":
+		m.toolHistory = toolHistoryFull
+		m.output.AddStyledLine("  ✓ Full tool outputs will be retained for future turns", repltheme.HighlightStyle)
+	case "none":
+		m.toolHistory = toolHistoryNone
+		m.output.AddStyledLine("  ✓ Tool outputs will be omitted from future turns", repltheme.HighlightStyle)
+	case "":
+		if m.toolHistory == toolHistoryFull {
+			m.output.AddStyledLine("  Tool output history: full (use /tool-history none to disable)", repltheme.HighlightStyle)
+		} else {
+			m.output.AddStyledLine("  Tool output history: none (use /tool-history full to enable)", repltheme.HighlightStyle)
+		}
+	default:
+		m.output.AddError("Usage: /tool-history full|none", repltheme.ErrorStyle)
 	}
 
 	m.output.AddEmptyLine()

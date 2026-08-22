@@ -179,8 +179,27 @@ func TestNewClient_OpenCodeGoOpenAICompatibleModel(t *testing.T) {
 	if oaiClient.thinkingEffort != "enabled" {
 		t.Fatalf("expected thinking effort enabled, got %q", oaiClient.thinkingEffort)
 	}
-	if oaiClient.contextWindowTokenCount != 256000 {
-		t.Fatalf("expected context window 256000, got %d", oaiClient.contextWindowTokenCount)
+	if oaiClient.contextWindowTokenCount != 262144 {
+		t.Fatalf("expected context window 262144, got %d", oaiClient.contextWindowTokenCount)
+	}
+}
+
+func TestNewClient_OpenCodeGoResponsesModel(t *testing.T) {
+	client, err := NewClient(&config.ResolvedConfig{
+		Provider:       config.ProviderOpenCodeGo,
+		Model:          "gpt-5.6-luna",
+		APIKey:         "test-api-key",
+		ThinkingEffort: "max",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	responsesClient, ok := client.(*OpenAIResponsesClient)
+	if !ok {
+		t.Fatalf("expected *OpenAIResponsesClient, got %T", client)
+	}
+	if responsesClient.provider != Provider(config.ProviderOpenCodeGo) {
+		t.Fatalf("expected provider opencode-go, got %s", responsesClient.provider)
 	}
 }
 
@@ -250,8 +269,8 @@ func TestNewClient_MiniMax(t *testing.T) {
 	if anthropicClient.thinkingEffort != "" {
 		t.Fatalf("expected no Anthropic thinking effort for MiniMax, got %q", anthropicClient.thinkingEffort)
 	}
-	if anthropicClient.contextWindowTokenCount != defaultContextWindowTokenCount {
-		t.Fatalf("expected fallback context window %d, got %d", defaultContextWindowTokenCount, anthropicClient.contextWindowTokenCount)
+	if anthropicClient.contextWindowTokenCount != 204800 {
+		t.Fatalf("expected context window 204800, got %d", anthropicClient.contextWindowTokenCount)
 	}
 }
 

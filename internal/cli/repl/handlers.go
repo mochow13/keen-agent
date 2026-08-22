@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
+	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
 	reploutput "github.com/mochow13/keen-agent/internal/cli/repl/output"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	repltheme "github.com/mochow13/keen-agent/internal/cli/repl/theme"
@@ -157,6 +159,15 @@ func (m *replModel) handleLLMRetry(err error, attempt int) (replModel, tea.Cmd) 
 	return *m, m.waitForAsyncEvent()
 }
 
+func (m *replModel) handleAutoCompactionApplied(event *llm.AutoCompactionEvent) (replModel, tea.Cmd) {
+	if event == nil || len(event.Replacement) == 0 {
+		return *m, m.waitForAsyncEvent()
+	}
+	m.appState.ReplaceMessages(replappstate.WithoutSystemMessages(event.Replacement))
+	m.refreshContextStatus()
+	return *m, m.waitForAsyncEvent()
+}
+
 func (m *replModel) handleCompactionDone() (replModel, tea.Cmd) {
 	m.flushStreamRender()
 	segments := cloneStreamSegments(m.streamHandler.segments)
@@ -304,15 +315,28 @@ func (m *replModel) handleSuggestionKeyMsg(keyMsg tea.KeyPressMsg) (bool, replMo
 			result, cmd := m.handleFileModeSelection()
 			return true, result, cmd
 		}
+		if keyMsg.String() == keyEnter && !m.suggestion.IsModelMode() && (m.textarea.Value() == replcommands.Model || (m.suggestion.Current() != nil && m.suggestion.Current().Name == replcommands.Model)) {
+			m.textarea.SetValue(replcommands.Model)
+			m.suggestion.Hide()
+			m.refreshSuggestions(m.textarea.Value())
+			m.adjustTextareaHeight()
+			return true, *m, nil
+		}
+		if keyMsg.String() == keyEnter && m.textarea.Value() == replcommands.Model && m.suggestion.IsModelMode() && m.suggestion.IsFirstSelected() {
+			m.suggestion.Hide()
+			m.adjustTextareaHeight()
+			result, cmd := m.handleEnterKey()
+			return true, result, cmd
+		}
 		if cur := m.suggestion.Current(); cur != nil {
-			m.textarea.SetValue(cur.Name)
+			m.textarea.SetValue(suggestionValue(cur))
 		} else if first := m.suggestion.First(); first != nil {
-			m.textarea.SetValue(first.Name)
+			m.textarea.SetValue(suggestionValue(first))
 		}
 		if keyMsg.String() == keyEnter {
-			m.suggestion.Refresh("")
+			m.suggestion.Hide()
 		} else {
-			m.suggestion.Refresh(m.textarea.Value())
+			m.refreshSuggestions(m.textarea.Value())
 		}
 		m.adjustTextareaHeight()
 		return true, *m, nil
@@ -330,6 +354,13 @@ func (m *replModel) handleSuggestionKeyMsg(keyMsg tea.KeyPressMsg) (bool, replMo
 		}
 	}
 	return false, *m, nil
+}
+
+func suggestionValue(item *replwidgets.SuggestionItem) string {
+	if item.Value != "" {
+		return item.Value
+	}
+	return item.Name
 }
 
 func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
@@ -392,9 +423,7 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 			var textCmd tea.Cmd
 			m.textarea, textCmd = m.textarea.Update(keyMsg)
 			input := m.textarea.Value()
-			if !m.refreshFileSuggestions(input) && strings.HasPrefix(input, "/") {
-				m.refreshCommandSuggestions(input)
-			}
+			m.refreshSuggestions(input)
 			m.adjustTextareaHeight()
 			return *m, tea.Batch(cmd, textCmd)
 		}
@@ -507,15 +536,39 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(keyMsg)
 	input := m.textarea.Value()
-	if !m.refreshFileSuggestions(input) && strings.HasPrefix(input, "/") {
-		m.refreshCommandSuggestions(input)
-	}
+	m.refreshSuggestions(input)
 	m.adjustTextareaHeight()
 	return *m, cmd
 }
 
-func (m *replModel) refreshCommandSuggestions(input string) {
-	m.suggestion.RefreshWithSkillsAndHelpers(input, m.skillSuggestions(), m.btwEnabled(), m.adversaryEnabled())
+func (m *replModel) refreshSuggestions(input string) {
+	if input == "" {
+		m.suggestion.Hide()
+		return
+	}
+	if m.refreshFileSuggestions(input) {
+		return
+	}
+	if strings.HasPrefix(input, replcommands.Model) && (input == replcommands.Model || strings.HasPrefix(input, replcommands.Model+" ")) {
+		m.suggestion.RefreshModels(input, m.modelPairs())
+		return
+	}
+	if strings.HasPrefix(input, "/") {
+		m.suggestion.RefreshWithSkillsAndHelpers(input, m.skillSuggestions(), m.btwEnabled(), m.adversaryEnabled())
+	}
+}
+
+func (m *replModel) modelPairs() []string {
+	if m.ctx == nil || m.ctx.registry == nil {
+		return nil
+	}
+	pairs := make([]string, 0)
+	for _, provider := range m.ctx.registry.Providers {
+		for _, model := range provider.Models {
+			pairs = append(pairs, provider.ID+"/"+model.ID)
+		}
+	}
+	return pairs
 }
 
 func (m *replModel) skillSuggestions() []replwidgets.SuggestionItem {
@@ -671,6 +724,46 @@ func (m *replModel) handlePermissionKeyMsg(msg tea.KeyPressMsg) (replModel, tea.
 }
 
 func (m replModel) handleLLMStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
+	if streamMsg, ok := msg.(mainStreamMsg); ok {
+		if m.streamHandler == nil || m.streamHandler.eventCh != streamMsg.eventCh {
+			return m, nil, true
+		}
+		if streamMsg.closed {
+			msg = llmDoneMsg{}
+		} else {
+			switch streamMsg.event.Type {
+			case llm.StreamEventTypeChunk:
+				msg = llmChunkMsg(streamMsg.event.Content)
+			case llm.StreamEventTypeReasoningChunk:
+				msg = llmReasoningChunkMsg(streamMsg.event.Content)
+			case llm.StreamEventTypeDone:
+				msg = llmDoneMsg{}
+			case llm.StreamEventTypeError:
+				msg = llmErrorMsg{err: streamMsg.event.Error}
+			case llm.StreamEventTypeIncomplete:
+				msg = llmIncompleteMsg{err: streamMsg.event.Error}
+			case llm.StreamEventTypeToolStart:
+				msg = llmToolStartMsg{toolCall: streamMsg.event.ToolCall}
+			case llm.StreamEventTypeToolEnd:
+				msg = llmToolEndMsg{toolCall: streamMsg.event.ToolCall}
+			case llm.StreamEventTypeUsage:
+				msg = llmUsageMsg{usage: streamMsg.event.Usage}
+			case llm.StreamEventTypeRetry:
+				msg = llmRetryMsg{err: streamMsg.event.Error, attempt: streamMsg.event.Attempt}
+			case llm.StreamEventTypeAutoCompactionStarted:
+				msg = llmAutoCompactionStartedMsg{event: streamMsg.event.AutoCompaction}
+			case llm.StreamEventTypeAutoCompactionApplied:
+				msg = llmAutoCompactionAppliedMsg{event: streamMsg.event.AutoCompaction}
+			case llm.StreamEventTypeAutoCompactionCancelled:
+				msg = llmAutoCompactionCancelledMsg{event: streamMsg.event.AutoCompaction}
+			case llm.StreamEventTypeAutoCompactionFailed:
+				msg = llmAutoCompactionFailedMsg{event: streamMsg.event.AutoCompaction}
+			default:
+				msg = llmDoneMsg{}
+			}
+		}
+	}
+
 	if updated, cmd, handled := m.handleBtwStreamMsg(msg); handled {
 		return updated, cmd, true
 	}
@@ -687,7 +780,7 @@ func (m replModel) handleLLMStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 
 	if m.streamHandler == nil || !m.streamHandler.IsActive() {
 		switch msg.(type) {
-		case llmChunkMsg, llmReasoningChunkMsg, llmDoneMsg, llmIncompleteMsg, llmErrorMsg, llmRetryMsg, llmToolStartMsg, llmToolEndMsg, llmUsageMsg:
+		case llmChunkMsg, llmReasoningChunkMsg, llmDoneMsg, llmIncompleteMsg, llmErrorMsg, llmRetryMsg, llmToolStartMsg, llmToolEndMsg, llmUsageMsg, llmAutoCompactionStartedMsg, llmAutoCompactionAppliedMsg, llmAutoCompactionCancelledMsg, llmAutoCompactionFailedMsg:
 			return m, nil, true
 		}
 	}
@@ -719,6 +812,11 @@ func (m replModel) handleLLMStreamMsg(msg tea.Msg) (replModel, tea.Cmd, bool) {
 		return updated, cmd, true
 	case llmToolEndMsg:
 		updated, cmd := m.handleToolEnd(msg.toolCall)
+		return updated, cmd, true
+	case llmAutoCompactionStartedMsg, llmAutoCompactionCancelledMsg, llmAutoCompactionFailedMsg:
+		return m, m.waitForAsyncEvent(), true
+	case llmAutoCompactionAppliedMsg:
+		updated, cmd := m.handleAutoCompactionApplied(msg.event)
 		return updated, cmd, true
 	default:
 		return m, nil, false

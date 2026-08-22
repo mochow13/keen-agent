@@ -106,11 +106,11 @@ skills_dirs:
   - .keen/skills
 subagents_dirs:
   - .keen/subagents
-mcp_config_dirs:
-  - .keen/mcp
+mcp_config_paths:
+  - .keen/mcp.json
 ```
 
-All file and directory paths in the configuration are resolved relative to `agent.yaml`; absolute paths remain absolute. `system_prompt_files`, `skills_dirs`, `subagents_dirs`, and `mcp_config_dirs` accept either a single string or a list of strings.
+All file and directory paths in the configuration are resolved relative to `agent.yaml`; absolute paths remain absolute. `system_prompt_files`, `skills_dirs`, `subagents_dirs`, and `mcp_config_paths` accept either a single string or a list of strings.
 
 Every system-prompt configuration—the primary agent, each mode, `btw`, and `adversary`—supports `system_prompt`, `system_prompt_files`, or both. For the primary agent, Keen Agent always prepends its harness contract (tool-memory and safety rules), then appends the inline `system_prompt`, followed by the referenced `system_prompt_files` in order. The built-in style persona (tone, task workflow, tool-usage guidance) is included only when the configuration provides no prompt source of its own. Mode overlays and helper prompts are composed separately.
 
@@ -144,7 +144,7 @@ Every system-prompt configuration—the primary agent, each mode, `btw`, and `ad
 | `adversary.system_prompt_files` | No | One or more instruction files for adversarial review. |
 | `skills_dirs` | No | One or more directories from which to load skills. Nothing is loaded unless configured. |
 | `subagents_dirs` | No | One or more directories from which to load subagent profiles. Nothing is loaded unless configured. |
-| `mcp_config_dirs` | No | One or more locations containing MCP configuration. No MCP configurations are loaded unless configured. |
+| `mcp_config_paths` | No | One or more paths to MCP configuration files. No MCP configurations are loaded unless configured. |
 
 Use the validation command after changing configuration:
 
@@ -250,7 +250,7 @@ List available profiles with `/subagents list`. The primary agent can delegate b
 
 ### MCP servers
 
-MCP servers are opt-in. Keen Agent does not load MCP configuration directories by default: declare one or more `mcp_config_dirs` in `agent.yaml`. Configuration files found in those directories are merged, with later values taking precedence.
+MCP servers are opt-in. Keen Agent does not load MCP configurations by default: declare one or more `mcp_config_paths` (paths to MCP configuration files) in `agent.yaml`. The referenced configuration files are merged, with later values taking precedence.
 
 Example local stdio server configuration:
 

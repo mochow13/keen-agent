@@ -113,6 +113,21 @@ func NewClient(cfg *config.ResolvedConfig) (LLMClient, error) {
 			Headers:             cfg.Headers,
 		})
 	case config.ProviderOpenCodeGo:
+		if cfg.Model == "gpt-5.6-luna" {
+			baseURL := cfg.BaseURL
+			if baseURL == "" {
+				baseURL = openCodeGoBaseURL + "/v1/"
+			}
+			return NewOpenAIResponsesClient(&ClientConfig{
+				Provider:            Provider(cfg.Provider),
+				APIKey:              cfg.APIKey,
+				Model:               cfg.Model,
+				ThinkingEffort:      cfg.ThinkingEffort,
+				BaseURL:             baseURL,
+				ContextWindowTokens: contextWindowTokenCount,
+				Headers:             cfg.Headers,
+			})
+		}
 		if isOpenCodeGoAnthropicModel(cfg.Model) {
 			return NewAnthropicClient(&ClientConfig{
 				Provider:            Provider(cfg.Provider),
