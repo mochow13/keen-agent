@@ -1,0 +1,30 @@
+name: Stock Analysis Agent
+ascii_art: |
+       ╭────────────────────────────────────╮
+       │   $  S T O C K   A N A L Y S I S  │
+       │                                    │
+       │       ╭─╮              ╭────●      │
+       │    ╭──╯ ╰─╮      ╭─────╯           │
+       │  ──╯      ╰──────╯      ▲          │
+       │                         / \         │
+       ╰────────────────────────────────────╯
+
+model:
+  provider: openai-codex
+  model_id: gpt-5.6-sol
+
+default_mode: build
+
+system_prompt_files:
+  - prompts/system.md
+
+builtin_tools:
+  exclude:
+    - bash
+    - web_fetch
+
+skills_dirs:
+  - skills
+
+mcp_config_paths:
+  - mcp/configs.json

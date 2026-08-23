@@ -1,0 +1,158 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "additionalQueries": {
+      "description": "Additional query variations to expand search coverage",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "category": {
+      "description": "Filter results to a specific category",
+      "enum": [
+        "company",
+        "publication",
+        "news",
+        "pdf",
+        "github",
+        "personal site",
+        "people",
+        "financial report"
+      ],
+      "type": "string"
+    },
+    "contextMaxCharacters": {
+      "description": "Max characters for context string (not included by default)",
+      "minimum": 1,
+      "type": "number"
+    },
+    "enableHighlights": {
+      "description": "Enable highlights extraction",
+      "type": "boolean"
+    },
+    "enableSummary": {
+      "description": "Enable summary generation for results",
+      "type": "boolean"
+    },
+    "endCrawlDate": {
+      "description": "Only include results crawled before this date (ISO 8601: YYYY-MM-DD)",
+      "type": "string"
+    },
+    "endPublishedDate": {
+      "description": "Only include results published before this date (ISO 8601: YYYY-MM-DD)",
+      "type": "string"
+    },
+    "excludeDomains": {
+      "description": "Exclude results from these domains",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "excludeText": {
+      "description": "Exclude results containing ANY of these text strings",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "highlightsMaxCharacters": {
+      "description": "Maximum total characters across all highlights per URL. Preferred over highlightsNumSentences.",
+      "type": "number"
+    },
+    "highlightsNumSentences": {
+      "description": "Deprecated: mapped to ~1333 chars/sentence. Use highlightsMaxCharacters instead.",
+      "type": "number"
+    },
+    "highlightsPerUrl": {
+      "description": "Deprecated: currently ignored server-side. Use highlightsMaxCharacters instead.",
+      "type": "number"
+    },
+    "highlightsQuery": {
+      "description": "Query for highlight relevance",
+      "type": "string"
+    },
+    "includeDomains": {
+      "description": "Only include results from these domains (e.g., ['arxiv.org', 'github.com'])",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "includeText": {
+      "description": "Only include results containing ALL of these text strings",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "livecrawlTimeout": {
+      "description": "Timeout in milliseconds for fetching fresh content when maxAgeHours triggers a live fetch",
+      "type": "number"
+    },
+    "maxAgeHours": {
+      "description": "Maximum age of cached content in hours. 0 = always fetch fresh content, omit = use cached content with fresh fetch fallback",
+      "type": "number"
+    },
+    "moderation": {
+      "description": "Filter out unsafe/inappropriate content",
+      "type": "boolean"
+    },
+    "numResults": {
+      "description": "Number of results (1-100, default: 10)",
+      "type": "number"
+    },
+    "query": {
+      "description": "Search query - can be a question, statement, or keywords",
+      "minLength": 1,
+      "type": "string"
+    },
+    "startCrawlDate": {
+      "description": "Only include results crawled after this date (ISO 8601: YYYY-MM-DD)",
+      "type": "string"
+    },
+    "startPublishedDate": {
+      "description": "Only include results published after this date (ISO 8601: YYYY-MM-DD)",
+      "type": "string"
+    },
+    "subpageTarget": {
+      "description": "Keywords to target when selecting subpages",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "subpages": {
+      "description": "Number of subpages to crawl from each result (1-10)",
+      "type": "number"
+    },
+    "summaryQuery": {
+      "description": "Focus query for summary generation",
+      "type": "string"
+    },
+    "textMaxCharacters": {
+      "description": "Max characters for text extraction per result",
+      "minimum": 1,
+      "type": "number"
+    },
+    "type": {
+      "description": "Search type - 'auto': high quality and works with all filters (recommended), 'fast': quick results, 'instant': fastest results",
+      "enum": [
+        "auto",
+        "fast",
+        "instant"
+      ],
+      "type": "string"
+    },
+    "userLocation": {
+      "description": "ISO country code for geo-targeted results (e.g., 'US', 'GB', 'DE')",
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "maxCharacters": {
+      "description": "Maximum characters to extract per page (default: 3000)",
+      "minimum": 1,
+      "type": "number"
+    },
+    "urls": {
+      "description": "URLs to read. Batch multiple URLs in one call.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "urls"
+  ],
+  "type": "object"
+}
