@@ -125,6 +125,28 @@ func TestResolveProviderAPIKey_MissingAPIKey(t *testing.T) {
 	}
 }
 
+func TestResolveAdversary_PreservesProviderSettings(t *testing.T) {
+	global := &GlobalConfig{
+		AdversaryProvider: ProviderBedrock,
+		AdversaryModel:    "critic-model",
+		ThinkingEffort:    "high",
+		Providers: map[string]ProviderConfig{
+			ProviderBedrock: {
+				APIKeyHelper: "printf helper-key",
+				BaseURL:      "https://example.com",
+				Headers:      map[string]string{"X-Test": "value"},
+			},
+		},
+	}
+	resolved, err := ResolveAdversary(global)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Provider != ProviderBedrock || resolved.Model != "critic-model" || resolved.APIKey != "helper-key" || resolved.APIKeyHelper != "printf helper-key" || resolved.ThinkingEffort != "high" || resolved.BaseURL != "https://example.com" || resolved.Headers["X-Test"] != "value" {
+		t.Fatalf("unexpected resolved adversary config: %+v", resolved)
+	}
+}
+
 func TestDefaultGlobalConfig(t *testing.T) {
 	cfg := DefaultGlobalConfig()
 

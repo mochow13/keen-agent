@@ -9,8 +9,9 @@ system_prompt: |
   You are TestAgent. Inline persona line for testing.
 system_prompt_files: testdata/prompts/persona.md
 
-# Project instructions override
-project_instructions: AGENTS.md
+# Project instruction files
+project_instruction_paths:
+  - AGENTS.md
 
 default_mode: build
 

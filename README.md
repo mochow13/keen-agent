@@ -64,7 +64,8 @@ system_prompt: |
   Investigate available evidence before recommending an action.
 system_prompt_files:
   - prompts/base.md
-project_instructions: instructions.md
+project_instruction_paths:
+  - instructions.md
 
 default_mode: build
 modes:
@@ -110,9 +111,9 @@ mcp_config_paths:
   - .keen/mcp.json
 ```
 
-All file and directory paths in the configuration are resolved relative to `agent.yaml`; absolute paths remain absolute. `system_prompt_files`, `skills_dirs`, `subagents_dirs`, and `mcp_config_paths` accept either a single string or a list of strings.
+All file and directory paths in the configuration are resolved relative to `agent.yaml`; absolute paths remain absolute. `system_prompt_files`, `project_instruction_paths`, `skills_dirs`, `subagents_dirs`, and `mcp_config_paths` accept lists of paths; the other plural path fields also accept a single string for compatibility.
 
-Every system-prompt configuration—the primary agent, each mode, `btw`, and `adversary`—supports `system_prompt`, `system_prompt_files`, or both. For the primary agent, Keen Agent always prepends its harness contract (tool-memory and safety rules), then appends the inline `system_prompt`, followed by the referenced `system_prompt_files` in order. The built-in style persona (tone, task workflow, tool-usage guidance) is included only when the configuration provides no prompt source of its own. Mode overlays and helper prompts are composed separately.
+Every system-prompt configuration—the primary agent, each mode, `btw`, and `adversary`—supports `system_prompt`, `system_prompt_files`, or both. For the primary agent, Keen Agent always prepends its harness contract (tool-use and safety rules), then appends the inline `system_prompt`, followed by the referenced `system_prompt_files` in order. Mode overlays and helper prompts are composed separately.
 
 > **Prompt source required:** the primary agent configuration must define at least one of `system_prompt` or `system_prompt_files`. Either field is sufficient and both may be used together, but they cannot both be missing. Mode overlays and helper prompts are optional; when omitted, they use their normal empty-overlay or built-in fallback behavior.
 
@@ -126,7 +127,7 @@ Every system-prompt configuration—the primary agent, each mode, `btw`, and `ad
 | `model.model_id` | With `model` | Model identifier for `model.provider`. `model` must include both fields. |
 | `system_prompt` | One prompt source required | Inline base instructions for the primary agent. It is composed with prompt files when both are present. |
 | `system_prompt_files` | One prompt source required | One or more files containing base instructions. Each referenced file must exist. |
-| `project_instructions` | No | A workspace- or task-specific instruction file. |
+| `project_instruction_paths` | No | One or more workspace- or task-specific instruction files, composed in order. |
 | `default_mode` | No | Starting mode: `build` (the default) or `plan`. |
 | `modes.plan.system_prompt` | No | Inline instructions added when plan mode is active. |
 | `modes.plan.system_prompt_files` | No | One or more instruction files added when plan mode is active. |

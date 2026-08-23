@@ -166,23 +166,32 @@ func runAPIKeyHelperCommand(ctx context.Context, provider string, cmd *exec.Cmd)
 	return apiKey, nil
 }
 
-func ResolveAdversary(global *GlobalConfig) (*ResolvedConfig, error) {
-	if global.AdversaryProvider == "" || global.AdversaryModel == "" {
-		return nil, fmt.Errorf("adversary model not configured")
+func ResolveModel(global *GlobalConfig, provider, model string) (*ResolvedConfig, error) {
+	if global == nil {
+		return nil, fmt.Errorf("global model configuration is unavailable")
 	}
-	provCfg := global.Providers[global.AdversaryProvider]
-	apiKey, err := ResolveProviderAPIKey(global.AdversaryProvider, provCfg)
+	providerCfg := global.Providers[provider]
+	apiKey, err := ResolveProviderAPIKey(provider, providerCfg)
 	if err != nil {
 		return nil, err
 	}
 	return &ResolvedConfig{
-		Provider: global.AdversaryProvider,
-		Model:    global.AdversaryModel,
-		APIKey:   apiKey,
-		BaseURL:  provCfg.BaseURL,
-		AuthMode: AuthModeForProvider(global.AdversaryProvider),
-		Headers:  provCfg.Headers,
+		Provider:       provider,
+		Model:          model,
+		APIKey:         apiKey,
+		APIKeyHelper:   providerCfg.APIKeyHelper,
+		ThinkingEffort: global.ThinkingEffort,
+		BaseURL:        providerCfg.BaseURL,
+		AuthMode:       AuthModeForProvider(provider),
+		Headers:        providerCfg.Headers,
 	}, nil
+}
+
+func ResolveAdversary(global *GlobalConfig) (*ResolvedConfig, error) {
+	if global == nil || global.AdversaryProvider == "" || global.AdversaryModel == "" {
+		return nil, fmt.Errorf("adversary model not configured")
+	}
+	return ResolveModel(global, global.AdversaryProvider, global.AdversaryModel)
 }
 
 func ConfigPath() string {

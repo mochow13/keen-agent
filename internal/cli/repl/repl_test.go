@@ -290,6 +290,7 @@ func TestBuildInitialScreen_UsesGradientArtAndTip(t *testing.T) {
 	ctx := &replContext{
 		version:    "0.20.1",
 		workingDir: "/tmp/project",
+		agentCfg:   &agentconfig.Config{Name: "Operations Assistant"},
 		cfg: &config.ResolvedConfig{
 			Provider: "openai",
 			Model:    "gpt-5.4",
@@ -302,11 +303,43 @@ func TestBuildInitialScreen_UsesGradientArtAndTip(t *testing.T) {
 	if !strings.Contains(rendered, "Keen Agent v0.20.1") {
 		t.Fatalf("expected version header, got %q", rendered)
 	}
+	if !strings.Contains(rendered, "Welcome to Operations Assistant!") {
+		t.Fatalf("expected configured agent welcome, got %q", rendered)
+	}
 	if !strings.Contains(rendered, "Tip of the session") {
 		t.Fatalf("expected tip label, got %q", rendered)
 	}
 	if strings.Contains(rendered, repltheme.ModelChipStyle.Render("gpt-5.4")) {
 		t.Fatalf("expected model chip to be removed from initial screen, got %q", rendered)
+	}
+}
+
+func TestResolveAdversaryConfig_PrefersAgentModel(t *testing.T) {
+	m := newTestModel()
+	m.ctx.cfg = &config.ResolvedConfig{Provider: config.ProviderOpenAI, Model: "main-model"}
+	m.ctx.globalCfg = &config.GlobalConfig{
+		AdversaryProvider: config.ProviderOpenAI,
+		AdversaryModel:    "global-model",
+		ThinkingEffort:    "high",
+		Providers: map[string]config.ProviderConfig{
+			config.ProviderBedrock: {APIKeyHelper: "printf helper-key", BaseURL: "https://example.com", Headers: map[string]string{"X-Test": "value"}},
+			config.ProviderOpenAI:  {APIKey: "global-key"},
+		},
+	}
+	m.ctx.agentCfg = &agentconfig.Config{Adversary: &agentconfig.AdversaryConfig{
+		Enabled: true,
+		Model:   &agentconfig.ModelRef{Provider: config.ProviderBedrock, ModelID: "agent-model"},
+	}}
+
+	resolved, err := m.resolveAdversaryConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Provider != config.ProviderBedrock || resolved.Model != "agent-model" {
+		t.Fatalf("resolved adversary = %s/%s, want agent model", resolved.Provider, resolved.Model)
+	}
+	if resolved.APIKey != "helper-key" || resolved.APIKeyHelper != "printf helper-key" || resolved.ThinkingEffort != "high" || resolved.BaseURL != "https://example.com" || resolved.Headers["X-Test"] != "value" {
+		t.Fatalf("agent adversary provider settings were not preserved: %+v", resolved)
 	}
 }
 

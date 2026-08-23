@@ -10,17 +10,13 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mochow13/keen-agent/internal/mcp"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	ModePlan  = "plan"
-	ModeBuild = "build"
-
-	PermissionAutoApprove      = "auto_approve"
-	PermissionRequiresApproval = "requires_approval"
-	PermissionDeny             = "deny"
-
+	ModePlan    = "plan"
+	ModeBuild   = "build"
 	DefaultMode = ModeBuild
 )
 
@@ -47,25 +43,22 @@ func (s *StringOrArray) UnmarshalYAML(n *yaml.Node) error {
 }
 
 type Config struct {
-	Name                string                `yaml:"name"`
-	ASCIIArt            string                `yaml:"ascii_art,omitempty"`
-	Model               *ModelRef             `yaml:"model,omitempty"`
-	SystemPrompt        string                `yaml:"system_prompt,omitempty"`
-	SystemPromptFiles   StringOrArray         `yaml:"system_prompt_files,omitempty"`
-	ProjectInstructions string                `yaml:"project_instructions,omitempty"`
-	DefaultMode         string                `yaml:"default_mode,omitempty"`
-	Modes               map[string]ModeConfig `yaml:"modes,omitempty"`
-	Btw                 *BtwConfig            `yaml:"btw,omitempty"`
-	Adversary           *AdversaryConfig      `yaml:"adversary,omitempty"`
-	BuiltinTools        *BuiltinTools         `yaml:"builtin_tools,omitempty"`
-	SubagentsDirs       StringOrArray         `yaml:"subagents_dirs,omitempty"`
-	MCPConfigPaths      StringOrArray         `yaml:"mcp_config_paths,omitempty"`
-	SkillsDirs          StringOrArray         `yaml:"skills_dirs,omitempty"`
-	baseDir             string
-	cwd                 string
+	Name                    string                `yaml:"name"`
+	ASCIIArt                string                `yaml:"ascii_art,omitempty"`
+	Model                   *ModelRef             `yaml:"model,omitempty"`
+	SystemPrompt            string                `yaml:"system_prompt,omitempty"`
+	SystemPromptFiles       StringOrArray         `yaml:"system_prompt_files,omitempty"`
+	ProjectInstructionPaths []string              `yaml:"project_instruction_paths,omitempty"`
+	DefaultMode             string                `yaml:"default_mode,omitempty"`
+	Modes                   map[string]ModeConfig `yaml:"modes,omitempty"`
+	Btw                     *BtwConfig            `yaml:"btw,omitempty"`
+	Adversary               *AdversaryConfig      `yaml:"adversary,omitempty"`
+	BuiltinTools            *BuiltinTools         `yaml:"builtin_tools,omitempty"`
+	SubagentsDirs           StringOrArray         `yaml:"subagents_dirs,omitempty"`
+	MCPConfigPaths          StringOrArray         `yaml:"mcp_config_paths,omitempty"`
+	SkillsDirs              StringOrArray         `yaml:"skills_dirs,omitempty"`
+	baseDir                 string
 }
-
-func (c *Config) BaseDir() string { return c.baseDir }
 
 func (c *Config) ResolveConfigPath(p string) string {
 	if p == "" || filepath.IsAbs(p) {
@@ -74,19 +67,12 @@ func (c *Config) ResolveConfigPath(p string) string {
 	return filepath.Join(c.baseDir, p)
 }
 
-func (c *Config) ResolveCwdPath(p string) string {
-	if p == "" || filepath.IsAbs(p) {
-		return p
-	}
-	return filepath.Join(c.cwd, p)
-}
-
 func (c *Config) ResolvedSystemPromptFiles() []string {
 	return c.resolveAll(c.SystemPromptFiles)
 }
 
-func (c *Config) ResolvedProjectInstructions() string {
-	return c.ResolveConfigPath(c.ProjectInstructions)
+func (c *Config) ResolvedProjectInstructionPaths() []string {
+	return c.resolveAll(c.ProjectInstructionPaths)
 }
 
 func (c *Config) ResolvedModeSystemPromptFiles(mode string) []string {
@@ -196,18 +182,7 @@ type AdversaryConfig struct {
 }
 
 type BuiltinTools struct {
-	Exclude []string    `yaml:"exclude,omitempty"`
-	Bash    *BashPolicy `yaml:"bash,omitempty"`
-}
-
-type BashPolicy struct {
-	Permission string     `yaml:"permission,omitempty"`
-	Rules      []BashRule `yaml:"rules,omitempty"`
-}
-
-type BashRule struct {
-	Match      []string `yaml:"match,omitempty"`
-	Permission string   `yaml:"permission,omitempty"`
+	Exclude []string `yaml:"exclude,omitempty"`
 }
 
 func Load(path string) (*Config, error) {
@@ -232,7 +207,6 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg.baseDir = filepath.Dir(absPath)
-	cfg.cwd, _ = os.Getwd()
 
 	return &cfg, nil
 }
@@ -250,16 +224,13 @@ func kindName(k yaml.Kind) string {
 	}
 }
 
-// ValidationIssue is a single fatal error or warning produced by Validate.
 type ValidationIssue struct {
 	Path    string
 	Message string
 }
 
-// ValidationResult collects fatal errors and warnings separately.
 type ValidationResult struct {
-	Errors   []ValidationIssue
-	Warnings []ValidationIssue
+	Errors []ValidationIssue
 }
 
 func (r *ValidationResult) OK() bool {
@@ -268,10 +239,6 @@ func (r *ValidationResult) OK() bool {
 
 func (r *ValidationResult) addError(path, msg string) {
 	r.Errors = append(r.Errors, ValidationIssue{Path: path, Message: msg})
-}
-
-func (r *ValidationResult) addWarning(path, msg string) {
-	r.Warnings = append(r.Warnings, ValidationIssue{Path: path, Message: msg})
 }
 
 func Validate(cfg *Config) *ValidationResult {
@@ -325,34 +292,33 @@ func validateScalarShape(cfg *Config, res *ValidationResult) {
 
 func validateFileExistence(cfg *Config, res *ValidationResult) {
 	for i, p := range cfg.ResolvedSystemPromptFiles() {
-		if _, err := os.Stat(p); err != nil {
-			res.addError(fmt.Sprintf("system_prompt_files[%d]", i), fmt.Sprintf("%q: %v", p, err))
-		}
+		validateReadableFile(p, fmt.Sprintf("system_prompt_files[%d]", i), res)
+	}
+	for i, p := range cfg.ResolvedProjectInstructionPaths() {
+		validateReadableFile(p, fmt.Sprintf("project_instruction_paths[%d]", i), res)
 	}
 	for mode := range cfg.Modes {
 		for i, p := range cfg.ResolvedModeSystemPromptFiles(mode) {
-			if _, err := os.Stat(p); err != nil {
-				res.addError(fmt.Sprintf("modes.%s.system_prompt_files[%d]", mode, i), fmt.Sprintf("%q: %v", p, err))
-			}
+			validateReadableFile(p, fmt.Sprintf("modes.%s.system_prompt_files[%d]", mode, i), res)
 		}
 	}
 	if cfg.Btw != nil && cfg.Btw.Enabled {
 		for i, p := range cfg.ResolvedBtwSystemPromptFiles() {
-			if _, err := os.Stat(p); err != nil {
-				res.addError(fmt.Sprintf("btw.system_prompt_files[%d]", i), fmt.Sprintf("%q: %v", p, err))
-			}
+			validateReadableFile(p, fmt.Sprintf("btw.system_prompt_files[%d]", i), res)
 		}
 	}
 	if cfg.Adversary != nil && cfg.Adversary.Enabled {
 		for i, p := range cfg.ResolvedAdversarySystemPromptFiles() {
-			if _, err := os.Stat(p); err != nil {
-				res.addError(fmt.Sprintf("adversary.system_prompt_files[%d]", i), fmt.Sprintf("%q: %v", p, err))
-			}
+			validateReadableFile(p, fmt.Sprintf("adversary.system_prompt_files[%d]", i), res)
 		}
 	}
 	for i, p := range cfg.ResolvedMCPConfigPaths() {
-		if _, err := os.Stat(p); err != nil {
-			res.addError(fmt.Sprintf("mcp_config_paths[%d]", i), fmt.Sprintf("%q: %v", p, err))
+		issuePath := fmt.Sprintf("mcp_config_paths[%d]", i)
+		if !validateReadableFile(p, issuePath, res) {
+			continue
+		}
+		if _, err := mcp.LoadConfig(p); err != nil {
+			res.addError(issuePath, fmt.Sprintf("%q: %v", p, err))
 		}
 	}
 	for i, p := range cfg.ResolvedSkillsDirs() {
@@ -369,6 +335,23 @@ func validateFileExistence(cfg *Config, res *ValidationResult) {
 			res.addError(fmt.Sprintf("subagents_dirs[%d]", i), fmt.Sprintf("%q is not a directory", p))
 		}
 	}
+}
+
+func validateReadableFile(path, issuePath string, res *ValidationResult) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		res.addError(issuePath, fmt.Sprintf("%q: %v", path, err))
+		return false
+	}
+	if !info.Mode().IsRegular() {
+		res.addError(issuePath, fmt.Sprintf("%q is not a regular file", path))
+		return false
+	}
+	if _, err := os.ReadFile(path); err != nil {
+		res.addError(issuePath, fmt.Sprintf("failed to read %q: %v", path, err))
+		return false
+	}
+	return true
 }
 
 func validateContent(cfg *Config, res *ValidationResult) {

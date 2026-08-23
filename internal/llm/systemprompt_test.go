@@ -14,30 +14,9 @@ func buildDefault(dir string, mode AgentMode) string {
 	return Build(dir, "", "", mode, nil)
 }
 
-func TestBuild_ContainsIdentity(t *testing.T) {
-	dir := t.TempDir()
-	result := buildDefault(dir, ModeBuild)
-	if !strings.Contains(result, "Keen Agent") {
-		t.Error("expected output to contain 'Keen Agent'")
-	}
-}
-
-func TestBuild_DefaultPersonaIsGeneralPurpose(t *testing.T) {
-	result := buildDefault(t.TempDir(), ModeBuild)
-	for _, expected := range []string{
-		"general-purpose AI agent",
-		"role, domain, and priorities are defined by the user's request",
-		"Build mode allows you to take action",
-	} {
-		if !strings.Contains(result, expected) {
-			t.Errorf("expected default prompt to contain %q", expected)
-		}
-	}
-}
-
 func TestBuild_BuiltInPromptsAreDomainNeutral(t *testing.T) {
 	prompts := strings.ToLower(strings.Join([]string{
-		defaultPersona,
+		harnessContract,
 		buildModePrompt,
 		planModePrompt,
 		compactionPrompt,
@@ -128,7 +107,6 @@ func TestBuild_IncludesEssentialToolUseInstructions(t *testing.T) {
 		"Treat tool results as evidence only after the tool call completes",
 		"If a tool fails, is unavailable, or is denied",
 		"When current or mutable external information is needed",
-		"Do not narrate tool use before acting",
 	} {
 		if !strings.Contains(result, expected) {
 			t.Fatalf("expected %q in prompt, got %q", expected, result)
@@ -240,15 +218,13 @@ func TestBuild_ConfigFilesOnlyReplaceDefaultStyle(t *testing.T) {
 	}
 }
 
-func TestBuild_ConfigFallbackToDefault(t *testing.T) {
-	dir := t.TempDir()
-	cfg := &agentconfig.Config{}
-	result := Build(dir, "", "", ModeBuild, cfg)
-	if !strings.Contains(result, "Keen Agent") {
-		t.Fatal("expected default persona when config has no system_prompt")
+func TestBuild_ConfigWithoutPersonaUsesHarnessOnly(t *testing.T) {
+	result := Build(t.TempDir(), "", "", ModeBuild, &agentconfig.Config{})
+	if !strings.Contains(result, harnessContract) {
+		t.Fatal("expected harness contract")
 	}
-	if !strings.Contains(result, "# Working style") {
-		t.Fatal("expected default style when config has no system_prompt")
+	if strings.Contains(result, "general-purpose AI agent") || strings.Contains(result, "# Working style") {
+		t.Fatal("did not expect removed default persona")
 	}
 }
 
@@ -321,19 +297,23 @@ func TestBuild_ModeOverlayWithFiles(t *testing.T) {
 
 func TestBuild_ConfigProjectInstructions(t *testing.T) {
 	dir := t.TempDir()
-	instrFile := filepath.Join(dir, "custom-instructions.md")
-	os.WriteFile(instrFile, []byte("Custom project rules."), 0644)
+	first := filepath.Join(dir, "first.md")
+	second := filepath.Join(dir, "second.md")
+	os.WriteFile(first, []byte("First project rules."), 0644)
+	os.WriteFile(second, []byte("Second project rules."), 0644)
 
 	cfg := &agentconfig.Config{
-		SystemPrompt:        "Persona.",
-		ProjectInstructions: instrFile,
+		SystemPrompt:            "Persona.",
+		ProjectInstructionPaths: []string{first, second},
 	}
 	result := Build(dir, "", "", ModeBuild, cfg)
-	if !strings.Contains(result, "Custom project rules.") {
-		t.Fatal("expected custom project instructions from config")
+	for _, expected := range []string{"First project rules.", "Second project rules.", "# Project Instructions"} {
+		if !strings.Contains(result, expected) {
+			t.Fatalf("expected %q in project instructions", expected)
+		}
 	}
-	if !strings.Contains(result, "# Project Instructions") {
-		t.Fatal("expected project instructions header")
+	if strings.Index(result, "First project rules.") > strings.Index(result, "Second project rules.") {
+		t.Fatal("expected project instruction files in configured order")
 	}
 }
 

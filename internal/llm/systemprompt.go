@@ -26,17 +26,6 @@ const harnessContract = `# Tool use
 - Refuse requests that facilitate malicious or harmful activity.
 - Do not perform destructive actions without the user's explicit permission.`
 
-const defaultStyle = `# Working style
-- Focus on the user's request. Use the available context, instructions, and tools to complete it.
-- Be concise, clear, and direct. Use Markdown when it improves readability.
-- Follow applicable user, project, and configured instructions.
-- Ask a clarifying question only when necessary to make meaningful progress.
-- Take appropriate action for explicit requests; do not resume interrupted work unless asked.
-- Verify important outcomes when practical, and clearly distinguish facts from assumptions.
-- Do not narrate tool use before acting; report useful results after the relevant tool call completes.`
-
-const defaultPersona = "You are Keen Agent, a general-purpose AI agent. Your role, domain, and priorities are defined by the user's request and any configured instructions.\n\n" + harnessContract + "\n\n" + defaultStyle
-
 const buildModePrompt = `
 
 # Active mode: build
@@ -165,12 +154,10 @@ func memorySection(workingDir string) string {
 }
 
 func resolvePersona(cfg *agentconfig.Config) string {
-	hasCustom := cfg != nil && (strings.TrimSpace(cfg.SystemPrompt) != "" || len(cfg.ResolvedSystemPromptFiles()) > 0)
-	if !hasCustom {
-		return defaultPersona
-	}
-
 	parts := []string{harnessContract}
+	if cfg == nil {
+		return harnessContract
+	}
 	if inline := strings.TrimSpace(cfg.SystemPrompt); inline != "" {
 		parts = append(parts, inline)
 	}
@@ -186,18 +173,20 @@ func resolveProjectInstructions(cfg *agentconfig.Config) string {
 	if cfg == nil {
 		return ""
 	}
-	p := cfg.ResolvedProjectInstructions()
-	if p == "" {
+	var parts []string
+	for _, path := range cfg.ResolvedProjectInstructionPaths() {
+		if content := readFileContent(path); content != "" {
+			parts = append(parts, fmt.Sprintf("## From %s\n\n%s", path, content))
+		}
+	}
+	if len(parts) == 0 {
 		return ""
 	}
-	content := readFileContent(p)
-	if content == "" {
-		return ""
-	}
+	content := strings.Join(parts, "\n\n")
 	if len(content) > maxInstructionsSize {
-		content = content[:maxInstructionsSize] + fmt.Sprintf("\n[truncated — full file at %s]", p)
+		content = content[:maxInstructionsSize] + "\n[truncated]"
 	}
-	return fmt.Sprintf("# Project Instructions (from %s)\n\n%s", p, content)
+	return "# Project Instructions\n\n" + content
 }
 
 func resolveModeOverlay(cfg *agentconfig.Config, mode string) string {

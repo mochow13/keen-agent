@@ -464,6 +464,9 @@ func buildInitialScreen(ctx *replContext, lastSession *session.Summary, width in
 	var lines []string
 
 	lines = append(lines, "")
+	if ctx.agentCfg != nil {
+		lines = append(lines, "  "+repltheme.InitialScreenWordmarkStyle.Render("Welcome to "+ctx.agentCfg.Name+"!"), "")
+	}
 
 	art := []string{
 		"░█░█░█▀▀░█▀▀░█▀█░░░█▀█░█▀▀░█▀▀░█▀█░▀█▀",
@@ -829,31 +832,9 @@ func (m *replModel) buildAdversaryClient() error {
 		return fmt.Errorf("adversary helper is not enabled")
 	}
 
-	if m.ctx.globalCfg != nil && m.ctx.globalCfg.AdversaryProvider != "" && m.ctx.globalCfg.AdversaryModel != "" {
-		resolved, err := config.ResolveAdversary(m.ctx.globalCfg)
-		if err != nil {
-			return err
-		}
-		client, err := llm.NewClient(resolved)
-		if err != nil {
-			return err
-		}
-		m.appState.SetAdversaryClient(client)
-		return nil
-	}
-
-	if model := m.ctx.agentCfg.Adversary.Model; model != nil {
-		client, err := m.newHelperClient(model.Provider, model.ModelID)
-		if err != nil {
-			return err
-		}
-		m.appState.SetAdversaryClient(client)
-		return nil
-	}
-
-	resolved := m.ctx.cfg
-	if resolved == nil || resolved.Model == "" {
-		return fmt.Errorf("main model not configured")
+	resolved, err := m.resolveAdversaryConfig()
+	if err != nil {
+		return err
 	}
 	client, err := llm.NewClient(resolved)
 	if err != nil {
@@ -863,20 +844,17 @@ func (m *replModel) buildAdversaryClient() error {
 	return nil
 }
 
-func (m *replModel) newHelperClient(provider, modelID string) (llm.LLMClient, error) {
-	providerCfg, _ := m.ctx.globalCfg.GetProviderConfig(provider)
-	apiKey, err := config.ResolveProviderAPIKey(provider, providerCfg)
-	if err != nil {
-		return nil, err
+func (m *replModel) resolveAdversaryConfig() (*config.ResolvedConfig, error) {
+	if model := m.ctx.agentCfg.Adversary.Model; model != nil {
+		return config.ResolveModel(m.ctx.globalCfg, model.Provider, model.ModelID)
 	}
-	return llm.NewClient(&config.ResolvedConfig{
-		Provider: provider,
-		Model:    modelID,
-		APIKey:   apiKey,
-		BaseURL:  providerCfg.BaseURL,
-		AuthMode: config.AuthModeForProvider(provider),
-		Headers:  providerCfg.Headers,
-	})
+	if m.ctx.globalCfg != nil && m.ctx.globalCfg.AdversaryProvider != "" && m.ctx.globalCfg.AdversaryModel != "" {
+		return config.ResolveAdversary(m.ctx.globalCfg)
+	}
+	if m.ctx.cfg == nil || m.ctx.cfg.Model == "" {
+		return nil, fmt.Errorf("main model not configured")
+	}
+	return m.ctx.cfg, nil
 }
 
 func waitForAdversaryEvent(llmCh <-chan llm.StreamEvent) tea.Cmd {

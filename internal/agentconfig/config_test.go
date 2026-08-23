@@ -32,6 +32,8 @@ func TestLoad_FullConfig(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "prompts", "build.md"), "build")
 	writeFile(t, filepath.Join(dir, "prompts", "btw.md"), "btw")
 	writeFile(t, filepath.Join(dir, "prompts", "adversary.md"), "adversary")
+	writeFile(t, filepath.Join(dir, "AGENT_RULES.md"), "rules")
+	writeFile(t, filepath.Join(dir, "prompts", "PROJECT.md"), "project")
 	if err := os.MkdirAll(filepath.Join(dir, "subagents"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +52,9 @@ system_prompt: |
   You are a PostgreSQL DBA.
 system_prompt_files:
   - ./prompts/additional.md
-project_instructions: AGENT_RULES.md
+project_instruction_paths:
+  - AGENT_RULES.md
+  - ./prompts/PROJECT.md
 default_mode: plan
 modes:
   build:
@@ -77,11 +81,6 @@ builtin_tools:
   exclude:
     - write_file
     - bash
-  bash:
-    permission: requires_approval
-    rules:
-      - match: ["rm", "drop"]
-        permission: deny
 subagents_dirs:
   - ./subagents
 mcp_config_paths:
@@ -109,8 +108,8 @@ skills_dirs:
 	if len(cfg.SystemPromptFiles) != 1 || cfg.SystemPromptFiles[0] != "./prompts/additional.md" {
 		t.Errorf("unexpected system prompt files: %v", cfg.SystemPromptFiles)
 	}
-	if cfg.ProjectInstructions != "AGENT_RULES.md" {
-		t.Errorf("unexpected project instructions: %q", cfg.ProjectInstructions)
+	if len(cfg.ProjectInstructionPaths) != 2 || cfg.ProjectInstructionPaths[0] != "AGENT_RULES.md" {
+		t.Errorf("unexpected project instruction paths: %v", cfg.ProjectInstructionPaths)
 	}
 	if cfg.EffectiveDefaultMode() != "plan" {
 		t.Errorf("expected default mode plan, got %q", cfg.EffectiveDefaultMode())
@@ -139,18 +138,13 @@ skills_dirs:
 	if cfg.BuiltinTools == nil || len(cfg.BuiltinTools.Exclude) != 2 {
 		t.Errorf("unexpected builtin tools: %+v", cfg.BuiltinTools)
 	}
-	if cfg.BuiltinTools.Bash.Permission != "requires_approval" {
-		t.Errorf("unexpected bash permission: %q", cfg.BuiltinTools.Bash.Permission)
-	}
-	if len(cfg.BuiltinTools.Bash.Rules) != 1 || cfg.BuiltinTools.Bash.Rules[0].Permission != "deny" {
-		t.Errorf("unexpected bash rules: %+v", cfg.BuiltinTools.Bash.Rules)
-	}
 	resolvedSPF := cfg.ResolvedSystemPromptFiles()
 	if len(resolvedSPF) != 1 || resolvedSPF[0] != filepath.Join(dir, "prompts", "additional.md") {
 		t.Errorf("unexpected resolved system prompt files: %v", resolvedSPF)
 	}
-	if cfg.ResolvedProjectInstructions() != filepath.Join(dir, "AGENT_RULES.md") {
-		t.Errorf("unexpected resolved project instructions: %q", cfg.ResolvedProjectInstructions())
+	resolvedInstructions := cfg.ResolvedProjectInstructionPaths()
+	if len(resolvedInstructions) != 2 || resolvedInstructions[0] != filepath.Join(dir, "AGENT_RULES.md") || resolvedInstructions[1] != filepath.Join(dir, "prompts", "PROJECT.md") {
+		t.Errorf("unexpected resolved project instruction paths: %v", resolvedInstructions)
 	}
 	resolvedBuild := cfg.ResolvedModeSystemPromptFiles("build")
 	if len(resolvedBuild) != 1 || resolvedBuild[0] != filepath.Join(dir, "prompts", "build.md") {
@@ -260,9 +254,6 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.ResolveConfigPath("/abs") != "/abs" {
 		t.Errorf("expected absolute path unchanged")
 	}
-	if cfg.BaseDir() != dir {
-		t.Errorf("expected base dir %q, got %q", dir, cfg.BaseDir())
-	}
 }
 
 func TestPathResolution(t *testing.T) {
@@ -270,7 +261,9 @@ func TestPathResolution(t *testing.T) {
 	path := writeConfig(t, dir, `name: paths
 system_prompt_files:
   - ./prompts/main.md
-project_instructions: AGENT_RULES.md
+project_instruction_paths:
+  - AGENT_RULES.md
+  - ./prompts/PROJECT.md
 subagents_dirs:
   - /var/agents/subagents
 skills_dirs:
@@ -296,8 +289,9 @@ skills_dirs:
 	if len(resolvedSPF) != 1 || resolvedSPF[0] != filepath.Join(dir, "prompts", "main.md") {
 		t.Errorf("ResolvedSystemPromptFiles() = %v, want %q", resolvedSPF, filepath.Join(dir, "prompts", "main.md"))
 	}
-	if got := cfg.ResolvedProjectInstructions(); got != filepath.Join(dir, "AGENT_RULES.md") {
-		t.Errorf("ResolvedProjectInstructions() = %q, want %q", got, filepath.Join(dir, "AGENT_RULES.md"))
+	resolvedInstructions := cfg.ResolvedProjectInstructionPaths()
+	if len(resolvedInstructions) != 2 || resolvedInstructions[0] != filepath.Join(dir, "AGENT_RULES.md") || resolvedInstructions[1] != filepath.Join(dir, "prompts", "PROJECT.md") {
+		t.Errorf("ResolvedProjectInstructionPaths() = %v", resolvedInstructions)
 	}
 	resolvedSub := cfg.ResolvedSubagentsDirs()
 	if len(resolvedSub) != 1 || resolvedSub[0] != "/var/agents/subagents" {
@@ -308,16 +302,6 @@ skills_dirs:
 		t.Errorf("ResolvedSkillsDirs() = %v, want %q", resolvedSkills, filepath.Join(dir, "skills"))
 	}
 
-	cwd, _ := os.Getwd()
-	if got := cfg.ResolveCwdPath("./rel"); got != filepath.Join(cwd, "rel") {
-		t.Errorf("ResolveCwdPath(./rel) = %q, want %q", got, filepath.Join(cwd, "rel"))
-	}
-	if got := cfg.ResolveCwdPath("/abs"); got != "/abs" {
-		t.Errorf("ResolveCwdPath(/abs) = %q, want /abs", got)
-	}
-	if got := cfg.ResolveCwdPath(""); got != "" {
-		t.Errorf("ResolveCwdPath(\"\") = %q, want empty", got)
-	}
 }
 
 func TestLoad_StringOrArrayBackwardCompat(t *testing.T) {
@@ -340,6 +324,17 @@ skills_dirs: ./skills
 	}
 	if len(cfg.SkillsDirs) != 1 || cfg.SkillsDirs[0] != "./skills" {
 		t.Errorf("unexpected skills_dirs: %v", cfg.SkillsDirs)
+	}
+}
+
+func TestLoad_RejectsRemovedConfigFields(t *testing.T) {
+	for _, content := range []string{
+		"name: test\nsystem_prompt: hi\nproject_instructions: AGENTS.md\n",
+		"name: test\nsystem_prompt: hi\nbuiltin_tools:\n  bash:\n    permission: deny\n",
+	} {
+		if _, err := Load(writeConfig(t, t.TempDir(), content)); err == nil {
+			t.Fatalf("expected removed config field to be rejected: %s", content)
+		}
 	}
 }
 
@@ -429,6 +424,48 @@ func TestValidate_MissingSystemPromptFile(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected system_prompt_files error, got: %+v", res.Errors)
+	}
+}
+
+func TestValidate_ProjectInstructionPaths(t *testing.T) {
+	dir := t.TempDir()
+	valid := filepath.Join(dir, "valid.md")
+	writeFile(t, valid, "valid")
+	if err := os.Mkdir(filepath.Join(dir, "directory.md"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(writeConfig(t, dir, "name: project-instructions\nsystem_prompt: hi\nproject_instruction_paths:\n  - valid.md\n  - missing.md\n  - directory.md\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := Validate(cfg)
+	if res.OK() {
+		t.Fatal("expected invalid project instruction paths")
+	}
+	for _, path := range []string{"project_instruction_paths[1]", "project_instruction_paths[2]"} {
+		found := false
+		for _, issue := range res.Errors {
+			if issue.Path == path {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected validation error for %s, got %+v", path, res.Errors)
+		}
+	}
+}
+
+func TestValidate_RejectsInvalidMCPConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "mcp.json"), "{")
+	cfg, err := Load(writeConfig(t, dir, "name: invalid-mcp\nsystem_prompt: hi\nmcp_config_paths: mcp.json\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := Validate(cfg)
+	if res.OK() || res.Errors[0].Path != "mcp_config_paths[0]" {
+		t.Fatalf("expected MCP content validation error, got %+v", res.Errors)
 	}
 }
 
