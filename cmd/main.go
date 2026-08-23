@@ -11,7 +11,7 @@ import (
 	"github.com/mochow13/keen-agent/internal/logging"
 )
 
-var version = "0.1.1"
+var version = "0.2.0"
 
 func main() {
 	var agentSlug string
