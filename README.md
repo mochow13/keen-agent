@@ -1,5 +1,7 @@
 # Keen Agent
 
+**Build and run any agent in your terminal**
+
 [![Latest Release](https://img.shields.io/github/v/release/mochow13/keen-agent?style=flat-square&logo=github)](https://github.com/mochow13/keen-agent/releases/latest)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/mochow13/keen-agent/go.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white)](https://github.com/mochow13/keen-agent/actions)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/mochow13/keen-agent?style=flat-square&logo=go)](https://go.dev/)
