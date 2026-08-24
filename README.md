@@ -1,21 +1,28 @@
 # Keen Agent
 
+[![Latest Release](https://img.shields.io/github/v/release/mochow13/keen-agent?style=flat-square&logo=github)](https://github.com/mochow13/keen-agent/releases/latest)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/mochow13/keen-agent/go.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white)](https://github.com/mochow13/keen-agent/actions)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/mochow13/keen-agent?style=flat-square&logo=go)](https://go.dev/)
+[![License](https://img.shields.io/github/license/mochow13/keen-agent?style=flat-square&logo=opensourceinitiative&logoColor=white)](https://github.com/mochow13/keen-agent/blob/main/LICENSE)
+
 Keen Agent is a configurable, terminal-first AI agent harness for any kind of agentic work. Define an agent's instructions and capabilities in YAML, select an LLM provider, then work interactively or automate a single turn from the command line.
 
 It is designed for people who want more control than a fixed assistant offers—without having to build an agent runtime from scratch. Use it for software engineering, research, operations, writing, analysis, or a workflow specific to you or your team.
+
+Keen Agent grew out of [Keen Code](https://github.com/mochow13/keen-code), an opinionated terminal coding agent. While building Keen Code, it became clear that the same core capabilities—filesystem access, tool execution, permission controls, persistent sessions, model integrations, skills, subagents, and MCP—were useful far beyond software development. Keen Agent was extracted and fleshed out from that foundation to make the runtime domain-neutral and fully configurable: instead of assuming a coding role, it becomes whatever agent the user defines.
 
 ## Table of contents
 
 - [Why Keen Agent?](#why-keen-agent)
 - [What you can build](#what-you-can-build)
 - [Configuring an agent](#configuring-an-agent)
-  - [Complete configuration reference](#complete-configuration-reference)
+  - [Configuration reference](docs/configuration-reference.md)
   - [Modes and tool policy](#modes-and-tool-policy)
 - [Quickstart](#quickstart)
 - [Common commands](#common-commands)
 - [Skills, subagents, and MCP](#skills-subagents-and-mcp)
 - [Features](#features)
-- [Built on Keen Code](#built-on-keen-code)
+- [Origin: extracted from Keen Code](#origin-extracted-from-keen-code)
 - [Technology](#technology)
 - [Safety model](#safety-model)
 - [Development](#development)
@@ -32,134 +39,71 @@ Agentic work is more reliable when the agent has a clear role, task-specific ins
 - **Opt-in extensibility** — combine built-in terminal and filesystem tools with reusable skills, specialist subagents, and Model Context Protocol (MCP) servers when you configure their locations.
 - **Safety by default** — filesystem access is guarded, ignored and sensitive paths are blocked, and potentially unsafe operations require approval.
 
+## Extracted from Keen Code
+
+Keen Agent originated in [Keen Code](https://github.com/mochow13/keen-code), a lightweight, opinionated terminal coding agent. Keen Code established the core harness: an interactive terminal experience, provider-native tool loops, filesystem and shell tools, safety boundaries, sessions, skills, subagents, and MCP support.
+
+As Keen Code evolved, it became apparent that these capabilities were not inherently limited to coding. Reading and editing files, searching a workspace, running tools, delegating focused work, and producing durable artifacts are useful primitives for research, operations, analysis, writing, and many other workflows. Keen Agent was therefore extracted from Keen Code and fleshed out as a separate, domain-neutral project.
+
+The key change is **composition instead of a fixed coding identity**. Keen Code is intentionally designed to be a software-engineering agent. Keen Agent keeps the native power of that coding-agent runtime, but lets users define the agent's identity, instructions, modes, model preference, tool policy, skills, subagents, and MCP integrations through configuration. The same terminal harness can consequently become a research assistant, stock-analysis agent, operations investigator, documentation agent, or another agent tailored to a user's workspace.
+
+Keen Code contributed several foundations that make this possible:
+
+- **Permission-aware execution** — a central filesystem guard distinguishes allowed, approval-required, and policy-blocked paths; Git-ignored and sensitive paths stay protected.
+- **Lean, durable context** — sessions are namespaced by working directory, while completed turns retain compact tool-activity metadata rather than raw file contents, command output, or external responses.
+- **Prompt-efficient extensibility** — configured MCP servers become generated skills: the agent discovers a server's tools and schemas on demand instead of carrying every external tool schema in its system prompt.
+- **Controlled delegation** — focused subagents can investigate with explicitly limited, read-only tools, leaving decisions and side effects with the primary agent.
+- **Provider-native tool loops** — the harness streams provider responses and tool calls while adapting a shared tool registry to each supported model provider.
+
+Visit the [Keen Code repository](https://github.com/mochow13/keen-code) or the [Keen Code website](https://mochow13.github.io/keen-code/) to learn more about the original coding agent.
+
 ## What you can build
 
-Keen Agent is intentionally domain-neutral. Its behavior comes from the prompts and tools you configure; skills, subagents, and MCP servers are optional additions loaded only from locations declared in `agent.yaml`. For example, you can create agents for:
+Keen Agent is intentionally domain-neutral. Its behavior comes from the prompts, workspace resources, and tools you configure; skills, subagents, and MCP servers are optional additions loaded only from locations declared in the agent YAML. A single terminal runtime can support very different agents, for example:
 
-- Software engineering and repository maintenance
-- Research, analysis, and report generation
-- Operational runbooks, incident investigation, and terminal workflows
-- Documentation, content, and data-processing tasks
-- Internal workflows that need a persistent, permission-aware terminal agent
+- **Investment research and portfolio monitoring** — combine company filings, earnings transcripts, portfolio holdings, and market-data MCP tools; delegate financial-statement and risk analysis to specialists; then produce a cited investment memo and flag material changes since the previous review.
+- **Production incident investigation** — inspect application logs and runbooks, query systems such as Loki or Grafana through MCP, correlate errors with deployments, and generate an evidence-backed incident timeline, likely causes, and next diagnostic steps without changing production systems.
+- **Contract and policy compliance review** — evaluate contracts, completed questionnaires, or operating procedures against local policies and required controls; identify missing clauses or evidence, cite the relevant requirements, and save a structured exception report for human approval.
+- **Customer-feedback intelligence** — process exported support tickets, interview notes, and survey responses; cluster recurring problems, quantify their frequency, connect them to known documentation or product areas, and produce a prioritized findings report with representative examples.
+- **Research synthesis and evidence review** — search the web and a local paper library, compare claims and methodologies, track conflicting evidence and uncertainty, and create a cited briefing that separates established findings from assumptions and open questions.
+
+These are configurations rather than separate applications. Each agent can live in its own folder with its YAML definition, system prompts, project instructions, reference material, skills, subagents, and MCP configuration. Start it in read-only `plan` mode when it should only investigate, or allow selected tools in `build` mode when it should create or update workspace artifacts.
 
 ## Configuring an agent
 
-Keen Agent requires an agent configuration. The configuration is strict YAML: unknown fields and invalid combinations are rejected by `keen-agent validate`. `name` and at least one of `system_prompt` or `system_prompt_files` are required.
-
-Create an `agent.yaml` in the directory where you want to work. This complete example shows every supported field; remove the options you do not need.
+Keen Agent reads its identity and behavior from the YAML file passed to `--agent`. The file can have any name; `agent.yaml` is only a convention. A minimal definition needs a `name` and at least one prompt source:
 
 ```yaml
-name: Operations Assistant
-ascii_art: |
-  OPERATIONS ASSISTANT
+name: Research Assistant
 
-# Optional. Both provider and model_id must be set when model is present.
-model:
-  provider: anthropic
-  model_id: claude-sonnet-4-6
-
-# At least one of system_prompt or system_prompt_files is required.
 system_prompt: |
-  You are a pragmatic operations assistant.
-  Investigate available evidence before recommending an action.
-system_prompt_files:
-  - prompts/base.md
-project_instruction_paths:
-  - instructions.md
+  You are a careful research assistant.
+  Cite evidence, distinguish facts from assumptions, and explain uncertainty.
 
-default_mode: build
-modes:
-  plan:
-    system_prompt: |
-      Analyze and propose a plan. Do not modify files.
-    system_prompt_files:
-      - prompts/plan.md
-  build:
-    system_prompt: |
-      Carry out the approved action and report the result.
-    system_prompt_files:
-      - prompts/build.md
-
-# Exclude selected built-in tools.
-builtin_tools:
-  exclude:
-    - web_fetch
-
-# Optional helpers.
-btw:
-  enabled: true
-  context_messages: 5
-  system_prompt: Answer the side question directly and concisely.
-  system_prompt_files:
-    - prompts/btw.md
-
-adversary:
-  enabled: true
-  model:
-    provider: anthropic
-    model_id: claude-sonnet-4-6
-  system_prompt: Review the proposed work for risks and omissions.
-  system_prompt_files:
-    - prompts/adversary.md
-
-# All extension directories are opt-in; each accepts one path or a list.
-skills_dirs:
-  - .keen/skills
-subagents_dirs:
-  - .keen/subagents
-mcp_config_paths:
-  - .keen/mcp.json
+default_mode: plan
 ```
 
-All file and directory paths in the configuration are resolved relative to `agent.yaml`; absolute paths remain absolute. `system_prompt_files`, `project_instruction_paths`, `skills_dirs`, `subagents_dirs`, and `mcp_config_paths` accept lists of paths; the other plural path fields also accept a single string for compatibility.
+The `model` field is optional. You can launch Keen Agent first and use `/model` in the interactive UI to authenticate with a provider and select a model. A warning on the initial launch before model setup is expected.
 
-Every system-prompt configuration—the primary agent, each mode, `btw`, and `adversary`—supports `system_prompt`, `system_prompt_files`, or both. For the primary agent, Keen Agent always prepends its harness contract (tool-use and safety rules), then appends the inline `system_prompt`, followed by the referenced `system_prompt_files` in order. Mode overlays and helper prompts are composed separately.
-
-> **Prompt source required:** the primary agent configuration must define at least one of `system_prompt` or `system_prompt_files`. Either field is sufficient and both may be used together, but they cannot both be missing. Mode overlays and helper prompts are optional; when omitted, they use their normal empty-overlay or built-in fallback behavior.
-
-### Complete configuration reference
-
-| Field | Required | Description |
-| --- | --- | --- |
-| `name` | Yes | Display name for the agent. It also contributes to the session namespace. |
-| `ascii_art` | No | Banner displayed for the agent in the terminal UI. |
-| `model.provider` | With `model` | Configured provider identifier to select for this agent. |
-| `model.model_id` | With `model` | Model identifier for `model.provider`. `model` must include both fields. |
-| `system_prompt` | One prompt source required | Inline base instructions for the primary agent. It is composed with prompt files when both are present. |
-| `system_prompt_files` | One prompt source required | One or more files containing base instructions. Each referenced file must exist. |
-| `project_instruction_paths` | No | One or more workspace- or task-specific instruction files, composed in order. |
-| `default_mode` | No | Starting mode: `build` (the default) or `plan`. |
-| `modes.plan.system_prompt` | No | Inline instructions added when plan mode is active. |
-| `modes.plan.system_prompt_files` | No | One or more instruction files added when plan mode is active. |
-| `modes.build.system_prompt` | No | Inline instructions added when build mode is active. |
-| `modes.build.system_prompt_files` | No | One or more instruction files added when build mode is active. |
-| `builtin_tools.exclude` | No | Built-in tools to remove: `read_file`, `write_file`, `edit_file`, `web_fetch`, `glob`, `grep`, or `bash`. This is the only supported `builtin_tools` setting. |
-| `btw.enabled` | No | Enables the `/btw` side-question helper. |
-| `btw.context_messages` | When `btw.enabled` is `true` | Positive number of prior messages supplied as helper context. |
-| `btw.system_prompt` | No | Inline instructions for the side-question helper. |
-| `btw.system_prompt_files` | No | One or more instruction files for the side-question helper. |
-| `adversary.enabled` | No | Enables the `/adversary` review helper. |
-| `adversary.model.provider` | With `adversary.model` | Provider identifier for adversarial review. |
-| `adversary.model.model_id` | With `adversary.model` | Model identifier for adversarial review. Both adversary model fields are required together. |
-| `adversary.system_prompt` | No | Inline instructions for adversarial review. |
-| `adversary.system_prompt_files` | No | One or more instruction files for adversarial review. |
-| `skills_dirs` | No | One or more directories from which to load skills. Nothing is loaded unless configured. |
-| `subagents_dirs` | No | One or more directories from which to load subagent profiles. Nothing is loaded unless configured. |
-| `mcp_config_paths` | No | One or more paths to MCP configuration files. No MCP configurations are loaded unless configured. |
-
-Use the validation command after changing configuration:
+Validate and start the agent:
 
 ```bash
-keen-agent validate --agent ./agent.yaml
+keen-agent validate --agent ./research-assistant.yaml
+keen-agent --agent ./research-assistant.yaml
 ```
+
+Agent definitions can also configure prompt files, project instructions, modes, tool exclusions, `/btw`, `/adversary`, skills, subagents, and MCP servers. See the **[complete configuration reference](docs/configuration-reference.md)** for every supported field, accepted values, resource formats, validation rules, and path-resolution behavior.
+
+Relative resource paths in the YAML resolve from the YAML file's directory. The directory from which you launch `keen-agent` remains the agent's filesystem working context. This lets you keep a reusable agent definition separate from the workspace it analyzes, or place everything together in one dedicated agent folder.
 
 ### Modes and tool policy
 
-- **`build`** is the default mode and makes the configured built-in tools available.
-- **`plan`** makes only read-only built-in tools available, so the agent can inspect and reason without modifying the workspace.
-- A mode can be selected with `--mode` or switched during an interactive session with `/mode`.
-- `call_mcp_tool` and `delegate_task` cannot be excluded. They are only useful when MCP servers or subagents have been configured.
-- `builtin_tools` only supports excluding tools; it does not configure bash permissions.
+- **`build`** is the default mode and exposes the configured built-in tool set.
+- **`plan`** exposes only read-only built-in tools for investigation and planning.
+- Select a starting mode with `--mode`, or switch interactively with `/mode`.
+- Use `builtin_tools.exclude` to remove built-in capabilities the agent does not need.
+
+For exact tool names, mode overlays, and exclusion behavior, see [Modes](docs/configuration-reference.md#modes) and [`builtin_tools`](docs/configuration-reference.md#builtin_tools) in the configuration reference.
 
 ## Quickstart
 
@@ -244,70 +188,13 @@ keen-agent run \
 
 ## Skills, subagents, and MCP
 
-### Skills
+These extensions are opt-in and loaded only from paths declared by the agent definition:
 
-Skills are reusable instruction bundles. Keen Agent does not load a skills directory by default: declare one or more `skills_dirs` in `agent.yaml`, then put a `SKILL.md` in those directories and manage them interactively with:
+- **Skills** are reusable instruction bundles stored as `SKILL.md` files. Configure `skills_dirs`, then inspect or manage them with `/skills`.
+- **Subagents** are focused, read-only assistants defined in Markdown with YAML frontmatter. Configure `subagents_dirs`, then list available profiles with `/subagents list`.
+- **MCP servers** connect external tools over local stdio or remote streamable HTTP. Configure `mcp_config_paths`, then use `/mcp`, `/mcp status`, or `/mcp connect` to manage connections.
 
-```text
-/skills list
-/skills status
-/skills disable <name>
-/skills enable <name>
-/skills reload
-```
-
-### Subagents
-
-Subagents are focused, read-only assistants defined as Markdown files. Keen Agent does not load a subagent directory by default: declare one or more `subagents_dirs` in `agent.yaml`. Each file requires YAML frontmatter:
-
-```markdown
----
-name: explorer
-description: Investigate a scoped part of the workspace and report findings.
----
-
-Inspect only the requested files. Return concise findings with file references.
-```
-
-List available profiles with `/subagents list`. The primary agent can delegate bounded investigations to them.
-
-### MCP servers
-
-MCP servers are opt-in. Keen Agent does not load MCP configurations by default: declare one or more `mcp_config_paths` (paths to MCP configuration files) in `agent.yaml`. The referenced configuration files are merged, with later values taking precedence.
-
-Example local stdio server configuration:
-
-```json
-{
-  "servers": {
-    "example": {
-      "command": "npx",
-      "args": ["-y", "@example/mcp-server"],
-      "env": {
-        "EXAMPLE_MODE": "read-only"
-      }
-    }
-  }
-}
-```
-
-Example remote streamable HTTP server:
-
-```json
-{
-  "servers": {
-    "remote-tools": {
-      "url": "https://example.com/mcp",
-      "auth": {
-        "type": "api_key",
-        "key": "configure-this-outside-source-control"
-      }
-    }
-  }
-}
-```
-
-Use `/mcp`, `/mcp status`, and `/mcp connect` in the REPL to inspect and connect servers. Do not commit credential-bearing MCP configuration files.
+The [configuration reference](docs/configuration-reference.md#referenced-resource-formats) documents each resource format, path behavior, subagent fields, MCP transports, and authentication options. Do not commit credential-bearing MCP configuration files.
 
 ## Features
 
@@ -322,17 +209,6 @@ Use `/mcp`, `/mcp status`, and `/mcp connect` in the REPL to inspect and connect
 - MCP support for local stdio and remote streamable HTTP servers, including API-key and OAuth authentication.
 - One-shot plain-text or JSON output for automation.
 
-## Built on Keen Code
-
-Keen Agent is based on [Keen Code](https://github.com/mochow13/keen-code), the terminal-agent harness that provides its interactive runtime, tool loop, and safety foundations. Learn more at the [Keen Code website](https://mochow13.github.io/keen-code/).
-
-Keen Code contributes several harness capabilities that make Keen Agent suitable for configurable agents beyond its coding origins:
-
-- **Permission-aware execution** — a central filesystem guard distinguishes allowed, approval-required, and policy-blocked paths; Git-ignored and sensitive paths stay protected.
-- **Lean, durable context** — sessions are namespaced by working directory, while completed turns retain compact tool-activity metadata rather than raw file contents, command output, or external responses.
-- **Prompt-efficient extensibility** — configured MCP servers become generated skills: the agent discovers a server's tools and schemas on demand instead of carrying every external tool schema in its system prompt.
-- **Controlled delegation** — focused subagents can investigate with explicitly limited, read-only tools, leaving decisions and side effects with the primary agent.
-- **Provider-native tool loops** — the harness streams provider responses and tool calls while adapting a shared tool registry to each supported model provider.
 
 ## Technology
 
