@@ -7,6 +7,7 @@ import (
 
 	"github.com/mochow13/keen-agent/internal/agentconfig"
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
+	replaskuser "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/llm"
@@ -56,7 +57,7 @@ func TestSetupToolRegistry_DefaultRegistersNoConditionalTools(t *testing.T) {
 	diffEmitter := NewDiffEmitter()
 	resolvedCfg := &config.ResolvedConfig{}
 
-	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, resolvedCfg, nil)
+	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, nil, resolvedCfg, nil)
 
 	names := toolNames(t, state)
 	want := []string{"bash", "edit_file", "glob", "grep", "read_file", "web_fetch", "write_file"}
@@ -77,7 +78,7 @@ func TestSetupToolRegistry_ExcludesListedTools(t *testing.T) {
 		},
 	}
 
-	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, resolvedCfg, agentCfg)
+	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, nil, resolvedCfg, agentCfg)
 
 	names := toolNames(t, state)
 	for _, excluded := range []string{"bash", "write_file"} {
@@ -101,7 +102,7 @@ func TestSetupToolRegistry_IncludesMCPToolWhenConfigDirsPresent(t *testing.T) {
 		MCPConfigPaths: agentconfig.StringOrArray{"./mcp.json"},
 	}
 
-	SetupToolRegistry(work, state, permissionRequester, diffEmitter, &fakeMCPRuntime{}, resolvedCfg, agentCfg)
+	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, &fakeMCPRuntime{}, resolvedCfg, agentCfg)
 
 	names := toolNames(t, state)
 	if !slices.Contains(names, "call_mcp_tool") {
@@ -122,7 +123,7 @@ func TestSetupToolRegistry_IncludesDelegateToolWhenSubagentsDirsPresent(t *testi
 		SubagentsDirs: agentconfig.StringOrArray{"./subagents"},
 	}
 
-	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, resolvedCfg, agentCfg)
+	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, nil, resolvedCfg, agentCfg)
 
 	names := toolNames(t, state)
 	if !slices.Contains(names, "delegate_task") {
@@ -147,12 +148,27 @@ func TestSetupToolRegistry_DoesNotExcludeRequiredIntegrationTools(t *testing.T) 
 		SubagentsDirs:  agentconfig.StringOrArray{"./subagents"},
 	}
 
-	SetupToolRegistry(work, state, permissionRequester, diffEmitter, &fakeMCPRuntime{}, resolvedCfg, agentCfg)
+	SetupToolRegistry(work, state, permissionRequester, diffEmitter, nil, &fakeMCPRuntime{}, resolvedCfg, agentCfg)
 
 	names := toolNames(t, state)
 	for _, required := range []string{"call_mcp_tool", "delegate_task"} {
 		if !slices.Contains(names, required) {
 			t.Errorf("expected required integration tool %q to remain registered", required)
 		}
+	}
+}
+
+func TestSetupToolRegistry_IncludesAskUserToolWhenRequesterProvided(t *testing.T) {
+	work := t.TempDir()
+	state := replappstate.New(&fakeLLMClient{}, work)
+	permissionRequester := replpermissions.NewAutoApproveRequester()
+	diffEmitter := NewDiffEmitter()
+	resolvedCfg := &config.ResolvedConfig{}
+
+	SetupToolRegistry(work, state, permissionRequester, diffEmitter, replaskuser.NewRequester(), nil, resolvedCfg, nil)
+
+	names := toolNames(t, state)
+	if !slices.Contains(names, "ask_user") {
+		t.Fatalf("expected ask_user to be registered when requester is provided, got %v", names)
 	}
 }

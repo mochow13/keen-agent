@@ -75,6 +75,18 @@ func TestHistoricalToolResult_UsesConciseStatusJSON(t *testing.T) {
 	}
 }
 
+func TestHistoricalToolResult_PrefersRetainedOutput(t *testing.T) {
+	if got := historicalToolResult(HistoricalToolActivity{Status: "success", RetainedOutput: map[string]any{"answers": []string{"a"}}}); got != `{"answers":["a"]}` {
+		t.Fatalf("unexpected retained result: %q", got)
+	}
+}
+
+func TestHistoricalToolResult_FallsBackToRawOutput(t *testing.T) {
+	if got := historicalToolResult(HistoricalToolActivity{Status: "success", HasRawOutput: true, RawOutput: map[string]any{"content": "hi"}}); got != `{"content":"hi"}` {
+		t.Fatalf("unexpected raw result: %q", got)
+	}
+}
+
 func TestCloneTurnMemory_ClonesHistoricalActivity(t *testing.T) {
 	original := &TurnMemory{ToolActivity: []HistoricalToolActivity{{Tool: "read_file", Status: "success"}}}
 	cloned := CloneTurnMemory(original)

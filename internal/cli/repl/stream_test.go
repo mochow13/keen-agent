@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
+	replaskuser "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
 	repltooling "github.com/mochow13/keen-agent/internal/cli/repl/tooling"
 	"github.com/mochow13/keen-agent/internal/llm"
 	"github.com/mochow13/keen-agent/internal/tools"
@@ -471,7 +472,7 @@ func TestWaitForAsyncEvent_Chunk(t *testing.T) {
 	}
 	close(eventCh)
 
-	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
+	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan *replaskuser.Request), make(chan repltooling.DiffRequest))
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd")
 	}
@@ -493,7 +494,7 @@ func TestWaitForAsyncEvent_ToolStart(t *testing.T) {
 		ToolCall: &llm.ToolCall{Name: "read_file"},
 	}
 
-	msg := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))()
+	msg := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan *replaskuser.Request), make(chan repltooling.DiffRequest))()
 	streamMsg, ok := msg.(mainStreamMsg)
 	if !ok {
 		t.Fatalf("expected mainStreamMsg, got %T", msg)
@@ -510,7 +511,7 @@ func TestWaitForAsyncEvent_Done(t *testing.T) {
 	}
 	close(eventCh)
 
-	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
+	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan *replaskuser.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
 	streamMsg, ok := msg.(mainStreamMsg)
@@ -527,7 +528,7 @@ func TestWaitForAsyncEvent_ReasoningChunk(t *testing.T) {
 	}
 	close(eventCh)
 
-	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
+	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan *replaskuser.Request), make(chan repltooling.DiffRequest))
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd")
 	}
@@ -551,7 +552,7 @@ func TestWaitForAsyncEvent_Error(t *testing.T) {
 	}
 	close(eventCh)
 
-	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
+	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan *replaskuser.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
 	streamMsg, ok := msg.(mainStreamMsg)
@@ -567,7 +568,7 @@ func TestWaitForAsyncEvent_ChannelClosed(t *testing.T) {
 	eventCh := make(chan llm.StreamEvent)
 	close(eventCh)
 
-	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan repltooling.DiffRequest))
+	cmd := waitForAsyncEvent(eventCh, make(chan *replpermissions.Request), make(chan *replaskuser.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
 	streamMsg, ok := msg.(mainStreamMsg)
@@ -638,7 +639,7 @@ func TestWaitForAsyncEvent_Permission(t *testing.T) {
 	req := makeTestPermissionRequest(false)
 	permissionCh <- req
 
-	cmd := waitForAsyncEvent(make(chan llm.StreamEvent), permissionCh, make(chan repltooling.DiffRequest))
+	cmd := waitForAsyncEvent(make(chan llm.StreamEvent), permissionCh, make(chan *replaskuser.Request), make(chan repltooling.DiffRequest))
 	msg := cmd()
 
 	permissionMsg, ok := msg.(permissionReadyMsg)
@@ -655,7 +656,7 @@ func TestWaitForAsyncEvent_Diff(t *testing.T) {
 	req := repltooling.DiffRequest{Done: make(chan struct{})}
 	diffCh <- req
 
-	cmd := waitForAsyncEvent(make(chan llm.StreamEvent), make(chan *replpermissions.Request), diffCh)
+	cmd := waitForAsyncEvent(make(chan llm.StreamEvent), make(chan *replpermissions.Request), make(chan *replaskuser.Request), diffCh)
 	msg := cmd()
 
 	diffMsg, ok := msg.(diffReadyMsg)

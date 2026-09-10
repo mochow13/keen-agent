@@ -14,6 +14,7 @@ import (
 	repltheme "github.com/mochow13/keen-agent/internal/cli/repl/theme"
 	replwidgets "github.com/mochow13/keen-agent/internal/cli/repl/widgets"
 	"github.com/mochow13/keen-agent/internal/llm"
+	"github.com/mochow13/keen-agent/internal/tools"
 )
 
 const (
@@ -53,6 +54,7 @@ func (m *replModel) handleLLMReasoningChunk(chunk string) (replModel, tea.Cmd) {
 
 func (m *replModel) handleLLMDone() (replModel, tea.Cmd) {
 	m.flushStreamRender()
+	m.appendResolvedAskUserSegment()
 	if m.isCompacting {
 		return m.handleCompactionDone()
 	}
@@ -83,6 +85,7 @@ func (m *replModel) handleLLMDone() (replModel, tea.Cmd) {
 
 func (m *replModel) handleLLMIncomplete(err error) (replModel, tea.Cmd) {
 	m.flushStreamRender()
+	m.clearAskUser()
 	segments := cloneStreamSegments(m.streamHandler.segments)
 	m.recordHistoricalToolActivity(segments)
 	partialResponse := m.streamHandler.GetResponse()
@@ -112,6 +115,7 @@ func (m *replModel) handleLLMIncomplete(err error) (replModel, tea.Cmd) {
 
 func (m *replModel) handleLLMError(err error) (replModel, tea.Cmd) {
 	m.flushStreamRender()
+	m.clearAskUser()
 	if m.isCompacting {
 		return m.handleCompactionError(err)
 	}
@@ -227,7 +231,11 @@ func (m *replModel) handleCompactionError(err error) (replModel, tea.Cmd) {
 
 func (m *replModel) handleToolStart(toolCall *llm.ToolCall) (replModel, tea.Cmd) {
 	m.flushStreamRender()
-	if toolCall.Name == "bash" {
+	if toolCall != nil && toolCall.Name == tools.AskUserToolName {
+		m.streamHandler.HandleToolStart(toolCall)
+		return *m, m.waitForAsyncEvent()
+	}
+	if toolCall.Name == tools.BashToolName {
 		command, _ := toolCall.Input["command"].(string)
 		summary, _ := toolCall.Input["summary"].(string)
 		m.streamHandler.HandleBashStart(command, summary)
@@ -241,7 +249,11 @@ func (m *replModel) handleToolStart(toolCall *llm.ToolCall) (replModel, tea.Cmd)
 
 func (m *replModel) handleToolEnd(toolCall *llm.ToolCall) (replModel, tea.Cmd) {
 	m.flushStreamRender()
-	if toolCall.Name == "bash" {
+	if toolCall != nil && toolCall.Name == tools.AskUserToolName {
+		m.streamHandler.HandleToolEnd(toolCall)
+		return *m, m.waitForAsyncEvent()
+	}
+	if toolCall.Name == tools.BashToolName {
 		m.streamHandler.HandleBashEnd(toolCall)
 	} else {
 		m.streamHandler.HandleToolEnd(toolCall)
@@ -363,6 +375,61 @@ func suggestionValue(item *replwidgets.SuggestionItem) string {
 	return item.Name
 }
 
+func (m *replModel) handleAskUserKeyMsg(msg tea.KeyPressMsg) (replModel, tea.Cmd) {
+	s := &m.askUser
+	question := s.request.Questionnaire.Questions[s.index]
+	var cmd tea.Cmd
+	switch msg.String() {
+	case keyCtrlC, keyEsc:
+		s.resolve(s.requester, true)
+	case keyUp:
+		s.move(-1)
+	case keyDown:
+		s.move(1)
+	case keyEnter:
+		if s.selected < len(question.Options) {
+			if s.answer(question.Options[s.selected]) {
+				s.resolve(s.requester, false)
+			}
+		} else if s.editing {
+			if value := s.input.Value(); strings.TrimSpace(value) != "" && s.answer(value) {
+				s.resolve(s.requester, false)
+			}
+		} else {
+			s.editing = true
+			s.input.Focus()
+		}
+	default:
+		if s.editing || msg.Text != "" {
+			s.selected = len(question.Options)
+			s.editing = true
+			s.input.Focus()
+			s.input, cmd = s.input.Update(msg)
+		}
+	}
+	if s.active() {
+		m.streamHandler.SetAskUser(s)
+	} else {
+		m.appendResolvedAskUserSegment()
+	}
+	m.updateViewportContent()
+	m.scrollToBottomIfFollowing()
+	return *m, cmd
+}
+
+func (m *replModel) handleAskUserPasteMsg(msg tea.PasteMsg) (replModel, tea.Cmd) {
+	s := &m.askUser
+	s.selected = len(s.request.Questionnaire.Questions[s.index].Options)
+	s.editing = true
+	s.input.Focus()
+	var cmd tea.Cmd
+	s.input, cmd = s.input.Update(msg)
+	m.streamHandler.SetAskUser(s)
+	m.updateViewportContent()
+	m.scrollToBottomIfFollowing()
+	return *m, cmd
+}
+
 func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 	m.flushStreamRender()
 	if m.sessionPicker != nil {
@@ -394,6 +461,10 @@ func (m *replModel) handleKeyMsg(msg tea.Msg) (replModel, tea.Cmd) {
 			m.compactionCancel = nil
 		}
 		return *m, nil
+	}
+
+	if m.askUser.active() {
+		return m.handleAskUserKeyMsg(keyMsg)
 	}
 
 	if m.streamHandler != nil && m.streamHandler.HasPendingPermission() {

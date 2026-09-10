@@ -15,6 +15,7 @@ import (
 	"github.com/mochow13/keen-agent/internal/llm"
 	keenmcp "github.com/mochow13/keen-agent/internal/mcp"
 	"github.com/mochow13/keen-agent/internal/session"
+	"github.com/mochow13/keen-agent/internal/tools"
 )
 
 const (
@@ -80,7 +81,7 @@ func RunHeadless(ctx context.Context, opts HeadlessRunOptions) (*HeadlessRunResu
 	appState.SetMode(opts.Mode)
 	permissionRequester := replpermissions.NewAutoApproveRequester()
 	diffEmitter := repltooling.NewDiffEmitter()
-	repltooling.SetupToolRegistry(opts.WorkingDir, appState, permissionRequester, diffEmitter, opts.MCP, opts.Config, opts.AgentCfg)
+	repltooling.SetupToolRegistry(opts.WorkingDir, appState, permissionRequester, diffEmitter, nil, opts.MCP, opts.Config, opts.AgentCfg)
 
 	var agentSlug string
 	if opts.AgentCfg != nil {
@@ -175,7 +176,7 @@ func handleHeadlessToolStart(handler *StreamHandler, toolCall *llm.ToolCall) {
 	if toolCall == nil {
 		return
 	}
-	if toolCall.Name == "bash" {
+	if toolCall.Name == tools.BashToolName {
 		command, _ := toolCall.Input["command"].(string)
 		summary, _ := toolCall.Input["summary"].(string)
 		handler.HandleBashStart(command, summary)
@@ -188,7 +189,7 @@ func handleHeadlessToolEnd(handler *StreamHandler, toolCall *llm.ToolCall) {
 	if toolCall == nil {
 		return
 	}
-	if toolCall.Name == "bash" {
+	if toolCall.Name == tools.BashToolName {
 		handler.HandleBashEnd(toolCall)
 		return
 	}

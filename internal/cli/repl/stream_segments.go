@@ -16,6 +16,7 @@ const (
 	segmentBash       streamSegmentType = "bash"
 	segmentPermission streamSegmentType = "permission"
 	segmentDiff       streamSegmentType = "diff"
+	segmentAskUser    streamSegmentType = "ask_user"
 )
 
 type streamSegment struct {
@@ -29,4 +30,5 @@ type streamSegment struct {
 	permissionReq    *replpermissions.Request
 	permissionCursor int
 	diffLines        []tools.EditDiffLine
+	askUser          *askUserState
 }

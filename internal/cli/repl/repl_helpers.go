@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
+	replaskuser     "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
 	repltheme "github.com/mochow13/keen-agent/internal/cli/repl/theme"
 	repltooling "github.com/mochow13/keen-agent/internal/cli/repl/tooling"
 	replwidgets "github.com/mochow13/keen-agent/internal/cli/repl/widgets"
@@ -647,7 +648,7 @@ func renderInputArea(content string, width int, focused bool, shellMode bool, bt
 	return topRule + "\n" + content + "\n" + bottomRule
 }
 
-func waitForAsyncEvent(llmCh <-chan llm.StreamEvent, permissionCh <-chan *replpermissions.Request, diffCh <-chan repltooling.DiffRequest) tea.Cmd {
+func waitForAsyncEvent(llmCh <-chan llm.StreamEvent, permissionCh <-chan *replpermissions.Request, askUserCh <-chan *replaskuser.Request, diffCh <-chan repltooling.DiffRequest) tea.Cmd {
 	if llmCh == nil {
 		return nil
 	}
@@ -656,6 +657,8 @@ func waitForAsyncEvent(llmCh <-chan llm.StreamEvent, permissionCh <-chan *replpe
 		select {
 		case req := <-permissionCh:
 			return permissionReadyMsg{req: req}
+		case req := <-askUserCh:
+			return askUserReadyMsg{req: req}
 		case req := <-diffCh:
 			return diffReadyMsg{req: req}
 		case event, ok := <-llmCh:

@@ -9,6 +9,7 @@ import (
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
 	reploutput "github.com/mochow13/keen-agent/internal/cli/repl/output"
 	"github.com/mochow13/keen-agent/internal/llm"
+	"github.com/mochow13/keen-agent/internal/tools"
 )
 
 func TestHandleLLMDone_AttachesTurnMemoryToAssistantMessage(t *testing.T) {
@@ -295,5 +296,35 @@ func TestRebuildTurnMemoryFromSegments_DropsAbandonedOutcomes(t *testing.T) {
 	memory := m.consumeTurnMemory()
 	if memory == nil || len(memory.ToolActivity) != 1 || memory.ToolActivity[0].Input["path"] != "kept.go" {
 		t.Fatalf("expected only surviving outcome, got %#v", memory)
+	}
+}
+
+func TestCollectHistoricalToolActivity_RetainsAskUserInputAndOutput(t *testing.T) {
+	input := map[string]any{
+		"questions": []any{map[string]any{"question": "Pick", "options": []any{"a", "b"}}},
+	}
+	output := map[string]any{"answers": []any{"b"}, "cancelled": false}
+	segments := []streamSegment{{
+		kind:     segmentToolEnd,
+		toolCall: &llm.ToolCall{Name: tools.AskUserToolName, Input: input, Output: output},
+	}}
+
+	got := collectHistoricalToolActivity(segments, "", false)
+	if len(got) != 1 {
+		t.Fatalf("expected one activity, got %#v", got)
+	}
+	if got[0].Tool != tools.AskUserToolName {
+		t.Fatalf("expected tool %q, got %q", tools.AskUserToolName, got[0].Tool)
+	}
+	questions, ok := got[0].Input["questions"].([]any)
+	if !ok || len(questions) != 1 {
+		t.Fatalf("expected ask_user input to be retained, got %#v", got[0].Input)
+	}
+	if got[0].RetainedOutput == nil {
+		t.Fatalf("expected ask_user retained output, got nil")
+	}
+	retained, ok := got[0].RetainedOutput.(map[string]any)
+	if !ok || retained["answers"] == nil {
+		t.Fatalf("expected ask_user answers in retained output, got %#v", got[0].RetainedOutput)
 	}
 }

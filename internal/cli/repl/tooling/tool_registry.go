@@ -4,7 +4,8 @@ import (
 	"path/filepath"
 
 	"github.com/mochow13/keen-agent/internal/agentconfig"
-	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
+	replappstate    "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
+	replaskuser     "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/filesystem"
@@ -19,6 +20,7 @@ func SetupToolRegistry(
 	appState *replappstate.AppState,
 	permissionRequester *replpermissions.Requester,
 	diffEmitter *DiffEmitter,
+	askUserRequester *replaskuser.Requester,
 	mcpRuntime keenmcp.Runtime,
 	cfg *config.ResolvedConfig,
 	agentCfg *agentconfig.Config,
@@ -62,6 +64,10 @@ func SetupToolRegistry(
 
 	if mcpRuntime != nil && hasMCPConfigPaths(agentCfg) {
 		registerRequired(tools.NewCallMCPTool(mcpRuntime, permissionRequester))
+	}
+
+	if askUserRequester != nil {
+		registerRequired(tools.NewAskUserTool(askUserRequester))
 	}
 
 	if hasSubagentsDirs(agentCfg) {

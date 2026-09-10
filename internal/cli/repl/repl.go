@@ -22,7 +22,8 @@ import (
 	replmarkdown "github.com/mochow13/keen-agent/internal/cli/repl/markdown"
 	reploutput "github.com/mochow13/keen-agent/internal/cli/repl/output"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
-	repltheme "github.com/mochow13/keen-agent/internal/cli/repl/theme"
+	replaskuser     "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
+	repltheme       "github.com/mochow13/keen-agent/internal/cli/repl/theme"
 	repltooling "github.com/mochow13/keen-agent/internal/cli/repl/tooling"
 	replwidgets "github.com/mochow13/keen-agent/internal/cli/repl/widgets"
 	"github.com/mochow13/keen-agent/internal/config"
@@ -67,6 +68,7 @@ type replModel struct {
 	output                    *reploutput.OutputBuilder
 	modelSelection            *replwidgets.Model
 	permissionRequester       *replpermissions.Requester
+	askUser                   askUserState
 	projectPerms              *config.ProjectPermissions
 	diffEmitter               *repltooling.DiffEmitter
 	sessions                  *replSessionState
@@ -190,6 +192,7 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 
 	permissionRequester := replpermissions.NewRequester(projectPerms)
 	diffEmitter := repltooling.NewDiffEmitter()
+	askUserRequester := replaskuser.NewRequester()
 	var agentSlug string
 	if ctx.agentCfg != nil {
 		agentSlug = ctx.agentCfg.AgentSlug()
@@ -201,7 +204,7 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 	fileGuard := filesystem.NewGuard(ctx.workingDir, fileGitAwareness)
 	fileSearcher := replfilesearch.NewFileSearcher(ctx.workingDir, fileGuard)
 
-	repltooling.SetupToolRegistry(ctx.workingDir, appState, permissionRequester, diffEmitter, ctx.mcp, ctx.cfg, ctx.agentCfg)
+	repltooling.SetupToolRegistry(ctx.workingDir, appState, permissionRequester, diffEmitter, askUserRequester, ctx.mcp, ctx.cfg, ctx.agentCfg)
 
 	mdRenderer, err := replmarkdown.New(defaultWidth)
 
@@ -228,7 +231,8 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 		btwSpinner:          bs,
 		streamHandler:       NewStreamHandler(mdRenderer),
 		mdRenderer:          mdRenderer,
-		permissionRequester: permissionRequester,
+	permissionRequester: permissionRequester,
+		askUser:             askUserState{requester: askUserRequester},
 		projectPerms:        projectPerms,
 		diffEmitter:         diffEmitter,
 		sessions:            sessions,
@@ -514,6 +518,10 @@ func (m replModel) waitForAsyncEvent() tea.Cmd {
 	if m.permissionRequester != nil {
 		permissionCh = m.permissionRequester.GetRequestChan()
 	}
+	var askUserCh <-chan *replaskuser.Request
+	if m.askUser.requester != nil {
+		askUserCh = m.askUser.requester.GetRequestChan()
+	}
 	var diffCh <-chan repltooling.DiffRequest
 	if m.diffEmitter != nil {
 		diffCh = m.diffEmitter.GetDiffChan()
@@ -521,6 +529,7 @@ func (m replModel) waitForAsyncEvent() tea.Cmd {
 	return waitForAsyncEvent(
 		m.streamHandler.eventCh,
 		permissionCh,
+		askUserCh,
 		diffCh,
 	)
 }
@@ -597,9 +606,25 @@ func (m replModel) updateNormalMode(msg tea.Msg) (replModel, tea.Cmd) {
 		m.scrollToBottomIfFollowing()
 		return m, m.waitForAsyncEvent()
 
+	case askUserReadyMsg:
+		if m.askUser.requester == nil || !m.askUser.requester.IsPending(msg.req) {
+			return m, m.waitForAsyncEvent()
+		}
+		m.askUser.begin(msg.req)
+		m.streamHandler.SetAskUser(&m.askUser)
+		m.textarea.Reset()
+		m.updateViewportContent()
+		m.scrollToBottomIfFollowing()
+		return m, m.waitForAsyncEvent()
+
 	case spinner.TickMsg:
 		if updated, cmd, handled := m.handleSpinnerTick(msg); handled {
 			return updated, cmd
+		}
+
+	case tea.PasteMsg:
+		if m.askUser.active() {
+			return m.handleAskUserPasteMsg(msg)
 		}
 
 	case tea.WindowSizeMsg:

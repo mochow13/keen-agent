@@ -1,6 +1,7 @@
 package repl
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	repltheme "github.com/mochow13/keen-agent/internal/cli/repl/theme"
 	"github.com/mochow13/keen-agent/internal/llm"
 	"github.com/mochow13/keen-agent/internal/session"
+	"github.com/mochow13/keen-agent/internal/tools"
 )
 
 type sessionReplay struct {
@@ -129,9 +131,17 @@ func replayTranscript(handler *StreamHandler, transcript []session.TranscriptIte
 		case session.TranscriptItemReasoning:
 			handler.HandleReasoningChunk(item.Content)
 		case session.TranscriptItemToolStart:
-			handler.HandleToolStart(toolCallFromPayload(item.ToolStart))
+			if item.ToolStart == nil || item.ToolStart.Name != tools.AskUserToolName {
+				handler.HandleToolStart(toolCallFromPayload(item.ToolStart))
+			}
 		case session.TranscriptItemToolEnd:
-			handler.HandleToolEnd(toolCallResultFromPayload(item.ToolEnd))
+			if item.ToolEnd != nil && item.ToolEnd.Name == tools.AskUserToolName {
+				if state := askUserStateFromPayload(item.ToolEnd); state != nil {
+					handler.SetAskUser(state)
+				}
+			} else {
+				handler.HandleToolEnd(toolCallResultFromPayload(item.ToolEnd))
+			}
 		case session.TranscriptItemBash:
 			replayBashPayload(handler, item.Bash)
 		case session.TranscriptItemDiff:
@@ -142,6 +152,35 @@ func replayTranscript(handler *StreamHandler, transcript []session.TranscriptIte
 	}
 }
 
+func askUserStateFromPayload(payload *session.ToolEndPayload) *askUserState {
+	if payload == nil {
+		return nil
+	}
+
+	var request tools.AskUserRequest
+	var result tools.AskUserResult
+	if !decodeSessionPayload(payload.Input, &request) || !decodeSessionPayload(payload.Output, &result) {
+		return nil
+	}
+
+	state := &askUserState{completed: true, cancelled: result.Cancelled}
+	for i, answer := range result.Answers {
+		if i >= len(request.Questions) {
+			break
+		}
+		state.resolved = append(state.resolved, askUserAnswer{question: request.Questions[i].Question, answer: answer})
+	}
+	return state
+}
+
+func decodeSessionPayload(value any, target any) bool {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	return json.Unmarshal(encoded, target) == nil
+}
+
 func replayBashPayload(handler *StreamHandler, payload *session.BashPayload) {
 	if handler == nil || payload == nil {
 		return
@@ -149,7 +188,7 @@ func replayBashPayload(handler *StreamHandler, payload *session.BashPayload) {
 
 	handler.HandleBashStart(payload.Command, payload.Summary)
 	handler.HandleBashEnd(&llm.ToolCall{
-		Name:     "bash",
+		Name:     tools.BashToolName,
 		Output:   map[string]any{"stdout": payload.Output},
 		Error:    payload.Error,
 		Duration: time.Duration(payload.DurationNS),
