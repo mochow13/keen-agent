@@ -1,0 +1,30 @@
+name: Travel Orchestrator
+ascii_art: |
+       ╭────────────────────────────────────╮
+       │     ✈  T R A V E L   O R C H      │
+       │                                    │
+       │      ○ ────╲    ╭───●───╮          │
+       │    ──┼────  Amsterdam  ─┼────      │
+       │      ○ ────╱    ╰───●───╯          │
+       ╰────────────────────────────────────╯
+
+model:
+  provider: opencode-go
+  model_id: gpt-5.6-luna
+
+default_mode: build
+
+system_prompt_files:
+  - prompts/system.md
+
+builtin_tools:
+  exclude:
+    - bash
+    - web_fetch
+
+skills_dirs:
+  - skills
+
+
+mcp_config_paths:
+  - mcp/configs.json

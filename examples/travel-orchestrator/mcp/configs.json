@@ -1,0 +1,30 @@
+{
+  "servers": {
+    "exa": {
+      "url": "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa",
+      "auth": {
+        "type": "none"
+      }
+    },
+    "trivago": {
+      "url": "https://mcp.trivago.com/mcp",
+      "auth": {
+        "type": "none"
+      }
+    },
+    "booking": {
+      "url": "https://mcp.hasdata.com/api/mcp?apis=booking",
+      "auth": {
+        "type": "api_key",
+        "header": "x-api-key",
+        "key": "<YOUR_API_KEY>"
+      }
+    },
+    "kiwi": {
+      "url": "https://mcp.kiwi.com",
+      "auth": {
+        "type": "none"
+      }
+    }
+  }
+}

@@ -1,0 +1,336 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "adults": {
+      "description": "Number of adult guests across all rooms.",
+      "type": "number"
+    },
+    "bathrooms": {
+      "description": "Minimum number of bathrooms in the property.",
+      "type": "number"
+    },
+    "bedPreference__": {
+      "description": "Filter by bed configuration. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "twinBeds",
+          "doubleBed"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "bedrooms": {
+      "description": "Minimum number of bedrooms in the property.",
+      "type": "number"
+    },
+    "checkInDate": {
+      "description": "Check-in date in `YYYY-MM-DD` format. Must be in the future and earlier than `checkOutDate`.",
+      "type": "string"
+    },
+    "checkOutDate": {
+      "description": "Check-out date in `YYYY-MM-DD` format. Must be later than `checkInDate`.",
+      "type": "string"
+    },
+    "children": {
+      "description": "Number of child guests across all rooms (0–10). Pass `0` if there are no children.",
+      "type": "number"
+    },
+    "childrenAges": {
+      "description": "Comma-separated list of child ages, one entry per child (each `0`–`17`). Required when `children \u003e 0` and the number of ages must equal `children`.\n\nExample: `1,3,7`\n",
+      "type": "string"
+    },
+    "currency": {
+      "description": "Currency of the prices returned in the response. Use `hotelCurrency` to keep each property's native currency. Provide one exact documented value (52 allowed), e.g. `hotelCurrency`, `usd`.",
+      "type": "string"
+    },
+    "distanceFromCenter__": {
+      "description": "Filter by distance from the destination center. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "lessThan1Km",
+          "lessThan3Km",
+          "lessThan5Km"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facilities__": {
+      "description": "Filter by property-level facilities. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "swimmingPool",
+          "parking",
+          "spa",
+          "freeWifi",
+          "hotTubJacuzzi",
+          "airportShuttle",
+          "fitnessCenter",
+          "restaurant",
+          "nonSmokingRooms",
+          "frontDesk24Hour",
+          "electricVehicleChargingStation",
+          "wheelchairAccessible",
+          "roomService"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "keyword": {
+      "description": "Free-text destination query. Usually a city, region or neighborhood (e.g. `Paris`, `Manhattan, New York`); a specific property name is also accepted.",
+      "type": "string"
+    },
+    "language": {
+      "description": "Language of the Booking.com interface and localized fields in the response.",
+      "enum": [
+        "en-us",
+        "en-gb",
+        "de",
+        "nl",
+        "fr",
+        "es",
+        "es-ar",
+        "es-mx",
+        "ca",
+        "it",
+        "pt-pt",
+        "pt-br",
+        "no",
+        "fi",
+        "sv",
+        "da",
+        "cs",
+        "hu",
+        "ro",
+        "ja",
+        "zh-cn",
+        "zh-tw",
+        "pl",
+        "el",
+        "ru",
+        "tr",
+        "bg",
+        "ar",
+        "ko",
+        "he",
+        "lv",
+        "uk",
+        "hi",
+        "id",
+        "ms",
+        "th",
+        "et",
+        "hr",
+        "lt",
+        "sk",
+        "sr",
+        "sl",
+        "vi",
+        "tl",
+        "is"
+      ],
+      "type": "string"
+    },
+    "meals__": {
+      "description": "Filter by available meal plans. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "breakfastIncluded",
+          "kitchenFacilities"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "onlinePayment__": {
+      "description": "Filter by online payment options.",
+      "items": {
+        "enum": [
+          "acceptsOnlinePayments"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "page": {
+      "description": "Page number of the search results. Booking.com returns 25 results per page; pass `2` for results 26–50, `3` for 51–75, etc.",
+      "type": "number"
+    },
+    "price_max_": {
+      "description": "Maximum total price for the stay, in the requested `currency`. Must be `\u003e= 20` and greater than `price[min]`. Required if `price[min]` is omitted.",
+      "type": "number"
+    },
+    "price_min_": {
+      "description": "Minimum total price for the stay, in the requested `currency`. Must be `\u003e= 10`. Required if `price[max]` is omitted.",
+      "type": "number"
+    },
+    "propertyAccessibility__": {
+      "description": "Filter by property-level accessibility features. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "auditoryGuidance",
+          "toiletWithGrabRails",
+          "visualAidsTactileSigns",
+          "visualAidsBraille",
+          "bathroomEmergencyCord",
+          "raisedToilet",
+          "loweredSink"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "propertyType__": {
+      "description": "Filter by property type. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "hostels",
+          "bedAndBreakfast",
+          "hotels",
+          "apartments",
+          "resorts",
+          "guesthouses",
+          "homestays",
+          "entireHomesAndApartments"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "rating__": {
+      "description": "Filter by official star rating. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "oneStar",
+          "twoStars",
+          "threeStars",
+          "fourStars",
+          "fiveStars"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "reservationPolicy__": {
+      "description": "Filter by reservation flexibility. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "freeCancellation",
+          "noPrepayment"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "reviewScore__": {
+      "description": "Filter by minimum guest review score bucket. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "wonderful",
+          "veryGood",
+          "good",
+          "pleasant"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "roomAccessibility__": {
+      "description": "Filter by in-room accessibility features. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "upperFloorsAccessibleByElevator",
+          "entireUnitLocatedOnGroundFloor",
+          "walkInShower",
+          "entireUnitWheelchairAccessible",
+          "adaptedBath",
+          "rollInShower",
+          "showerChair",
+          "emergencyCordInBathroom",
+          "toiletWithGrabRails",
+          "raisedToilet",
+          "lowerSink"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "roomFacilities__": {
+      "description": "Filter by in-room facilities. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "privateBathroom",
+          "balcony",
+          "seaView",
+          "kitchenKitchenette",
+          "airConditioning",
+          "bathtub",
+          "hotTub",
+          "view",
+          "spaTub",
+          "upperFloorsAccessibleByElevator",
+          "microwave",
+          "refrigerator",
+          "coffeeMachine",
+          "electricKettle",
+          "heating",
+          "towels",
+          "toilet",
+          "mountainView",
+          "flatScreenTv",
+          "tv",
+          "coffeeTeaMaker",
+          "hairdryer",
+          "toiletPaper",
+          "shower",
+          "linens"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "rooms": {
+      "description": "Number of rooms to book.",
+      "type": "number"
+    },
+    "sort": {
+      "description": "Sort order applied by Booking.com to the results page.",
+      "enum": [
+        "ourTopPicks",
+        "homesAndApartmentsFirst",
+        "priceLowestFirst",
+        "priceHighestFirst",
+        "bestReviewedAndLowestPrice",
+        "ratingHighToLow",
+        "ratingLowToHigh",
+        "ratingAndPrice",
+        "distanceFromDowntown",
+        "topReviewed"
+      ],
+      "type": "string"
+    },
+    "travelGroup__": {
+      "description": "Filter by travel-group oriented stay options. Multiple values are combined with OR.",
+      "items": {
+        "enum": [
+          "adultsOnly",
+          "petFriendly"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "keyword",
+    "checkInDate",
+    "checkOutDate",
+    "rooms",
+    "adults",
+    "children"
+  ],
+  "type": "object"
+}

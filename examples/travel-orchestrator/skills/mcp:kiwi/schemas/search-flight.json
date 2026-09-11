@@ -1,0 +1,605 @@
+{
+  "properties": {
+    "adults": {
+      "default": 1,
+      "description": "Number of adults (12+)",
+      "ge": 1,
+      "le": 9,
+      "title": "Adults",
+      "type": "integer"
+    },
+    "adults_hand_bags": {
+      "anyOf": [
+        {
+          "items": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 9,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Cabin (hand) bags per adult, one entry per adult (each 0-1), e.g. [1, 1]",
+      "title": "Adults Hand Bags"
+    },
+    "adults_hold_bags": {
+      "anyOf": [
+        {
+          "items": {
+            "maximum": 2,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 9,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Checked (hold) bags per adult, one entry per adult (each 0-2), e.g. [1, 0]",
+      "title": "Adults Hold Bags"
+    },
+    "allow_diff_airport_connection": {
+      "default": true,
+      "description": "Allow connections that change airports within the same city",
+      "title": "Allow Diff Airport Connection",
+      "type": "boolean"
+    },
+    "allow_overnight_stopovers": {
+      "default": true,
+      "description": "Allow overnight (red-eye) layovers",
+      "title": "Allow Overnight Stopovers",
+      "type": "boolean"
+    },
+    "allow_self_transfer": {
+      "default": true,
+      "description": "Allow self-transfer (virtual interlining) connections between separate tickets",
+      "title": "Allow Self Transfer",
+      "type": "boolean"
+    },
+    "atime_from": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "le": 23,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Earliest outbound arrival hour (0-23, local)",
+      "title": "Atime From"
+    },
+    "atime_to": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "le": 23,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Latest outbound arrival hour (0-23, local)",
+      "title": "Atime To"
+    },
+    "cabinClass": {
+      "anyOf": [
+        {
+          "enum": [
+            "M",
+            "W",
+            "C",
+            "F"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "M=economy, W=premium economy, C=business, F=first",
+      "title": "Cabinclass"
+    },
+    "children": {
+      "default": 0,
+      "description": "Number of children (2-11)",
+      "maximum": 8,
+      "minimum": 0,
+      "title": "Children",
+      "type": "integer"
+    },
+    "children_hand_bags": {
+      "anyOf": [
+        {
+          "items": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Cabin (hand) bags per child, one entry per child (each 0-1), e.g. [1]",
+      "title": "Children Hand Bags"
+    },
+    "children_hold_bags": {
+      "anyOf": [
+        {
+          "items": {
+            "maximum": 2,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Checked (hold) bags per child, one entry per child (each 0-2), e.g. [2]",
+      "title": "Children Hold Bags"
+    },
+    "currency": {
+      "default": "EUR",
+      "description": "Currency code (e.g. EUR, USD)",
+      "maxLength": 3,
+      "minLength": 1,
+      "title": "Currency",
+      "type": "string"
+    },
+    "departureDate": {
+      "description": "Departure date in dd/mm/yyyy — the day to fly, or the earliest date of a range (see departureDateTo)",
+      "maxLength": 10,
+      "title": "Departuredate",
+      "type": "string"
+    },
+    "departureDateFlexDays": {
+      "default": 0,
+      "description": "Search +/- this many days around departureDate (symmetric). Leave 0 when using departureDateTo",
+      "maximum": 10,
+      "minimum": 0,
+      "title": "Departuredateflexdays",
+      "type": "integer"
+    },
+    "departureDateTo": {
+      "anyOf": [
+        {
+          "maxLength": 10,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Latest departure date in dd/mm/yyyy for an explicit range [departureDate .. departureDateTo]. Use instead of departureDateFlexDays for a one-directional or asymmetric range; must be \u003e= departureDate",
+      "title": "Departuredateto"
+    },
+    "dtime_from": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "le": 23,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Earliest outbound departure hour (0-23, local)",
+      "title": "Dtime From"
+    },
+    "dtime_to": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "le": 23,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Latest outbound departure hour (0-23, local)",
+      "title": "Dtime To"
+    },
+    "exclude_airlines": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Exclude flights operated by these airlines — comma-separated IATA codes, e.g. 'FR,W6'. Mutually exclusive with select_airlines",
+      "title": "Exclude Airlines"
+    },
+    "exclude_stopover_airports": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Never connect via these airports — comma-separated IATA codes",
+      "title": "Exclude Stopover Airports"
+    },
+    "exclude_stopover_countries": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Never connect via these countries — comma-separated ISO 3166-1 alpha-2 codes",
+      "title": "Exclude Stopover Countries"
+    },
+    "flyFrom": {
+      "description": "Origin: IATA code, city or airport name (e.g. \"PRG\", \"Prague\", \"London Heathrow\")",
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Flyfrom",
+      "type": "string"
+    },
+    "flyTo": {
+      "description": "Destination: IATA code, city or airport name",
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Flyto",
+      "type": "string"
+    },
+    "fly_days": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Allowed outbound departure weekdays — comma-separated 0=Sun..6=Sat, e.g. '1,2,3,4,5' for weekdays",
+      "title": "Fly Days"
+    },
+    "infants": {
+      "default": 0,
+      "description": "Number of infants (\u003c2)",
+      "maximum": 4,
+      "minimum": 0,
+      "title": "Infants",
+      "type": "integer"
+    },
+    "locale": {
+      "default": "en",
+      "description": "Locale (e.g. en, de, fr)",
+      "maxLength": 10,
+      "minLength": 1,
+      "title": "Locale",
+      "type": "string"
+    },
+    "max_fly_duration": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Maximum total flight duration in hours",
+      "title": "Max Fly Duration"
+    },
+    "max_sector_stopovers": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Maximum number of stopovers (connections) allowed per flight sector",
+      "title": "Max Sector Stopovers"
+    },
+    "nights_in_dst_from": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Minimum nights at destination before return flight. Turns the search into a return search",
+      "title": "Nights In Dst From"
+    },
+    "nights_in_dst_to": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Maximum nights at destination before return flight",
+      "title": "Nights In Dst To"
+    },
+    "one_for_city": {
+      "default": false,
+      "description": "If true, return only the single best result per destination city — useful for 'explore' searches with broad destinations",
+      "title": "One For City",
+      "type": "boolean"
+    },
+    "price_from": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Minimum total price filter in the specified currency",
+      "title": "Price From"
+    },
+    "price_to": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Maximum total price filter in the specified currency",
+      "title": "Price To"
+    },
+    "ret_atime_from": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "le": 23,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Earliest return arrival hour (0-23, local)",
+      "title": "Ret Atime From"
+    },
+    "ret_atime_to": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "le": 23,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Latest return arrival hour (0-23, local)",
+      "title": "Ret Atime To"
+    },
+    "ret_dtime_from": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "le": 23,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Earliest return departure hour (0-23, local)",
+      "title": "Ret Dtime From"
+    },
+    "ret_dtime_to": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "le": 23,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Latest return departure hour (0-23, local)",
+      "title": "Ret Dtime To"
+    },
+    "ret_fly_days": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Allowed return departure weekdays — comma-separated 0=Sun..6=Sat",
+      "title": "Ret Fly Days"
+    },
+    "returnDate": {
+      "anyOf": [
+        {
+          "maxLength": 10,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Return date in dd/mm/yyyy — the day to fly back, or the earliest return date of a range (omit for one-way)",
+      "title": "Returndate"
+    },
+    "returnDateFlexDays": {
+      "default": 0,
+      "description": "Search +/- this many days around returnDate (symmetric). Leave 0 when using returnDateTo",
+      "maximum": 10,
+      "minimum": 0,
+      "title": "Returndateflexdays",
+      "type": "integer"
+    },
+    "returnDateTo": {
+      "anyOf": [
+        {
+          "maxLength": 10,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Latest return date in dd/mm/yyyy for an explicit range [returnDate .. returnDateTo]. Requires returnDate; use instead of returnDateFlexDays; must be \u003e= returnDate",
+      "title": "Returndateto"
+    },
+    "select_airlines": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only include flights operated by these airlines — comma-separated IATA codes, e.g. 'FR,U2,BA'. Mutually exclusive with exclude_airlines",
+      "title": "Select Airlines"
+    },
+    "sort": {
+      "default": "price",
+      "description": "Result ordering",
+      "enum": [
+        "price",
+        "duration",
+        "quality",
+        "date",
+        "popularity"
+      ],
+      "title": "Sort",
+      "type": "string"
+    },
+    "stopover_airports": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only connect via these airports — comma-separated IATA codes. Constrains connecting flights only; direct (non-stop) flights are still returned.",
+      "title": "Stopover Airports"
+    },
+    "stopover_countries": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only connect via these countries — comma-separated ISO 3166-1 alpha-2 codes, e.g. 'DE,AT'. Constrains connecting flights only; direct (non-stop) flights are still returned.",
+      "title": "Stopover Countries"
+    },
+    "stopover_from": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Minimum layover duration in hours",
+      "title": "Stopover From"
+    },
+    "stopover_to": {
+      "anyOf": [
+        {
+          "ge": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Maximum layover duration in hours",
+      "title": "Stopover To"
+    }
+  },
+  "required": [
+    "flyFrom",
+    "flyTo",
+    "departureDate"
+  ],
+  "title": "search_flightsArguments",
+  "type": "object"
+}

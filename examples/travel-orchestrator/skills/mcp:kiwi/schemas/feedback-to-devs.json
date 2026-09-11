@@ -1,0 +1,16 @@
+{
+  "properties": {
+    "text": {
+      "description": "The content of the feedback. This is ONLY for the Kiwi.com search-flight MCP tool (search results, pricing, itineraries, filters, search errors) — not other MCP servers, Claude/app behaviour, or general Kiwi.com products. Include error messages, logs, or context that would help the developers reproduce the issue.",
+      "maxLength": 3000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "title": "feedback_to_devsArguments",
+  "type": "object"
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "numResults": {
+      "description": "Number of search results to return (default: 10).",
+      "type": "number"
+    },
+    "objective": {
+      "description": "Goal for this search turn; say which documents should rank first, which should be excluded, and what specific facts or figures to pull from them.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "query": {
+      "description": "Natural language search query. Should be a semantically rich description of the ideal page, not just keywords. Optionally include category:\u003ctype\u003e (company, people) to focus results — e.g. 'category:people John Doe software engineer'.",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "query",
+    "objective"
+  ],
+  "type": "object"
+}
