@@ -16,14 +16,14 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mochow13/keen-agent/internal/agentconfig"
 	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
+	replaskuser "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
 	replcommands "github.com/mochow13/keen-agent/internal/cli/repl/commands"
 	replfilesearch "github.com/mochow13/keen-agent/internal/cli/repl/filesearch"
 	replhistory "github.com/mochow13/keen-agent/internal/cli/repl/history"
 	replmarkdown "github.com/mochow13/keen-agent/internal/cli/repl/markdown"
 	reploutput "github.com/mochow13/keen-agent/internal/cli/repl/output"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
-	replaskuser     "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
-	repltheme       "github.com/mochow13/keen-agent/internal/cli/repl/theme"
+	repltheme "github.com/mochow13/keen-agent/internal/cli/repl/theme"
 	repltooling "github.com/mochow13/keen-agent/internal/cli/repl/tooling"
 	replwidgets "github.com/mochow13/keen-agent/internal/cli/repl/widgets"
 	"github.com/mochow13/keen-agent/internal/config"
@@ -231,7 +231,7 @@ func initialModel(ctx *replContext, llmClient llm.LLMClient, needsSetup bool) re
 		btwSpinner:          bs,
 		streamHandler:       NewStreamHandler(mdRenderer),
 		mdRenderer:          mdRenderer,
-	permissionRequester: permissionRequester,
+		permissionRequester: permissionRequester,
 		askUser:             askUserState{requester: askUserRequester},
 		projectPerms:        projectPerms,
 		diffEmitter:         diffEmitter,

@@ -7,8 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	replaskuser "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
+	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	repltooling "github.com/mochow13/keen-agent/internal/cli/repl/tooling"
 	"github.com/mochow13/keen-agent/internal/llm"
 	"github.com/mochow13/keen-agent/internal/tools"

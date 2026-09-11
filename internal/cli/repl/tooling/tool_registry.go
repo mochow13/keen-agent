@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 
 	"github.com/mochow13/keen-agent/internal/agentconfig"
-	replappstate    "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
-	replaskuser     "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
+	replappstate "github.com/mochow13/keen-agent/internal/cli/repl/appstate"
+	replaskuser "github.com/mochow13/keen-agent/internal/cli/repl/askuser"
 	replpermissions "github.com/mochow13/keen-agent/internal/cli/repl/permissions"
 	"github.com/mochow13/keen-agent/internal/config"
 	"github.com/mochow13/keen-agent/internal/filesystem"
